@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --amber: #EF9F27;
+  --amber-light: #FEF3DC;
+  --amber-dark: #7A4A00;
+  --amber-200: #F5D084;
+  --navy: #0A0E1A;
+  --navy-mid: #141928;
+  --navy-surface: #1C2235;
+  --near-black: #1A1A1A;
+  --mid-grey: #5A5A5A;
+  --light-grey: #EAE6DC;
+  --border: #E2DDD3;
+  --border2: #D0CBBC;
+  --bg2: #EAE6DC;
+  --white: #FFFFFF;
+  --page-bg: #EFE9DD;
+  --green: #0F6E56;
+  --red: #C03A2A;
+  --blue: #185FA5;
+  --violet: #36318F;
+  --violet-light: #EEEDF8;
+  --teal: #2BA888;
+  --teal-light: #E1F5EE;
+  --coral: #E05C4B;
+  --coral-light: #FDECEA;
+  --mode-engage: #EF9F27;
+  --mode-assess: #E05C4B;
+  --mode-learn: #2BA888;
+  --mode-train: #185FA5;
+  --mode-platform: #36318F;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Georgia", "Times New Roman", serif;
+  --sidebar-w: 178px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--near-black);
+  background: var(--page-bg);
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+.sphere-card {
+  background: var(--white);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.tile-A { background: #36318F; color: #fff; }
+.tile-B { background: #2BA888; color: #fff; }
+.tile-C { background: #E05C4B; color: #fff; }
+.tile-D { background: #EF9F27; color: #fff; }
+
+.game-bg { background: var(--navy); color: var(--white); min-height: 100vh; }
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+}
