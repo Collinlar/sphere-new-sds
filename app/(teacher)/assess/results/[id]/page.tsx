@@ -8,10 +8,10 @@ import { gradeFromPercentage } from '@/lib/utils'
 import Link from 'next/link'
 
 const GRADE_COLORS: Record<string, string> = {
-  A: '#085041', B: '#185FA5', C: '#7A4A00', D: '#7A1A10', F: '#5A5A5A',
+  A: '#1A8966', B: '#1052A3', C: '#D97010', D: '#C23B2A', F: '#6B6870',
 }
 const GRADE_BG: Record<string, string> = {
-  A: '#E1F5EE', B: '#E6F1FB', C: '#FEF3DC', D: '#FDECEA', F: '#F3F4F6',
+  A: '#DDFAF0', B: '#E3EDFB', C: '#FEF0DC', D: '#FDECEA', F: '#EDECE9',
 }
 
 export default function SessionResultsPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
@@ -50,7 +50,7 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
   if (!session || !exam) {
     return (
       <div style={{ height: '100vh', background: 'var(--page-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#E05C4B', fontSize: 14 }}>Results not found.</p>
+        <p style={{ color: '#C23B2A', fontSize: 14 }}>Results not found.</p>
       </div>
     )
   }
@@ -103,7 +103,7 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
         right={
           !isGraded ? (
             <Link href={`/assess/grading/${id}`}>
-              <button style={{ background: '#EF9F27', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+              <button style={{ background: '#D97010', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
                 Go to grading
               </button>
             </Link>
@@ -125,8 +125,8 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
           )}
           <span style={{
             fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-            color: isGraded ? '#085041' : '#7A4A00',
-            background: isGraded ? '#E1F5EE' : '#FEF3DC',
+            color: isGraded ? '#1A8966' : '#D97010',
+            background: isGraded ? '#DDFAF0' : '#FEF0DC',
             textTransform: 'uppercase', letterSpacing: '0.06em',
           }}>
             {isGraded ? 'Graded' : 'Pending grading'}
@@ -137,7 +137,7 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
         </div>
 
         {!isGraded && (
-          <div style={{ background: '#FEF3DC', border: '0.5px solid #EF9F27', borderRadius: 10, padding: '14px 20px', marginBottom: 28, fontSize: 14, color: '#7A4A00' }}>
+          <div style={{ background: '#FEF0DC', border: '0.5px solid #D97010', borderRadius: 10, padding: '14px 20px', marginBottom: 28, fontSize: 14, color: '#D97010' }}>
             Grading has not been published yet. Scores and grades below will not be visible to students until you publish.
           </div>
         )}
@@ -150,7 +150,7 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
             { label: 'Highest score', value: highest != null ? `${highest}%` : 'N/A' },
             { label: 'Lowest score', value: lowest != null ? `${lowest}%` : 'N/A' },
           ].map(s => (
-            <div key={s.label} style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '18px 20px' }}>
+            <div key={s.label} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '18px 20px' }}>
               <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--mid-grey)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{s.label}</p>
               <p style={{ fontSize: 24, fontWeight: 700, color: 'var(--near-black)', lineHeight: 1.1 }}>{s.value}</p>
             </div>
@@ -159,7 +159,7 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
 
         <div className="results-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20, alignItems: 'start' }}>
           {/* Grade distribution */}
-          <div className="grade-dist" style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '20px 20px 16px' }}>
+          <div className="grade-dist" style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 20px 16px' }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 18 }}>Grade distribution</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {gradeDist.map(({ grade, count }) => {
@@ -182,12 +182,12 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
           </div>
 
           {/* Student results table */}
-          <div className="results-table" style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <div className="results-table" style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ padding: '14px 18px', borderBottom: '0.5px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>{submissions.length} {submissions.length === 1 ? 'submission' : 'submissions'}</p>
               {!isGraded && submissions.length > 0 && (
                 <Link href={`/assess/grading/${id}`}>
-                  <button style={{ background: '#FEF3DC', border: '0.5px solid #EF9F27', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: '#7A4A00', cursor: 'pointer' }}>
+                  <button style={{ background: '#FEF0DC', border: '0.5px solid #D97010', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: '#D97010', cursor: 'pointer' }}>
                     Grade now
                   </button>
                 </Link>
@@ -216,9 +216,9 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
                       const isAffected = rs !== 'normal'
 
                       const RS_META: Record<string, { label: string; color: string; bg: string; desc: string }> = {
-                        disqualified: { label: 'Disqualified', color: '#7A1A10', bg: '#FDECEA', desc: 'Excluded from class stats. Student notified.' },
-                        withheld:     { label: 'Withheld',     color: '#7A4A00', bg: '#FEF3DC', desc: 'Results hidden from student pending review.' },
-                        voided:       { label: 'Voided',       color: '#5A5A5A', bg: '#F3F4F6', desc: 'Excluded from all stats. No grade shown.' },
+                        disqualified: { label: 'Disqualified', color: '#C23B2A', bg: '#FDECEA', desc: 'Excluded from class stats. Student notified.' },
+                        withheld:     { label: 'Withheld',     color: '#D97010', bg: '#FEF0DC', desc: 'Results hidden from student pending review.' },
+                        voided:       { label: 'Voided',       color: '#6B6870', bg: '#EDECE9', desc: 'Excluded from all stats. No grade shown.' },
                       }
                       const rsMeta = RS_META[rs]
 
@@ -286,7 +286,7 @@ export default function SessionResultsPage({ params: paramsPromise }: { params: 
                           {/* Action */}
                           <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
                             <Link href={`/assess/grading/${id}?student=${sub.id}`}>
-                              <button style={{ background: 'var(--page-bg)', border: '0.5px solid var(--border)', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: isAffected ? rsMeta?.color ?? 'var(--near-black)' : 'var(--near-black)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              <button style={{ background: 'var(--page-bg)', boxShadow: 'var(--shadow-soft)', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, color: isAffected ? rsMeta?.color ?? 'var(--near-black)' : 'var(--near-black)', cursor: 'pointer', fontFamily: 'inherit' }}>
                                 {isAffected ? 'Review' : 'Edit'}
                               </button>
                             </Link>

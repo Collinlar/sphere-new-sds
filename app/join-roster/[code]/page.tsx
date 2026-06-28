@@ -99,7 +99,7 @@ export default function JoinRosterPage({ params: paramsPromise }: { params: Prom
           Tell us who you are so your teacher can add you.
         </p>
 
-        <div style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 12, padding: 24 }}>
+        <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 12, padding: 24 }}>
           <input
             value={name}
             onChange={e => setName(e.target.value)}
@@ -115,7 +115,7 @@ export default function JoinRosterPage({ params: paramsPromise }: { params: Prom
           />
 
           {error && (
-            <div style={{ background: '#FDECEA', border: '1px solid #E05C4B', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#7A1A10' }}>
+            <div style={{ background: '#FDECEA', border: '1px solid #C23B2A', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#C23B2A' }}>
               {error}
             </div>
           )}
@@ -123,7 +123,7 @@ export default function JoinRosterPage({ params: paramsPromise }: { params: Prom
           <button
             onClick={handleSubmit}
             disabled={submitting || !name.trim() || !email.trim()}
-            style={{ width: '100%', height: 46, background: '#36318F', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', opacity: submitting || !name.trim() || !email.trim() ? 0.6 : 1, fontFamily: 'inherit' }}
+            style={{ width: '100%', height: 46, background: '#2E2886', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', opacity: submitting || !name.trim() || !email.trim() ? 0.6 : 1, fontFamily: 'inherit' }}
           >
             {submitting ? 'Sending request...' : 'Ask to join'}
           </button>

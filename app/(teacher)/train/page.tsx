@@ -7,20 +7,20 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import Link from 'next/link'
 import { getCurrentUser } from '@/lib/auth'
-
+import { fetchPathStats, normalizeSteps, type PathStats } from '@/lib/train-paths'
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  Onboarding: { bg: '#E1F5EE', text: '#0A4A38' },
-  Compliance: { bg: '#FDECEA', text: '#7A1A10' },
-  Skills: { bg: '#E6F1FB', text: '#0B2E52' },
-  Leadership: { bg: '#EEEDF8', text: '#1C196B' },
+  Onboarding: { bg: '#DDFAF0', text: '#1A8966' },
+  Compliance: { bg: '#FDECEA', text: '#C23B2A' },
+  Skills: { bg: '#E3EDFB', text: '#1052A3' },
+  Leadership: { bg: '#EEEDF8', text: '#2E2886' },
 }
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div style={{
       background: 'var(--white)',
-      border: '0.5px solid var(--border)',
+      boxShadow: 'var(--shadow-soft)',
       borderRadius: 10,
       padding: '20px 24px',
       flex: 1,
@@ -33,7 +33,8 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 export default function TrainPage() {
-  const [paths, setPaths] = useState<LearningPath[]>([])
+  const [paths, setPaths] = useState<(LearningPath & { steps: LearningPath['steps'] })[]>([])
+  const [pathStats, setPathStats] = useState<Record<string, PathStats>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -42,17 +43,24 @@ export default function TrainPage() {
         .from('learning_paths')
         .select('*')
         .eq('institution_id', getCurrentUser().institution_id)
+        .order('created_at', { ascending: false })
+
       if (!error && data) {
-        setPaths(data)
+        const normalized = data.map(p => ({ ...p, steps: normalizeSteps(p.steps) }))
+        setPaths(normalized)
+        const stats = await fetchPathStats(normalized.map(p => p.id))
+        setPathStats(stats)
       }
       setLoading(false)
     }
     load()
   }, [])
 
-  const totalEnrolled = 0
-  const avgCompletion = 0
-  const totalCerts = 0
+  const totalEnrolled = Object.values(pathStats).reduce((sum, s) => sum + s.assigned, 0)
+  const avgCompletion = totalEnrolled > 0
+    ? Math.round(Object.values(pathStats).reduce((sum, s) => sum + s.avgCompletion * s.assigned, 0) / totalEnrolled)
+    : 0
+  const totalCerts = Object.values(pathStats).reduce((sum, s) => sum + s.certificates, 0)
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
@@ -61,14 +69,14 @@ export default function TrainPage() {
         title="Training"
         right={
           <Link href="/train/builder">
-            <Button accent="#185FA5" size="sm">+ Create path</Button>
+            <Button accent="#1052A3" size="sm">+ Create path</Button>
           </Link>
         }
       />
 
       <div style={{ padding: '28px 32px', maxWidth: 1100 }}>
         {loading ? (
-          <div style={{ color: 'var(--mid-grey)', fontSize: 14 }}>Fetching team progress...</div>
+          <div style={{ color: 'var(--mid-grey)', fontSize: 14 }}>Loading training paths...</div>
         ) : (
           <>
             <div style={{ display: 'flex', gap: 16, marginBottom: 36, flexWrap: 'wrap' }}>
@@ -79,24 +87,24 @@ export default function TrainPage() {
             </div>
 
             {paths.length === 0 ? (
-              <div style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: 48, textAlign: 'center' }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+              <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 48, textAlign: 'center' }}>
                 <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--near-black)', marginBottom: 8 }}>No training paths yet</div>
                 <div style={{ color: 'var(--mid-grey)', fontSize: 14, marginBottom: 20 }}>
                   Create your first training path and assign it to your team.
                 </div>
                 <Link href="/train/builder">
-                  <Button accent="#185FA5">Build your first path</Button>
+                  <Button accent="#1052A3">Build your first path</Button>
                 </Link>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {paths.map(path => {
-                  const cat = CATEGORY_COLORS[path.category ?? ''] ?? { bg: '#F3F4F6', text: '#5A5A5A' }
+                  const cat = CATEGORY_COLORS[path.category ?? ''] ?? { bg: '#EDECE9', text: '#6B6870' }
+                  const stats = pathStats[path.id] ?? { assigned: 0, avgCompletion: 0, certificates: 0 }
                   return (
                     <div key={path.id} style={{
                       background: 'var(--white)',
-                      border: '0.5px solid var(--border)',
+                      boxShadow: 'var(--shadow-soft)',
                       borderRadius: 10,
                       padding: '18px 20px',
                     }}>
@@ -105,12 +113,11 @@ export default function TrainPage() {
                           <span style={{ fontSize: 11, fontWeight: 500, color: cat.text, background: cat.bg, padding: '2px 8px', borderRadius: 4 }}>
                             {path.category}
                           </span>
-                          {path.is_mandatory && (
-                            <span style={{ fontSize: 11, fontWeight: 500, color: '#7A1A10', background: '#FDECEA', padding: '2px 8px', borderRadius: 4 }}>
+                          {path.is_mandatory ? (
+                            <span style={{ fontSize: 11, fontWeight: 500, color: '#C23B2A', background: '#FDECEA', padding: '2px 8px', borderRadius: 4 }}>
                               Mandatory
                             </span>
-                          )}
-                          {!path.is_mandatory && (
+                          ) : (
                             <span style={{ fontSize: 11, color: 'var(--mid-grey)', background: 'var(--bg2)', padding: '2px 8px', borderRadius: 4 }}>
                               Optional
                             </span>
@@ -128,26 +135,26 @@ export default function TrainPage() {
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>{path.steps.length} steps</span>
-                        <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>0 assigned</span>
-                        <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>0 certificates</span>
+                        <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>{stats.assigned} assigned</span>
+                        <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>{stats.certificates} certificates</span>
                       </div>
 
                       <div style={{ marginBottom: 16 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--mid-grey)', marginBottom: 4 }}>
                           <span>Team completion</span>
-                          <span>0%</span>
+                          <span>{stats.avgCompletion}%</span>
                         </div>
                         <div style={{ height: 4, background: 'var(--bg2)', borderRadius: 2 }}>
-                          <div style={{ width: '0%', height: '100%', background: '#185FA5', borderRadius: 2 }} />
+                          <div style={{ width: `${stats.avgCompletion}%`, height: '100%', background: '#1052A3', borderRadius: 2 }} />
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <Link href={`/train/builder?id=${path.id}`}>
                           <Button variant="secondary" size="sm">Edit path</Button>
                         </Link>
                         <Link href={`/train/team/${path.id}`}>
-                          <Button accent="#185FA5" size="sm">View team progress</Button>
+                          <Button accent="#1052A3" size="sm">View team progress</Button>
                         </Link>
                       </div>
                     </div>

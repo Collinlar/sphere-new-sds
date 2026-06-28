@@ -35,7 +35,7 @@ export default function SessionSummaryPage({ params: paramsPromise }: { params: 
 
   if (loading) {
     return (
-      <div style={{ height: '100vh', background: '#0A0E1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ height: '100vh', background: '#0C1021', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>Loading session summary...</p>
       </div>
     )
@@ -43,8 +43,8 @@ export default function SessionSummaryPage({ params: paramsPromise }: { params: 
 
   if (!session || !exam) {
     return (
-      <div style={{ height: '100vh', background: '#0A0E1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#E05C4B', fontSize: 14 }}>Session not found.</p>
+      <div style={{ height: '100vh', background: '#0C1021', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#C23B2A', fontSize: 14 }}>Session not found.</p>
       </div>
     )
   }
@@ -60,13 +60,13 @@ export default function SessionSummaryPage({ params: paramsPromise }: { params: 
 
   const statCards = [
     { label: 'Students joined', value: totalJoined, color: '#fff' },
-    { label: 'Submitted', value: submitted, color: '#2BA888' },
-    { label: 'Did not submit', value: inProgress, color: inProgress > 0 ? '#EF9F27' : 'rgba(255,255,255,0.4)' },
-    { label: 'Flagged', value: flagged, color: flagged > 0 ? '#E05C4B' : 'rgba(255,255,255,0.4)' },
+    { label: 'Submitted', value: submitted, color: '#1A8966' },
+    { label: 'Did not submit', value: inProgress, color: inProgress > 0 ? '#D97010' : 'rgba(255,255,255,0.4)' },
+    { label: 'Flagged', value: flagged, color: flagged > 0 ? '#C23B2A' : 'rgba(255,255,255,0.4)' },
   ]
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0A0E1A', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: '#0C1021', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
       <div style={{ padding: '32px 48px 28px', borderBottom: '0.5px solid rgba(255,255,255,0.08)' }}>
@@ -96,7 +96,7 @@ export default function SessionSummaryPage({ params: paramsPromise }: { params: 
         <div style={{ background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '20px 24px', marginBottom: 48, display: 'flex', gap: 40 }}>
           <div>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Join code</p>
-            <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '0.15em', color: '#E05C4B' }}>{session.join_code}</p>
+            <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '0.15em', color: '#C23B2A' }}>{session.join_code}</p>
           </div>
           <div>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Session ran</p>
@@ -112,7 +112,7 @@ export default function SessionSummaryPage({ params: paramsPromise }: { params: 
           )}
           <div>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Submission rate</p>
-            <p style={{ fontSize: 22, fontWeight: 700, color: totalJoined > 0 ? '#2BA888' : 'rgba(255,255,255,0.4)' }}>
+            <p style={{ fontSize: 22, fontWeight: 700, color: totalJoined > 0 ? '#1A8966' : 'rgba(255,255,255,0.4)' }}>
               {totalJoined > 0 ? `${Math.round((submitted / totalJoined) * 100)}%` : 'N/A'}
             </p>
           </div>
@@ -143,7 +143,7 @@ export default function SessionSummaryPage({ params: paramsPromise }: { params: 
           {submitted > 0 && (
             <button
               onClick={() => router.push(`/assess/grading/${id}`)}
-              style={{ background: '#E05C4B', border: 'none', borderRadius: 10, padding: '14px 36px', fontSize: 15, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ background: '#C23B2A', border: 'none', borderRadius: 10, padding: '14px 36px', fontSize: 15, fontWeight: 700, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}
             >
               Begin grading {submitted} {submitted === 1 ? 'submission' : 'submissions'}
             </button>

@@ -11,7 +11,7 @@ const MODULE_ICONS: Record<string, string> = {
   assignment: '📝',
 }
 
-const QUIZ_COLORS = ['#36318F', '#2BA888', '#E05C4B', '#EF9F27']
+const QUIZ_COLORS = ['#2E2886', '#1A8966', '#C23B2A', '#D97010']
 const QUIZ_LABELS = ['A', 'B', 'C', 'D']
 
 function VideoModule({ content }: { content: Record<string, unknown> }) {
@@ -29,7 +29,7 @@ function VideoModule({ content }: { content: Record<string, unknown> }) {
       ) : videoUrl ? (
         <div style={{ background: 'var(--page-bg)', borderRadius: 10, padding: '14px 16px', marginBottom: 12 }}>
           <div style={{ fontSize: 13, color: 'var(--mid-grey)', marginBottom: 6 }}>Video link</div>
-          <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: '#185FA5', wordBreak: 'break-all' }}>{videoUrl}</a>
+          <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: '#1052A3', wordBreak: 'break-all' }}>{videoUrl}</a>
         </div>
       ) : (
         <div style={{ background: 'var(--page-bg)', borderRadius: 10, padding: '32px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14, marginBottom: 12 }}>
@@ -75,7 +75,7 @@ function QuizModule({ content }: { content: Record<string, unknown> }) {
               const isWrong = submitted && isSelected && oi !== q.correct
               return (
                 <button key={oi} onClick={() => !submitted && setAnswers(p => ({ ...p, [qi]: oi }))}
-                  style={{ background: isCorrect ? '#E1F5EE' : isWrong ? '#FDECEA' : isSelected ? QUIZ_COLORS[oi] : 'var(--white)', color: isSelected && !submitted ? '#fff' : 'var(--near-black)', border: `0.5px solid ${isCorrect ? '#2BA888' : isWrong ? '#E05C4B' : isSelected ? QUIZ_COLORS[oi] : 'var(--border)'}`, borderRadius: 10, padding: '14px 12px', fontSize: 14, fontWeight: 500, textAlign: 'left', cursor: submitted ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', minHeight: 52 }}>
+                  style={{ background: isCorrect ? '#DDFAF0' : isWrong ? '#FDECEA' : isSelected ? QUIZ_COLORS[oi] : 'var(--white)', color: isSelected && !submitted ? '#fff' : 'var(--near-black)', border: `0.5px solid ${isCorrect ? '#1A8966' : isWrong ? '#C23B2A' : isSelected ? QUIZ_COLORS[oi] : 'var(--border)'}`, borderRadius: 10, padding: '14px 12px', fontSize: 14, fontWeight: 500, textAlign: 'left', cursor: submitted ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'inherit', minHeight: 52 }}>
                   <span style={{ width: 26, height: 26, borderRadius: 6, background: QUIZ_COLORS[oi], color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{QUIZ_LABELS[oi]}</span>
                   {opt || <span style={{ color: 'var(--mid-grey)' }}>Option {QUIZ_LABELS[oi]}</span>}
                 </button>
@@ -85,12 +85,12 @@ function QuizModule({ content }: { content: Record<string, unknown> }) {
         </div>
       ))}
       {!submitted && Object.keys(answers).length === questions.length && (
-        <button onClick={submit} style={{ background: '#2BA888', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 8, fontFamily: 'inherit' }}>
+        <button onClick={submit} style={{ background: '#1A8966', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 8, fontFamily: 'inherit' }}>
           Submit answers
         </button>
       )}
       {submitted && (
-        <div style={{ background: score >= 70 ? '#E1F5EE' : '#FEF3E2', borderRadius: 8, padding: '14px 16px', fontSize: 14, color: score >= 70 ? '#0A4A38' : '#633806', marginTop: 8 }}>
+        <div style={{ background: score >= 70 ? '#DDFAF0' : '#FEF0DC', borderRadius: 8, padding: '14px 16px', fontSize: 14, color: score >= 70 ? '#1A8966' : '#9A5800', marginTop: 8 }}>
           Score: {score}%. {score >= 70 ? 'Well done.' : 'Review the highlighted answers.'}
         </div>
       )}
@@ -107,15 +107,15 @@ function FlashcardsModule({ content }: { content: Record<string, unknown> }) {
 
   return (
     <div>
-      <div onClick={() => setFlipped(p => !p)} style={{ background: flipped ? '#36318F' : '#2BA888', color: '#fff', borderRadius: 12, padding: '48px 24px', textAlign: 'center', cursor: 'pointer', minHeight: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', marginBottom: 16, userSelect: 'none' }}>
+      <div onClick={() => setFlipped(p => !p)} style={{ background: flipped ? '#2E2886' : '#1A8966', color: '#fff', borderRadius: 12, padding: '48px 24px', textAlign: 'center', cursor: 'pointer', minHeight: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', marginBottom: 16, userSelect: 'none' }}>
         <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', marginBottom: 10, opacity: 0.75 }}>{flipped ? 'BACK' : 'FRONT'}</div>
         <div style={{ fontSize: 20, fontWeight: 600 }}>{flipped ? cards[index].back : cards[index].front}</div>
         <div style={{ fontSize: 12, opacity: 0.6, marginTop: 14 }}>Tap to flip</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <button onClick={() => { setIndex(p => Math.max(0, p - 1)); setFlipped(false) }} disabled={index === 0} style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', opacity: index === 0 ? 0.4 : 1 }}>Previous</button>
+        <button onClick={() => { setIndex(p => Math.max(0, p - 1)); setFlipped(false) }} disabled={index === 0} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', opacity: index === 0 ? 0.4 : 1 }}>Previous</button>
         <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>{index + 1} / {cards.length}</span>
-        <button onClick={() => { setIndex(p => Math.min(cards.length - 1, p + 1)); setFlipped(false) }} disabled={index === cards.length - 1} style={{ background: '#2BA888', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 14, color: '#fff', fontFamily: 'inherit', opacity: index === cards.length - 1 ? 0.4 : 1 }}>Next</button>
+        <button onClick={() => { setIndex(p => Math.min(cards.length - 1, p + 1)); setFlipped(false) }} disabled={index === cards.length - 1} style={{ background: '#1A8966', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 14, color: '#fff', fontFamily: 'inherit', opacity: index === cards.length - 1 ? 0.4 : 1 }}>Next</button>
       </div>
     </div>
   )
@@ -128,8 +128,8 @@ function AssignmentModule({ content }: { content: Record<string, unknown> }) {
   return (
     <div>
       {instructions && <div style={{ fontSize: 14, color: 'var(--near-black)', marginBottom: 14, lineHeight: 1.65 }}>{instructions}</div>}
-      <textarea value={text} onChange={e => setText(e.target.value)} rows={6} placeholder="Write your response here..." style={{ width: '100%', background: 'var(--page-bg)', border: '0.5px solid var(--border)', borderRadius: 8, padding: '12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }} />
-      <div style={{ background: '#FEF3E2', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#633806' }}>
+      <textarea value={text} onChange={e => setText(e.target.value)} rows={6} placeholder="Write your response here..." style={{ width: '100%', background: 'var(--page-bg)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }} />
+      <div style={{ background: '#FEF0DC', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#9A5800' }}>
         Preview mode: submissions are not saved.
       </div>
     </div>
@@ -167,9 +167,9 @@ export default function CoursePreviewPage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
       {/* Preview banner */}
-      <div style={{ background: '#0A0E1A', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+      <div style={{ background: '#0C1021', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: '#EF9F27', background: '#EF9F2720', padding: '3px 10px', borderRadius: 4, textTransform: 'uppercase' }}>Preview mode</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: '#D97010', background: '#D9701020', padding: '3px 10px', borderRadius: 4, textTransform: 'uppercase' }}>Preview mode</span>
           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>This is what your students will see. Progress is not saved.</span>
         </div>
         <button onClick={() => window.close()} style={{ background: 'none', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '6px 14px', fontSize: 13, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -195,7 +195,7 @@ export default function CoursePreviewPage() {
 
         {/* Active module */}
         {active && (
-          <div style={{ background: 'var(--white)', margin: '12px 16px', borderRadius: 10, padding: '18px', border: '0.5px solid var(--border)' }}>
+          <div style={{ background: 'var(--white)', margin: '12px 16px', borderRadius: 10, padding: '18px', boxShadow: 'var(--shadow-soft)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 2, textTransform: 'capitalize' }}>{active.type}</div>
@@ -211,12 +211,12 @@ export default function CoursePreviewPage() {
             {active.type === 'assignment' && <AssignmentModule content={active.content} />}
 
             {active.type !== 'quiz' && active.type !== 'assignment' && !completed.has(active.id) && (
-              <button onClick={() => markComplete(active.id)} style={{ background: '#2BA888', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 20, width: '100%', fontFamily: 'inherit' }}>
+              <button onClick={() => markComplete(active.id)} style={{ background: '#1A8966', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 20, width: '100%', fontFamily: 'inherit' }}>
                 Mark complete
               </button>
             )}
             {completed.has(active.id) && (
-              <div style={{ marginTop: 16, background: '#E1F5EE', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#0A4A38', textAlign: 'center' }}>
+              <div style={{ marginTop: 16, background: '#DDFAF0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A8966', textAlign: 'center' }}>
                 Module complete
               </div>
             )}
@@ -239,15 +239,15 @@ export default function CoursePreviewPage() {
               const isActive = mod.id === activeModule
               return (
                 <button key={mod.id} onClick={() => setActiveModule(isActive ? null : mod.id)}
-                  style={{ background: isActive ? '#E1F5EE' : 'var(--white)', border: `0.5px solid ${isActive ? '#2BA888' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: isComplete ? '#2BA888' : 'var(--page-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isComplete ? 16 : 18, flexShrink: 0, color: isComplete ? '#fff' : 'var(--near-black)' }}>
+                  style={{ background: isActive ? '#DDFAF0' : 'var(--white)', border: `0.5px solid ${isActive ? '#1A8966' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: isComplete ? '#1A8966' : 'var(--page-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isComplete ? 16 : 18, flexShrink: 0, color: isComplete ? '#fff' : 'var(--near-black)' }}>
                     {isComplete ? '✓' : MODULE_ICONS[mod.type]}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)' }}>{idx + 1}. {mod.title || 'Untitled module'}</div>
                     <div style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2, textTransform: 'capitalize' }}>{mod.type} · {mod.duration_minutes} min</div>
                   </div>
-                  {isComplete && <span style={{ fontSize: 11, fontWeight: 500, color: '#0A4A38', background: '#E1F5EE', padding: '2px 8px', borderRadius: 4 }}>Done</span>}
+                  {isComplete && <span style={{ fontSize: 11, fontWeight: 500, color: '#1A8966', background: '#DDFAF0', padding: '2px 8px', borderRadius: 4 }}>Done</span>}
                 </button>
               )
             })}

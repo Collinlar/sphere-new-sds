@@ -1,39 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --amber: #EF9F27;
-  --amber-light: #FEF3DC;
+  /* ── Redesign tokens (Sphere SDS Redesign — Standalone.html) ── */
+  --amber: #D97010;
+  --amber-light: #FEF0DC;
   --amber-dark: #7A4A00;
   --amber-200: #F5D084;
-  --navy: #0A0E1A;
+  --navy: #0C1021;
   --navy-mid: #141928;
   --navy-surface: #1C2235;
-  --near-black: #1A1A1A;
-  --mid-grey: #5A5A5A;
-  --light-grey: #EAE6DC;
-  --border: #E2DDD3;
+  --near-black: #18171A;
+  --mid-grey: #6B6870;
+  --text-tertiary: #A09DA8;
+  --light-grey: #EDECE9;
+  --border: #EDECE9;
   --border2: #D0CBBC;
-  --bg2: #EAE6DC;
+  --bg2: #EDECE9;
   --white: #FFFFFF;
-  --page-bg: #EFE9DD;
-  --green: #0F6E56;
-  --red: #C03A2A;
-  --blue: #185FA5;
-  --violet: #36318F;
+  --page-bg: #F5F4F1;
+  --green: #1A8966;
+  --red: #C23B2A;
+  --blue: #1052A3;
+  --blue-light: #E3EDFB;
+  --violet: #2E2886;
   --violet-light: #EEEDF8;
-  --teal: #2BA888;
-  --teal-light: #E1F5EE;
-  --coral: #E05C4B;
+  --teal: #1A8966;
+  --teal-light: #DDFAF0;
+  --coral: #C23B2A;
   --coral-light: #FDECEA;
-  --mode-engage: #EF9F27;
-  --mode-assess: #E05C4B;
-  --mode-learn: #2BA888;
-  --mode-train: #185FA5;
-  --mode-platform: #36318F;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Georgia", "Times New Roman", serif;
+  --mode-engage: #D97010;
+  --mode-assess: #C23B2A;
+  --mode-learn: #1A8966;
+  --mode-train: #1052A3;
+  --mode-platform: #2E2886;
+  --shadow-card: 0 4px 28px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06);
+  --shadow-soft: 0 1px 3px rgba(0,0,0,.05), 0 0 0 .5px rgba(0,0,0,.07);
+  --font: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --sidebar-w: 178px;
 }
 
@@ -60,10 +67,10 @@ html, body {
   padding: 20px;
 }
 
-.tile-A { background: #36318F; color: #fff; }
-.tile-B { background: #2BA888; color: #fff; }
-.tile-C { background: #E05C4B; color: #fff; }
-.tile-D { background: #EF9F27; color: #fff; }
+.tile-A { background: var(--violet); color: #fff; }
+.tile-B { background: var(--teal); color: #fff; }
+.tile-C { background: var(--coral); color: #fff; }
+.tile-D { background: var(--amber); color: #fff; }
 
 .game-bg { background: var(--navy); color: var(--white); min-height: 100vh; }
 

@@ -13,7 +13,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div style={{
       background: 'var(--white)',
-      border: '0.5px solid var(--border)',
+      boxShadow: 'var(--shadow-soft)',
       borderRadius: 10,
       padding: '20px 24px',
       flex: 1,
@@ -65,7 +65,7 @@ export default function LearnPage() {
         title="Courses"
         right={
           <Link href="/learn/builder">
-            <Button accent="#2BA888" size="sm">+ Create course</Button>
+            <Button accent="#1A8966" size="sm">+ Create course</Button>
           </Link>
         }
       />
@@ -87,7 +87,7 @@ export default function LearnPage() {
             {courses.length === 0 ? (
               <div style={{
                 background: 'var(--white)',
-                border: '0.5px solid var(--border)',
+                boxShadow: 'var(--shadow-soft)',
                 borderRadius: 10,
                 padding: 48,
                 textAlign: 'center',
@@ -100,7 +100,7 @@ export default function LearnPage() {
                   Build your first course and share it with your students.
                 </div>
                 <Link href="/learn/builder">
-                  <Button accent="#2BA888">Build your first course</Button>
+                  <Button accent="#1A8966">Build your first course</Button>
                 </Link>
               </div>
             ) : (
@@ -126,7 +126,7 @@ function CourseCard({ course, enrolled, completion }: { course: Course; enrolled
   return (
     <div style={{
       background: 'var(--white)',
-      border: '0.5px solid var(--border)',
+      boxShadow: 'var(--shadow-soft)',
       borderRadius: 10,
       overflow: 'hidden',
     }}>
@@ -147,8 +147,8 @@ function CourseCard({ course, enrolled, completion }: { course: Course; enrolled
           <span style={{
             fontSize: 11,
             fontWeight: 500,
-            color: course.is_published ? '#0A4A38' : '#5A5A5A',
-            background: course.is_published ? '#E1F5EE' : '#F3F4F6',
+            color: course.is_published ? '#1A8966' : '#6B6870',
+            background: course.is_published ? '#DDFAF0' : '#EDECE9',
             padding: '2px 8px',
             borderRadius: 4,
           }}>
@@ -196,7 +196,7 @@ function CourseCard({ course, enrolled, completion }: { course: Course; enrolled
               <span>{completion}%</span>
             </div>
             <div style={{ height: 4, background: 'var(--bg2)', borderRadius: 2 }}>
-              <div style={{ width: `${completion}%`, height: '100%', background: '#2BA888', borderRadius: 2 }} />
+              <div style={{ width: `${completion}%`, height: '100%', background: '#1A8966', borderRadius: 2 }} />
             </div>
           </div>
         )}
@@ -206,7 +206,7 @@ function CourseCard({ course, enrolled, completion }: { course: Course; enrolled
             <Button variant="secondary" size="sm" full>Edit course</Button>
           </Link>
           <Link href={`/learn/class/${course.id}`} style={{ flex: 1 }}>
-            <Button accent="#2BA888" size="sm" full>Manage class</Button>
+            <Button accent="#1A8966" size="sm" full>Manage class</Button>
           </Link>
         </div>
       </div>

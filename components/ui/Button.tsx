@@ -20,9 +20,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variants: Record<string, string> = {
       primary: '',
-      secondary: 'bg-white text-[#1A1A1A] border border-[#E2DDD3] hover:bg-[#EFE9DD]',
-      ghost: 'bg-transparent text-[#5A5A5A] hover:bg-[#EFE9DD]',
-      danger: 'bg-[#C03A2A] text-white hover:opacity-90',
+      secondary: 'bg-white text-[#18171A] border border-[#EDECE9] hover:bg-[#F5F4F1]',
+      ghost: 'bg-transparent text-[#6B6870] hover:bg-[#F5F4F1]',
+      danger: 'bg-[#C23B2A] text-white hover:opacity-90',
     }
 
     const primaryStyle =

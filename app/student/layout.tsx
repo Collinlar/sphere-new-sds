@@ -1,3 +1,5 @@
+import StudentLayoutShell from '@/components/brand/StudentLayoutShell'
+
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return <StudentLayoutShell>{children}</StudentLayoutShell>
 }

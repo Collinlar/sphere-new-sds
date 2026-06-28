@@ -10,7 +10,7 @@ import { getCurrentUser } from '@/lib/auth'
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
 const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'JHS 1', 'JHS 2', 'JHS 3', 'SHS 1', 'SHS 2', 'SHS 3']
 const TIME_OPTIONS = [10, 20, 30, 60]
-const ANSWER_COLORS: Record<string, string> = { A: '#36318F', B: '#2BA888', C: '#E05C4B', D: '#EF9F27' }
+const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 
 const QUESTION_TYPES: { key: QuestionType; label: string; desc: string }[] = [
   { key: 'mcq', label: 'Multiple choice', desc: '4 options, one correct' },
@@ -172,10 +172,10 @@ function QuizBuilderInner() {
         title={editId ? 'Edit quiz' : 'New quiz'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => save(false)} disabled={saving} style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--near-black)' }}>
+            <button onClick={() => save(false)} disabled={saving} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--near-black)' }}>
               {saving ? 'Saving...' : 'Save draft'}
             </button>
-            <button onClick={() => save(true)} disabled={saving} style={{ background: '#EF9F27', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+            <button onClick={() => save(true)} disabled={saving} style={{ background: '#D97010', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
               Publish quiz
             </button>
           </div>
@@ -198,14 +198,14 @@ function QuizBuilderInner() {
           <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: 12 }}>
             <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mid-grey)', marginBottom: 8 }}>Questions</p>
             {questions.map((q, i) => (
-              <div key={q.id} onClick={() => setActiveQuestion(i)} style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', background: activeQuestion === i ? '#FEF3DC' : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 5, background: activeQuestion === i ? '#EF9F27' : 'var(--bg2)', color: activeQuestion === i ? '#fff' : 'var(--mid-grey)', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div key={q.id} onClick={() => setActiveQuestion(i)} style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', background: activeQuestion === i ? '#FEF0DC' : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 5, background: activeQuestion === i ? '#D97010' : 'var(--bg2)', color: activeQuestion === i ? '#fff' : 'var(--mid-grey)', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 12, color: activeQuestion === i ? '#7A4A00' : 'var(--near-black)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 12, color: activeQuestion === i ? '#D97010' : 'var(--near-black)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {q.text || 'New question'}
                 </span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: activeQuestion === i ? '#EF9F27' : 'var(--mid-grey)', flexShrink: 0 }}>{typeIcon(q.type ?? 'mcq')}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: activeQuestion === i ? '#D97010' : 'var(--mid-grey)', flexShrink: 0 }}>{typeIcon(q.type ?? 'mcq')}</span>
               </div>
             ))}
 
@@ -215,7 +215,7 @@ function QuizBuilderInner() {
                 + Add question
               </button>
               {showTypeMenu && (
-                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', zIndex: 50, overflow: 'hidden', marginBottom: 4 }}>
+                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, background: 'var(--white)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', zIndex: 50, overflow: 'hidden', marginBottom: 4 }}>
                   {QUESTION_TYPES.map(t => (
                     <button key={t.key} onClick={() => addQuestion(t.key)} style={{ width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', borderBottom: '0.5px solid var(--border)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{t.label}</span>
@@ -238,11 +238,11 @@ function QuizBuilderInner() {
               </p>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {/* Type selector */}
-                <select value={q.type ?? 'mcq'} onChange={e => changeType(e.target.value as QuestionType)} style={{ height: 32, padding: '0 10px', borderRadius: 7, border: '0.5px solid var(--border)', background: 'var(--white)', fontSize: 12, color: 'var(--near-black)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <select value={q.type ?? 'mcq'} onChange={e => changeType(e.target.value as QuestionType)} style={{ height: 32, padding: '0 10px', borderRadius: 7, boxShadow: 'var(--shadow-soft)', background: 'var(--white)', fontSize: 12, color: 'var(--near-black)', cursor: 'pointer', fontFamily: 'inherit' }}>
                   {QUESTION_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
                 {questions.length > 1 && (
-                  <button onClick={() => removeQuestion(activeQuestion)} style={{ background: 'transparent', border: 'none', color: '#E05C4B', fontSize: 12, cursor: 'pointer' }}>
+                  <button onClick={() => removeQuestion(activeQuestion)} style={{ background: 'transparent', border: 'none', color: '#C23B2A', fontSize: 12, cursor: 'pointer' }}>
                     Remove
                   </button>
                 )}
@@ -255,7 +255,7 @@ function QuizBuilderInner() {
               onChange={e => updateQuestion(activeQuestion, { text: e.target.value })}
               placeholder="What's the question?"
               rows={3}
-              style={{ width: '100%', background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '14px 16px', fontSize: 16, fontWeight: 500, color: 'var(--near-black)', resize: 'vertical', boxSizing: 'border-box', marginBottom: 20, fontFamily: 'inherit' }}
+              style={{ width: '100%', background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '14px 16px', fontSize: 16, fontWeight: 500, color: 'var(--near-black)', resize: 'vertical', boxSizing: 'border-box', marginBottom: 20, fontFamily: 'inherit' }}
             />
 
             {/* MCQ / Poll options */}
@@ -281,7 +281,7 @@ function QuizBuilderInner() {
             {/* True / False */}
             {q.type === 'true_false' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
-                {[{ label: 'A', text: 'True', color: '#2BA888' }, { label: 'B', text: 'False', color: '#E05C4B' }].map(opt => {
+                {[{ label: 'A', text: 'True', color: '#1A8966' }, { label: 'B', text: 'False', color: '#C23B2A' }].map(opt => {
                   const isCorrect = q.correct === opt.label
                   return (
                     <button key={opt.label} onClick={() => updateQuestion(activeQuestion, { correct: opt.label })} style={{ padding: '28px 20px', borderRadius: 12, border: `2px solid ${isCorrect ? opt.color : 'var(--border)'}`, background: isCorrect ? `${opt.color}18` : 'var(--white)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, transition: 'all 0.15s' }}>
@@ -327,7 +327,7 @@ function QuizBuilderInner() {
                   value={q.correct_text ?? ''}
                   onChange={e => updateQuestion(activeQuestion, { correct_text: e.target.value })}
                   placeholder="Type the correct answer here"
-                  style={{ width: '100%', height: 48, padding: '0 14px', borderRadius: 10, border: '0.5px solid #2BA888', background: '#E1F5EE15', fontSize: 15, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  style={{ width: '100%', height: 48, padding: '0 14px', borderRadius: 10, border: '0.5px solid #1A8966', background: '#DDFAF015', fontSize: 15, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
                 />
                 <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 8 }}>Students type their answer. It is marked correct if it matches this text.</p>
               </div>
@@ -339,7 +339,7 @@ function QuizBuilderInner() {
                 <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 6 }}>Time limit</p>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {TIME_OPTIONS.map(t => (
-                    <button key={t} onClick={() => updateQuestion(activeQuestion, { time_seconds: t })} style={{ padding: '6px 12px', borderRadius: 6, border: `0.5px solid ${q.time_seconds === t ? '#EF9F27' : 'var(--border)'}`, background: q.time_seconds === t ? '#FEF3DC' : 'var(--white)', color: q.time_seconds === t ? '#7A4A00' : 'var(--near-black)', fontSize: 13, fontWeight: q.time_seconds === t ? 600 : 400, cursor: 'pointer' }}>
+                    <button key={t} onClick={() => updateQuestion(activeQuestion, { time_seconds: t })} style={{ padding: '6px 12px', borderRadius: 6, border: `0.5px solid ${q.time_seconds === t ? '#D97010' : 'var(--border)'}`, background: q.time_seconds === t ? '#FEF0DC' : 'var(--white)', color: q.time_seconds === t ? '#D97010' : 'var(--near-black)', fontSize: 13, fontWeight: q.time_seconds === t ? 600 : 400, cursor: 'pointer' }}>
                       {t}s
                     </button>
                   ))}

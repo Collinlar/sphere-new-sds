@@ -72,10 +72,10 @@ export default function LoginPage() {
     padding: '0 14px',
     borderRadius: 8,
     border: '1px solid transparent',
-    background: '#EAE6DC',
+    background: 'var(--bg2)',
     fontSize: 16,
     fontFamily: 'inherit',
-    color: '#111827',
+    color: 'var(--near-black)',
     outline: 'none',
     boxSizing: 'border-box',
   }
@@ -83,56 +83,72 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#EFE9DD',
+      background: '#D5D4D1',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '24px',
+      fontFamily: 'var(--font)',
     }}>
-      <div style={{ width: '100%', maxWidth: 400 }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 380,
+        background: 'var(--page-bg)',
+        borderRadius: 16,
+        boxShadow: 'var(--shadow-card)',
+        padding: '48px 32px 44px',
+      }}>
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 8 }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="11" stroke="#EF9F27" strokeWidth="1.5" />
-              <ellipse cx="12" cy="12" rx="5" ry="11" stroke="#EF9F27" strokeWidth="1.2" />
-              <line x1="1" y1="12" x2="23" y2="12" stroke="#EF9F27" strokeWidth="1.2" />
-              <line x1="3.5" y1="6" x2="20.5" y2="6" stroke="#EF9F27" strokeWidth="1" />
-              <line x1="3.5" y1="18" x2="20.5" y2="18" stroke="#EF9F27" strokeWidth="1" />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 14 }}>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="11" stroke="var(--amber)" strokeWidth="1.5" />
+              <ellipse cx="12" cy="12" rx="5" ry="11" stroke="var(--amber)" strokeWidth="1.2" />
+              <line x1="1" y1="12" x2="23" y2="12" stroke="var(--amber)" strokeWidth="1.2" />
+              <line x1="3.5" y1="6" x2="20.5" y2="6" stroke="var(--amber)" strokeWidth="1" />
+              <line x1="3.5" y1="18" x2="20.5" y2="18" stroke="var(--amber)" strokeWidth="1" />
             </svg>
-            <span style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.03em', color: '#111827' }}>
-              Sphere<span style={{ color: '#EF9F27' }}>SDS</span>
+            <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--near-black)' }}>
+              Sphere<span style={{ color: 'var(--amber)' }}>SDS</span>
             </span>
           </div>
-          <p style={{ fontSize: 14, color: '#4B5563' }}>Sign in to your institution</p>
+          <p style={{ fontSize: 26, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+            Welcome back
+          </p>
+          <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginTop: 6 }}>Sign in to your institution</p>
         </div>
 
         <div style={{
-          background: '#fff',
-          border: '0.5px solid #E2DDD3',
+          background: 'var(--white)',
           borderRadius: 12,
-          padding: 28,
+          padding: '28px 24px',
+          boxShadow: 'var(--shadow-soft)',
         }}>
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: 18 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#4B5563', marginBottom: 6 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 7 }}>
                 Email address
               </label>
               <input
                 type="email"
-                placeholder="What's your work email?"
+                placeholder="name@institution.edu"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
                 style={inputStyle}
-                onFocus={e => { e.currentTarget.style.borderColor = '#EF9F27' }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'var(--amber)' }}
                 onBlur={e => { e.currentTarget.style.borderColor = 'transparent' }}
               />
             </div>
 
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#4B5563', marginBottom: 6 }}>
-                Password
-              </label>
+            <div style={{ marginBottom: 26 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)' }}>
+                  Password
+                </label>
+                <a href="/forgot-password" style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)', textDecoration: 'none' }}>
+                  Forgot password?
+                </a>
+              </div>
               <input
                 type="password"
                 placeholder="Your password"
@@ -140,20 +156,19 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 style={inputStyle}
-                onFocus={e => { e.currentTarget.style.borderColor = '#EF9F27' }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'var(--amber)' }}
                 onBlur={e => { e.currentTarget.style.borderColor = 'transparent' }}
               />
             </div>
 
             {error && (
               <div style={{
-                background: '#FDECEA',
-                border: '1px solid #E05C4B',
+                background: 'var(--coral-light)',
                 borderRadius: 8,
                 padding: '10px 14px',
                 marginBottom: 16,
                 fontSize: 13,
-                color: '#7A1A10',
+                color: 'var(--coral)',
               }}>
                 {error}
               </div>
@@ -165,34 +180,36 @@ export default function LoginPage() {
               style={{
                 width: '100%',
                 height: 48,
-                background: '#EF9F27',
+                background: 'var(--amber)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: 8,
                 fontSize: 15,
-                fontWeight: 500,
+                fontWeight: 600,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.7 : 1,
                 fontFamily: 'inherit',
               }}
             >
-              {loading ? 'Signing you in...' : 'Sign in to your institution'}
+              {loading ? 'Signing you in...' : 'Sign in'}
             </button>
           </form>
         </div>
 
-        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 14, color: '#4B5563' }}>
-          Joining a quiz or exam?{' '}
-          <a href="/join" style={{ color: '#EF9F27', fontWeight: 500, textDecoration: 'none' }}>
-            Enter your code here
-          </a>
-        </p>
-        <p style={{ textAlign: 'center', marginTop: 10, fontSize: 14, color: '#4B5563' }}>
-          New institution?{' '}
-          <a href="/onboarding" style={{ color: '#EF9F27', fontWeight: 500, textDecoration: 'none' }}>
-            Set up your account
-          </a>
-        </p>
+        <div style={{ textAlign: 'center', marginTop: 22, display: 'flex', flexDirection: 'column', gap: 11 }}>
+          <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>
+            Joining a quiz or exam?{' '}
+            <a href="/join" style={{ color: 'var(--amber)', fontWeight: 600, textDecoration: 'none' }}>
+              Enter your code
+            </a>
+          </p>
+          <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>
+            New institution?{' '}
+            <a href="/onboarding" style={{ color: 'var(--amber)', fontWeight: 600, textDecoration: 'none' }}>
+              Set up your account
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )

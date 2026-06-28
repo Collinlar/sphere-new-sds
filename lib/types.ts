@@ -19,6 +19,7 @@ export interface User {
   email?: string
   role: UserRole
   avatar_initials: string
+  department?: string
   created_at: string
 }
 
@@ -73,6 +74,18 @@ export interface SessionParticipant {
   score: number
   streak: number
   joined_at: string
+  team_id?: string | null
+  team_vote?: string | null
+}
+
+export interface EngageTeam {
+  id: string
+  session_id: string
+  name: string
+  letter: string
+  color: string
+  score: number
+  created_at?: string
 }
 
 // Assess
@@ -84,6 +97,7 @@ export interface ExamQuestion {
   correct?: string
   marks: number
   rubric?: string
+  explanation?: string
 }
 
 export type ExamAudience = 'open' | 'roster_login' | 'roster_ticket'
@@ -122,6 +136,7 @@ export interface ExamSubmission {
   exam_session_id: string
   student_id?: string
   student_name: string
+  ticket_id?: string
   answers: Record<string, string>
   score?: number
   percentage?: number
@@ -219,6 +234,8 @@ export interface LearningPath {
   steps: PathStep[]
   is_mandatory: boolean
   due_date?: string
+  assigned_departments?: string[]
+  assigned_count?: number
   created_at: string
 }
 

@@ -139,14 +139,14 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
 
         {/* Self-join link */}
         {roster.invite_code && (
-          <div style={{ background: '#EEEDF8', border: '0.5px solid #36318F40', borderRadius: 10, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ background: '#EEEDF8', border: '0.5px solid #2E288640', borderRadius: 10, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#1C196B', marginBottom: 2 }}>Self-join link</p>
-              <p style={{ fontSize: 13, color: '#1C196B', fontFamily: 'monospace' }}>{joinRosterUrl}</p>
+              <p style={{ fontSize: 12, fontWeight: 600, color: '#2E2886', marginBottom: 2 }}>Self-join link</p>
+              <p style={{ fontSize: 13, color: '#2E2886', fontFamily: 'monospace' }}>{joinRosterUrl}</p>
             </div>
             <button
               onClick={() => { navigator.clipboard.writeText(joinRosterUrl); }}
-              style={{ background: '#36318F', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+              style={{ background: '#2E2886', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
             >
               Copy link
             </button>
@@ -155,17 +155,17 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
 
         {/* Pending approvals */}
         {pending.length > 0 && (
-          <div style={{ background: '#FEF3DC', border: '0.5px solid #EF9F27', borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#7A4A00', marginBottom: 10 }}>
+          <div style={{ background: '#FEF0DC', border: '0.5px solid #D97010', borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#D97010', marginBottom: 10 }}>
               {pending.length} student{pending.length > 1 ? 's' : ''} waiting to join
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {pending.map(m => (
                 <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, color: '#1A1A1A' }}>{m.users?.name} · {m.users?.email}</span>
+                  <span style={{ fontSize: 13, color: '#18171A' }}>{m.users?.name} · {m.users?.email}</span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => approveMember(m.id)} style={{ background: '#085041', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Approve</button>
-                    <button onClick={() => removeMember(m.id)} style={{ background: 'transparent', border: '0.5px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, color: 'var(--mid-grey)', cursor: 'pointer' }}>Decline</button>
+                    <button onClick={() => approveMember(m.id)} style={{ background: '#1A8966', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Approve</button>
+                    <button onClick={() => removeMember(m.id)} style={{ background: 'transparent', boxShadow: 'var(--shadow-soft)', borderRadius: 6, padding: '4px 12px', fontSize: 12, color: 'var(--mid-grey)', cursor: 'pointer' }}>Decline</button>
                   </div>
                 </div>
               ))}
@@ -174,7 +174,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
         )}
 
         {/* Add students */}
-        <div style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 10, padding: '18px 20px', marginBottom: 20 }}>
+        <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '18px 20px', marginBottom: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 12 }}>Add a student</p>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <input
@@ -193,7 +193,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
             <button
               onClick={handleManualAdd}
               disabled={adding || !name.trim() || !email.trim()}
-              style={{ background: '#36318F', color: '#fff', border: 'none', borderRadius: 8, padding: '0 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: adding || !name.trim() || !email.trim() ? 0.6 : 1, whiteSpace: 'nowrap' }}
+              style={{ background: '#2E2886', color: '#fff', border: 'none', borderRadius: 8, padding: '0 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: adding || !name.trim() || !email.trim() ? 0.6 : 1, whiteSpace: 'nowrap' }}
             >
               {adding ? 'Adding...' : 'Add'}
             </button>
@@ -201,7 +201,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
 
           <button
             onClick={() => setBulkOpen(v => !v)}
-            style={{ background: 'transparent', border: 'none', fontSize: 13, color: '#36318F', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+            style={{ background: 'transparent', border: 'none', fontSize: 13, color: '#2E2886', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
           >
             {bulkOpen ? 'Hide bulk import' : 'Bulk import multiple students'}
           </button>
@@ -221,7 +221,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
               <button
                 onClick={handleBulkImport}
                 disabled={bulkBusy || !bulkText.trim()}
-                style={{ background: '#36318F', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: bulkBusy || !bulkText.trim() ? 0.6 : 1 }}
+                style={{ background: '#2E2886', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: bulkBusy || !bulkText.trim() ? 0.6 : 1 }}
               >
                 {bulkBusy ? 'Importing...' : 'Import students'}
               </button>
@@ -235,7 +235,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
           <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
             <button
               onClick={() => setGroupFilter(null)}
-              style={{ background: groupFilter === null ? '#36318F' : '#fff', color: groupFilter === null ? '#fff' : 'var(--mid-grey)', border: '0.5px solid var(--border)', borderRadius: 14, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              style={{ background: groupFilter === null ? '#2E2886' : '#fff', color: groupFilter === null ? '#fff' : 'var(--mid-grey)', boxShadow: 'var(--shadow-soft)', borderRadius: 14, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
             >
               All ({members.filter(m => m.status === 'active').length})
             </button>
@@ -243,7 +243,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
               <button
                 key={g}
                 onClick={() => setGroupFilter(g)}
-                style={{ background: groupFilter === g ? '#36318F' : '#fff', color: groupFilter === g ? '#fff' : 'var(--mid-grey)', border: '0.5px solid var(--border)', borderRadius: 14, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                style={{ background: groupFilter === g ? '#2E2886' : '#fff', color: groupFilter === g ? '#fff' : 'var(--mid-grey)', boxShadow: 'var(--shadow-soft)', borderRadius: 14, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
               >
                 {g}
               </button>
@@ -252,7 +252,7 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
         )}
 
         {/* Member list */}
-        <div style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'hidden' }}>
           {active.length === 0 ? (
             <p style={{ padding: '32px 20px', textAlign: 'center', fontSize: 14, color: 'var(--mid-grey)' }}>No students here yet.</p>
           ) : (
@@ -264,11 +264,19 @@ export default function RosterDetailPage({ params: paramsPromise }: { params: Pr
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(m.groups ?? []).map(g => (
-                    <span key={g} style={{ fontSize: 11, fontWeight: 600, color: '#1C196B', background: '#EEEDF8', padding: '2px 8px', borderRadius: 4 }}>{g}</span>
+                    <span key={g} style={{ fontSize: 11, fontWeight: 600, color: '#2E2886', background: '#EEEDF8', padding: '2px 8px', borderRadius: 4 }}>{g}</span>
                   ))}
+                  {m.user_id && (
+                    <Link
+                      href={`/platform/analytics/students/${m.user_id}`}
+                      style={{ fontSize: 12, fontWeight: 600, color: '#2E2886', textDecoration: 'none' }}
+                    >
+                      Analytics
+                    </Link>
+                  )}
                   <button
                     onClick={() => removeMember(m.id)}
-                    style={{ background: 'transparent', border: 'none', fontSize: 12, color: '#E05C4B', cursor: 'pointer', fontFamily: 'inherit' }}
+                    style={{ background: 'transparent', border: 'none', fontSize: 12, color: '#C23B2A', cursor: 'pointer', fontFamily: 'inherit' }}
                   >
                     Remove
                   </button>

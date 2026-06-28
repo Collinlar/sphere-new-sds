@@ -9,7 +9,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { Suspense } from 'react'
 import type { Roster } from '@/lib/types'
 
-const THUMBNAIL_COLORS = ['#2BA888', '#36318F', '#EF9F27', '#E05C4B', '#185FA5', '#1A1A1A']
+const THUMBNAIL_COLORS = ['#1A8966', '#2E2886', '#D97010', '#C23B2A', '#1052A3', '#18171A']
 const MODULE_TYPES = [
   { type: 'video', label: 'Video', icon: '▶' },
   { type: 'reading', label: 'Reading', icon: '📄' },
@@ -79,7 +79,7 @@ function AssignmentContent({ content, onChange }: { content: Module['content']; 
 
 function QuizContent({ content, onChange }: { content: Module['content']; onChange: (c: Module['content']) => void }) {
   const questions = content.questions ?? []
-  const COLORS = ['#36318F', '#2BA888', '#E05C4B', '#EF9F27']
+  const COLORS = ['#2E2886', '#1A8966', '#C23B2A', '#D97010']
 
   function updateQuestion(qi: number, updates: Partial<QuizItem>) {
     const next = questions.map((q, i) => i === qi ? { ...q, ...updates } : q)
@@ -95,10 +95,10 @@ function QuizContent({ content, onChange }: { content: Module['content']; onChan
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {questions.map((q, qi) => (
-        <div key={qi} style={{ background: 'var(--page-bg)', border: '0.5px solid var(--border)', borderRadius: 8, padding: 14 }}>
+        <div key={qi} style={{ background: 'var(--page-bg)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: 14 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <input value={q.question} onChange={e => updateQuestion(qi, { question: e.target.value })} placeholder={`Question ${qi + 1}`} style={{ ...inputStyle, flex: 1, fontWeight: 500 }} />
-            <button onClick={() => removeQuestion(qi)} style={{ background: 'none', border: 'none', color: '#E05C4B', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+            <button onClick={() => removeQuestion(qi)} style={{ background: 'none', border: 'none', color: '#C23B2A', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {['A', 'B', 'C', 'D'].map((lbl, oi) => (
@@ -132,7 +132,7 @@ function FlashcardsContent({ content, onChange }: { content: Module['content']; 
           <input value={card.front} onChange={e => update(i, 'front', e.target.value)} placeholder="Front (question / term)" style={{ ...inputStyle, flex: 1 }} />
           <span style={{ color: 'var(--mid-grey)', fontSize: 14, flexShrink: 0 }}>→</span>
           <input value={card.back} onChange={e => update(i, 'back', e.target.value)} placeholder="Back (answer / definition)" style={{ ...inputStyle, flex: 1 }} />
-          <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: '#E05C4B', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
+          <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: '#C23B2A', cursor: 'pointer', fontSize: 18, padding: '0 4px' }}>×</button>
         </div>
       ))}
       <button onClick={add} style={{ padding: '8px 0', background: 'transparent', border: '0.5px dashed var(--border)', borderRadius: 7, fontSize: 13, color: 'var(--mid-grey)', cursor: 'pointer' }}>+ Add card</button>
@@ -141,7 +141,7 @@ function FlashcardsContent({ content, onChange }: { content: Module['content']; 
 }
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', background: 'var(--white)', border: '0.5px solid var(--border)',
+  width: '100%', background: 'var(--white)', boxShadow: 'var(--shadow-soft)',
   borderRadius: 8, padding: '9px 12px', fontSize: 14, color: 'var(--near-black)',
   outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
 }
@@ -157,7 +157,7 @@ function CourseBuilderInner() {
   const [subject, setSubject] = useState('')
   const [grade, setGrade] = useState('')
   const [description, setDescription] = useState('')
-  const [thumbnailColor, setThumbnailColor] = useState('#2BA888')
+  const [thumbnailColor, setThumbnailColor] = useState('#1A8966')
   const [modules, setModules] = useState<Module[]>([])
   const [showAddModule, setShowAddModule] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState('')
@@ -204,7 +204,7 @@ function CourseBuilderInner() {
         setSubject(data.subject ?? '')
         setGrade(data.grade_level ?? '')
         setDescription(data.description ?? '')
-        setThumbnailColor(data.thumbnail_color ?? '#2BA888')
+        setThumbnailColor(data.thumbnail_color ?? '#1A8966')
         setRosterId(data.roster_id ?? '')
         setAudienceGroups(data.audience_groups ?? [])
         setModules((data.modules ?? []).map((m: Module & { content: { required?: boolean } }) => ({
@@ -304,18 +304,18 @@ function CourseBuilderInner() {
             <Button variant="secondary" size="sm" onClick={() => save(false)} disabled={saving}>
               {saving ? 'Saving...' : 'Save draft'}
             </Button>
-            <Button accent="#2BA888" size="sm" onClick={() => save(true)} disabled={saving}>
+            <Button accent="#1A8966" size="sm" onClick={() => save(true)} disabled={saving}>
               {saving ? 'Publishing...' : 'Publish course'}
             </Button>
           </div>
         }
       />
 
-      {error && <div style={{ background: '#FDECEA', color: '#7A1A10', fontSize: 13, padding: '10px 32px' }}>{error}</div>}
+      {error && <div style={{ background: '#FDECEA', color: '#C23B2A', fontSize: 13, padding: '10px 32px' }}>{error}</div>}
 
       <div style={{ display: 'flex', gap: 24, padding: '28px 32px', maxWidth: 1100, alignItems: 'flex-start' }}>
         {/* Left panel — course meta */}
-        <div style={{ width: 300, flexShrink: 0, background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ width: 300, flexShrink: 0, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ background: thumbnailColor, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 44, fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>{title ? title[0].toUpperCase() : '?'}</span>
           </div>
@@ -360,7 +360,7 @@ function CourseBuilderInner() {
               </p>
               {rosters.length === 0 && (
                 <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 4 }}>
-                  No rosters yet. <a href="/students" style={{ color: '#36318F' }}>Create one first.</a>
+                  No rosters yet. <a href="/students" style={{ color: '#2E2886' }}>Create one first.</a>
                 </p>
               )}
               {rosterId && rosterGroups.length > 0 && (
@@ -371,7 +371,7 @@ function CourseBuilderInner() {
                       <button
                         key={g}
                         onClick={() => setAudienceGroups(prev => active ? prev.filter(x => x !== g) : [...prev, g])}
-                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 12, border: '0.5px solid #36318F40', background: active ? '#36318F' : '#fff', color: active ? '#fff' : '#1C196B', cursor: 'pointer' }}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 12, border: '0.5px solid #2E288640', background: active ? '#2E2886' : '#fff', color: active ? '#fff' : '#2E2886', cursor: 'pointer' }}
                       >
                         {g}
                       </button>
@@ -385,12 +385,12 @@ function CourseBuilderInner() {
 
         {/* Right panel — modules */}
         <div style={{ flex: 1 }}>
-          <div style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '20px 24px' }}>
+          <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <span style={{ fontSize: 15, fontWeight: 600 }}>
                 Modules <span style={{ fontWeight: 400, color: 'var(--mid-grey)', fontSize: 13 }}>({modules.length})</span>
               </span>
-              <Button accent="#2BA888" size="sm" onClick={() => setShowAddModule(true)}>+ Add module</Button>
+              <Button accent="#1A8966" size="sm" onClick={() => setShowAddModule(true)}>+ Add module</Button>
             </div>
 
             {modules.length === 0 && !showAddModule && (
@@ -404,7 +404,7 @@ function CourseBuilderInner() {
                 const typeInfo = MODULE_TYPES.find(t => t.type === mod.type)
                 const isExpanded = expandedModule === mod.id
                 return (
-                  <div key={mod.id} style={{ background: 'var(--page-bg)', border: `0.5px solid ${isExpanded ? '#2BA888' : 'var(--border)'}`, borderRadius: 8, overflow: 'hidden', opacity: dragIndex === idx ? 0.5 : 1 }}
+                  <div key={mod.id} style={{ background: 'var(--page-bg)', border: `0.5px solid ${isExpanded ? '#1A8966' : 'var(--border)'}`, borderRadius: 8, overflow: 'hidden', opacity: dragIndex === idx ? 0.5 : 1 }}
                     draggable onDragStart={() => setDragIndex(idx)} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragIndex !== null && dragIndex !== idx) moveModule(dragIndex, idx); setDragIndex(null) }} onDragEnd={() => setDragIndex(null)}>
                     {/* Module header */}
                     <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => setExpandedModule(isExpanded ? null : mod.id)}>
@@ -414,10 +414,10 @@ function CourseBuilderInner() {
                         <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)' }}>{mod.title || 'Untitled module'}</div>
                         <div style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{mod.duration_minutes} min</div>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: '#0A4A38', background: '#E1F5EE', padding: '2px 8px', borderRadius: 4, textTransform: 'capitalize' }}>{mod.type}</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: '#1A8966', background: '#DDFAF0', padding: '2px 8px', borderRadius: 4, textTransform: 'capitalize' }}>{mod.type}</span>
                       {mod.is_mandatory && <span style={{ fontSize: 11, color: 'var(--mid-grey)', background: 'var(--bg2)', padding: '2px 8px', borderRadius: 4 }}>Required</span>}
-                      <span style={{ fontSize: 14, color: isExpanded ? '#2BA888' : 'var(--mid-grey)', marginLeft: 4 }}>{isExpanded ? '▲' : '▼'}</span>
-                      <button onClick={e => { e.stopPropagation(); removeModule(idx) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#E05C4B', fontSize: 18, padding: 4, lineHeight: 1 }}>×</button>
+                      <span style={{ fontSize: 14, color: isExpanded ? '#1A8966' : 'var(--mid-grey)', marginLeft: 4 }}>{isExpanded ? '▲' : '▼'}</span>
+                      <button onClick={e => { e.stopPropagation(); removeModule(idx) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C23B2A', fontSize: 18, padding: 4, lineHeight: 1 }}>×</button>
                     </div>
 
                     {/* Content editor */}
@@ -447,11 +447,11 @@ function CourseBuilderInner() {
 
             {/* Add module form */}
             {showAddModule && (
-              <div style={{ marginTop: 16, background: 'var(--page-bg)', border: '0.5px solid #2BA888', borderRadius: 8, padding: 16 }}>
+              <div style={{ marginTop: 16, background: 'var(--page-bg)', border: '0.5px solid #1A8966', borderRadius: 8, padding: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)', marginBottom: 12 }}>New module</div>
                 <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
                   <input value={newModuleTitle} onChange={e => setNewModuleTitle(e.target.value)} placeholder="Module title" style={{ ...inputStyle, flex: 2, minWidth: 140 }} />
-                  <select value={newModuleType} onChange={e => setNewModuleType(e.target.value as ModuleType)} style={{ flex: 1, minWidth: 120, background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
+                  <select value={newModuleType} onChange={e => setNewModuleType(e.target.value as ModuleType)} style={{ flex: 1, minWidth: 120, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
                     {MODULE_TYPES.map(t => <option key={t.type} value={t.type}>{t.icon} {t.label}</option>)}
                   </select>
                   <input type="number" value={newModuleDuration} onChange={e => setNewModuleDuration(Number(e.target.value))} min={1} placeholder="min" style={{ ...inputStyle, width: 70 }} />
@@ -461,7 +461,7 @@ function CourseBuilderInner() {
                   Required to complete course
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <Button accent="#2BA888" size="sm" onClick={addModule}>Add module</Button>
+                  <Button accent="#1A8966" size="sm" onClick={addModule}>Add module</Button>
                   <Button variant="ghost" size="sm" onClick={() => setShowAddModule(false)}>Cancel</Button>
                 </div>
               </div>

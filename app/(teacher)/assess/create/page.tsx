@@ -158,7 +158,7 @@ export default function ExamCreate() {
         @media (max-width: 768px) {
           .mobile-tabs { display: flex; height: 44px; background: var(--white); border-bottom: 0.5px solid var(--border); }
           .mobile-tab-btn { flex: 1; border: none; background: transparent; color: var(--mid-grey); font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
-          .mobile-tab-btn.active { color: #E05C4B; border-bottom: 2px solid #E05C4B; }
+          .mobile-tab-btn.active { color: #C23B2A; border-bottom: 2px solid #C23B2A; }
           .exam-layout { flex-direction: column; }
           .exam-sidebar { width: 100% !important; border-right: none !important; border-bottom: 0.5px solid var(--border); overflow: visible; }
           .exam-sidebar.tab-hidden { display: none !important; }
@@ -174,7 +174,7 @@ export default function ExamCreate() {
             onClick={handleSave}
             disabled={saving}
             style={{
-              background: '#E05C4B',
+              background: '#C23B2A',
               border: 'none',
               borderRadius: 8,
               padding: '7px 18px',
@@ -191,10 +191,10 @@ export default function ExamCreate() {
 
       {/* Mobile tabs */}
       <div className="mobile-tabs" style={{ display: 'none' }}>
-        <button className={`mobile-tab-btn ${mobileTab === 'details' ? 'active' : ''}`} onClick={() => setMobileTab('details')} style={{ borderBottom: mobileTab === 'details' ? '2px solid #E05C4B' : '2px solid transparent', color: mobileTab === 'details' ? '#E05C4B' : 'var(--mid-grey)' }}>
+        <button className={`mobile-tab-btn ${mobileTab === 'details' ? 'active' : ''}`} onClick={() => setMobileTab('details')} style={{ borderBottom: mobileTab === 'details' ? '2px solid #C23B2A' : '2px solid transparent', color: mobileTab === 'details' ? '#C23B2A' : 'var(--mid-grey)' }}>
           Details
         </button>
-        <button className={`mobile-tab-btn ${mobileTab === 'questions' ? 'active' : ''}`} onClick={() => setMobileTab('questions')} style={{ borderBottom: mobileTab === 'questions' ? '2px solid #E05C4B' : '2px solid transparent', color: mobileTab === 'questions' ? '#E05C4B' : 'var(--mid-grey)' }}>
+        <button className={`mobile-tab-btn ${mobileTab === 'questions' ? 'active' : ''}`} onClick={() => setMobileTab('questions')} style={{ borderBottom: mobileTab === 'questions' ? '2px solid #C23B2A' : '2px solid transparent', color: mobileTab === 'questions' ? '#C23B2A' : 'var(--mid-grey)' }}>
           Questions
         </button>
       </div>
@@ -276,9 +276,9 @@ export default function ExamCreate() {
                       fontSize: 11,
                       fontWeight: 600,
                       borderRadius: 6,
-                      border: `0.5px solid ${integrityAction === opt.value ? '#2BA888' : 'var(--border)'}`,
-                      background: integrityAction === opt.value ? '#E1F5EE' : 'var(--page-bg)',
-                      color: integrityAction === opt.value ? '#085041' : 'var(--mid-grey)',
+                      border: `0.5px solid ${integrityAction === opt.value ? '#1A8966' : 'var(--border)'}`,
+                      background: integrityAction === opt.value ? '#DDFAF0' : 'var(--page-bg)',
+                      color: integrityAction === opt.value ? '#1A8966' : 'var(--mid-grey)',
                       cursor: 'pointer',
                       fontFamily: 'inherit',
                     }}
@@ -298,7 +298,7 @@ export default function ExamCreate() {
                       type="number" min={1} max={20} value={integrityThreshold}
                       onChange={(e) => setIntegrityThreshold(Number(e.target.value))}
                       onClick={(e) => e.stopPropagation()}
-                      style={{ width: 36, padding: '2px 4px', fontSize: 11, border: '0.5px solid var(--border)', borderRadius: 4, textAlign: 'center', fontFamily: 'inherit', background: 'var(--white)' }}
+                      style={{ width: 36, padding: '2px 4px', fontSize: 11, boxShadow: 'var(--shadow-soft)', borderRadius: 4, textAlign: 'center', fontFamily: 'inherit', background: 'var(--white)' }}
                     />
                     violations.
                   </span>
@@ -324,9 +324,9 @@ export default function ExamCreate() {
                       fontSize: 11,
                       fontWeight: 600,
                       borderRadius: 6,
-                      border: `0.5px solid ${audience === opt.value ? '#36318F' : 'var(--border)'}`,
+                      border: `0.5px solid ${audience === opt.value ? '#2E2886' : 'var(--border)'}`,
                       background: audience === opt.value ? '#EEEDF8' : 'var(--page-bg)',
-                      color: audience === opt.value ? '#1C196B' : 'var(--mid-grey)',
+                      color: audience === opt.value ? '#2E2886' : 'var(--mid-grey)',
                       cursor: 'pointer',
                       fontFamily: 'inherit',
                     }}
@@ -350,7 +350,7 @@ export default function ExamCreate() {
                   </select>
                   {rosters.length === 0 && (
                     <p style={{ fontSize: 11, color: 'var(--mid-grey)' }}>
-                      You have no rosters yet. <a href="/students" style={{ color: '#36318F' }}>Create one first.</a>
+                      You have no rosters yet. <a href="/students" style={{ color: '#2E2886' }}>Create one first.</a>
                     </p>
                   )}
                   {rosterGroups.length > 0 && (
@@ -361,7 +361,7 @@ export default function ExamCreate() {
                           <button
                             key={g}
                             onClick={() => setAudienceGroups(prev => active ? prev.filter(x => x !== g) : [...prev, g])}
-                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 12, border: '0.5px solid #36318F40', background: active ? '#36318F' : '#fff', color: active ? '#fff' : '#1C196B', cursor: 'pointer' }}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 12, border: '0.5px solid #2E288640', background: active ? '#2E2886' : '#fff', color: active ? '#fff' : '#2E2886', cursor: 'pointer' }}
                           >
                             {g}
                           </button>
@@ -399,14 +399,14 @@ export default function ExamCreate() {
               >
                 <span style={{
                   width: 22, height: 22, borderRadius: 5,
-                  background: activeQ === i ? '#E05C4B' : 'var(--bg2)',
+                  background: activeQ === i ? '#C23B2A' : 'var(--bg2)',
                   color: activeQ === i ? '#fff' : 'var(--mid-grey)',
                   fontSize: 11, fontWeight: 600,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeQ === i ? '#7A1A10' : 'var(--near-black)' }}>
+                <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeQ === i ? '#C23B2A' : 'var(--near-black)' }}>
                   {item.text || `${QUESTION_TYPES.find(t => t.value === item.type)?.label ?? 'Question'}`}
                 </span>
                 <span style={{ fontSize: 10, color: 'var(--mid-grey)', flexShrink: 0 }}>{item.marks}m</span>
@@ -438,7 +438,6 @@ export default function ExamCreate() {
                 bottom: '100%',
                 left: 12, right: 12,
                 background: 'var(--white)',
-                border: '0.5px solid var(--border)',
                 borderRadius: 8,
                 overflow: 'hidden',
                 boxShadow: '0 -4px 16px rgba(0,0,0,0.1)',
@@ -478,7 +477,7 @@ export default function ExamCreate() {
                 fontWeight: 600,
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
-                color: '#7A1A10',
+                color: '#C23B2A',
                 background: '#FDECEA',
                 padding: '3px 8px',
                 borderRadius: 4,
@@ -496,7 +495,7 @@ export default function ExamCreate() {
               style={{
                 width: '100%',
                 background: 'var(--white)',
-                border: '0.5px solid var(--border)',
+                boxShadow: 'var(--shadow-soft)',
                 borderRadius: 10,
                 padding: '14px 16px',
                 fontSize: 16,
@@ -511,57 +510,70 @@ export default function ExamCreate() {
 
             {/* MCQ options */}
             {(q.type === 'mcq' || q.type === 'true_false') && q.options && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-                {q.options.map((opt, oi) => (
-                  <div key={opt.label} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    background: 'var(--white)',
-                    border: `0.5px solid ${q.correct === opt.label ? '#E05C4B' : 'var(--border)'}`,
-                    borderRadius: 10,
-                    padding: '10px 14px',
-                  }}>
-                    <span style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 6,
-                      background: q.correct === opt.label ? '#E05C4B' : 'var(--bg2)',
-                      color: q.correct === opt.label ? '#fff' : 'var(--mid-grey)',
-                      fontSize: 12,
-                      fontWeight: 700,
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                {q.options.map((opt, oi) => {
+                  const isCorrect = q.correct === opt.label
+                  return (
+                    <div key={opt.label} style={{
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
+                      gap: 12,
+                      background: 'var(--white)',
+                      borderRadius: 10,
+                      padding: '12px 16px',
+                      boxShadow: isCorrect ? '0 0 0 1.5px var(--teal), 0 2px 8px rgba(26,137,102,.1)' : 'var(--shadow-soft)',
                     }}>
-                      {opt.label}
-                    </span>
-                    {q.type === 'true_false' ? (
-                      <span style={{ flex: 1, fontSize: 14, color: 'var(--near-black)' }}>{opt.text}</span>
-                    ) : (
-                      <input
-                        value={opt.text}
-                        onChange={(e) => updateOption(oi, e.target.value)}
-                        placeholder={`Option ${opt.label}`}
-                        style={{ flex: 1, background: 'transparent', border: 'none', fontSize: 14, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit' }}
-                      />
-                    )}
-                    <button
-                      onClick={() => updateQ({ correct: opt.label })}
-                      title="Mark correct"
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        border: `2px solid ${q.correct === opt.label ? '#E05C4B' : 'var(--border)'}`,
-                        background: q.correct === opt.label ? '#E05C4B' : 'transparent',
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                      }}
-                    />
-                  </div>
-                ))}
+                      <button
+                        onClick={() => updateQ({ correct: opt.label })}
+                        title="Mark correct"
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          border: isCorrect ? 'none' : '1.5px solid var(--bg2)',
+                          background: isCorrect ? 'var(--teal)' : 'transparent',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        {isCorrect && (
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                            <path d="M2 5l2 2 4-4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
+                      {q.type === 'true_false' ? (
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{opt.label}. {opt.text}</span>
+                      ) : (
+                        <input
+                          value={opt.text}
+                          onChange={(e) => updateOption(oi, e.target.value)}
+                          placeholder={`${opt.label}. Option ${opt.label}`}
+                          style={{ flex: 1, background: 'transparent', border: 'none', fontSize: 13, fontWeight: 500, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit' }}
+                        />
+                      )}
+                      {isCorrect && (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', flexShrink: 0 }}>Correct</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {(q.type === 'mcq' || q.type === 'true_false') && (
+              <div style={{ background: 'var(--white)', borderRadius: 10, padding: '14px 16px', boxShadow: 'var(--shadow-soft)', marginBottom: 20 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                  Explanation (shown after answer)
+                </p>
+                <textarea
+                  value={q.explanation ?? ''}
+                  onChange={(e) => updateQ({ explanation: e.target.value })}
+                  placeholder="Explain why this is the correct answer..."
+                  rows={2}
+                  style={{ width: '100%', border: 'none', outline: 'none', resize: 'vertical', fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.55, fontFamily: 'inherit', background: 'transparent' }}
+                />
               </div>
             )}
 
@@ -595,7 +607,7 @@ export default function ExamCreate() {
                     setQuestions((prev) => prev.filter((_, i) => i !== activeQ))
                     setActiveQ(Math.max(0, activeQ - 1))
                   }}
-                  style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#E05C4B', fontSize: 12, cursor: 'pointer' }}
+                  style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#C23B2A', fontSize: 12, cursor: 'pointer' }}
                 >
                   Remove question
                 </button>

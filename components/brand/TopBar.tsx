@@ -7,12 +7,12 @@ interface TopBarProps {
 }
 
 const MODE_META = {
-  engage: { label: 'Engage', accent: '#EF9F27', bg: '#FEF3DC', text: '#7A4A00' },
-  assess: { label: 'Assess', accent: '#E05C4B', bg: '#FDECEA', text: '#7A1A10' },
-  learn: { label: 'Learn', accent: '#2BA888', bg: '#E1F5EE', text: '#0A4A38' },
-  train: { label: 'Train', accent: '#185FA5', bg: '#E6F1FB', text: '#0B2E52' },
-  platform: { label: 'Platform', accent: '#36318F', bg: '#EEEDF8', text: '#1C196B' },
-  students: { label: 'Students', accent: '#36318F', bg: '#EEEDF8', text: '#1C196B' },
+  engage: { label: 'Engage', accent: '#D97010', bg: '#FEF0DC', text: '#D97010' },
+  assess: { label: 'Assess', accent: '#C23B2A', bg: '#FDECEA', text: '#C23B2A' },
+  learn: { label: 'Learn', accent: '#1A8966', bg: '#DDFAF0', text: '#1A8966' },
+  train: { label: 'Train', accent: '#1052A3', bg: '#E3EDFB', text: '#1052A3' },
+  platform: { label: 'Platform', accent: '#2E2886', bg: '#EEEDF8', text: '#2E2886' },
+  students: { label: 'Students', accent: '#2E2886', bg: '#EEEDF8', text: '#2E2886' },
 }
 
 export default function TopBar({ mode, title, right }: TopBarProps) {
@@ -20,9 +20,9 @@ export default function TopBar({ mode, title, right }: TopBarProps) {
   return (
     <div style={{
       background: 'var(--white)',
-      borderBottom: '0.5px solid var(--border)',
-      padding: '0 24px',
-      height: 56,
+      borderBottom: '0.5px solid var(--s2)',
+      padding: '0 28px',
+      height: 52,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -30,7 +30,10 @@ export default function TopBar({ mode, title, right }: TopBarProps) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {title && (
-          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)' }}>{title}</span>
+          <>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.accent, flexShrink: 0 }} />
+            <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--near-black)' }}>{title}</span>
+          </>
         )}
         <span style={{
           fontSize: 11,

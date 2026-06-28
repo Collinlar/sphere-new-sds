@@ -6,9 +6,10 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { ExamSession, ExamSubmission, Exam } from '@/lib/types'
 import { gradeFromPercentage } from '@/lib/utils'
+import { IconFlag, IconCheck } from '@/components/icons'
 
 const GRADE_COLORS: Record<string, string> = {
-  A: '#2BA888', B: '#185FA5', C: '#EF9F27', D: '#E05C4B', F: '#5A5A5A',
+  A: '#1A8966', B: '#1052A3', C: '#D97010', D: '#C23B2A', F: '#6B6870',
 }
 
 interface FlagEvent { type: string; at: string; count: number }
@@ -18,11 +19,11 @@ function parseFlagEvents(flags: string[]): FlagEvent[] {
 }
 
 const FLAG_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  tab_switch:    { label: 'Switched tabs',          color: '#7A1A10', bg: '#FDECEA' },
-  window_blur:   { label: 'Left the exam window',   color: '#7A4A00', bg: '#FEF3DC' },
-  copy_detected: { label: 'Copied text',             color: '#7A4A00', bg: '#FEF3DC' },
-  right_click:   { label: 'Right-clicked',           color: '#5A5A5A', bg: '#F3F4F6' },
-  manual:        { label: 'Flagged by invigilator',  color: '#7A1A10', bg: '#FDECEA' },
+  tab_switch:    { label: 'Switched tabs',          color: '#C23B2A', bg: '#FDECEA' },
+  window_blur:   { label: 'Left the exam window',   color: '#D97010', bg: '#FEF0DC' },
+  copy_detected: { label: 'Copied text',             color: '#D97010', bg: '#FEF0DC' },
+  right_click:   { label: 'Right-clicked',           color: '#6B6870', bg: '#EDECE9' },
+  manual:        { label: 'Flagged by invigilator',  color: '#C23B2A', bg: '#FDECEA' },
 }
 
 function GradingViewInner() {
@@ -140,7 +141,7 @@ function GradingViewInner() {
   if (error || !session || !exam) {
     return (
       <div style={{ height: '100vh', background: 'var(--page-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#E05C4B', fontSize: 14 }}>{error ?? 'Grading session not found.'}</p>
+        <p style={{ color: '#C23B2A', fontSize: 14 }}>{error ?? 'Grading session not found.'}</p>
       </div>
     )
   }
@@ -157,7 +158,7 @@ function GradingViewInner() {
         @media (max-width: 768px) {
           .mobile-tabs { display: flex; height: 44px; background: var(--white); border-bottom: 0.5px solid var(--border); }
           .mobile-tab-btn { flex: 1; border: none; background: transparent; color: var(--mid-grey); font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; }
-          .mobile-tab-btn.active { color: #E05C4B; border-bottom: 2px solid #E05C4B; }
+          .mobile-tab-btn.active { color: #C23B2A; border-bottom: 2px solid #C23B2A; }
           .grading-layout { flex-direction: column; }
           .grading-sidebar { width: 100% !important; border-right: none !important; border-bottom: 0.5px solid var(--border); display: none; max-height: 200px; }
           .grading-sidebar.mobile-show { display: flex; overflow-y: auto; }
@@ -173,7 +174,7 @@ function GradingViewInner() {
             onClick={publishResults}
             disabled={publishing}
             style={{
-              background: '#E05C4B',
+              background: '#C23B2A',
               border: 'none',
               borderRadius: 8,
               padding: '7px 16px',
@@ -190,10 +191,10 @@ function GradingViewInner() {
 
       {/* Mobile tabs */}
       <div className="mobile-tabs" style={{ display: 'none' }}>
-        <button className={`mobile-tab-btn ${mobileTab === 'students' ? 'active' : ''}`} onClick={() => setMobileTab('students')} style={{ borderBottom: mobileTab === 'students' ? '2px solid #E05C4B' : '2px solid transparent', color: mobileTab === 'students' ? '#E05C4B' : 'var(--mid-grey)' }}>
+        <button className={`mobile-tab-btn ${mobileTab === 'students' ? 'active' : ''}`} onClick={() => setMobileTab('students')} style={{ borderBottom: mobileTab === 'students' ? '2px solid #C23B2A' : '2px solid transparent', color: mobileTab === 'students' ? '#C23B2A' : 'var(--mid-grey)' }}>
           Students
         </button>
-        <button className={`mobile-tab-btn ${mobileTab === 'grade' ? 'active' : ''}`} onClick={() => setMobileTab('grade')} style={{ borderBottom: mobileTab === 'grade' ? '2px solid #E05C4B' : '2px solid transparent', color: mobileTab === 'grade' ? '#E05C4B' : 'var(--mid-grey)' }}>
+        <button className={`mobile-tab-btn ${mobileTab === 'grade' ? 'active' : ''}`} onClick={() => setMobileTab('grade')} style={{ borderBottom: mobileTab === 'grade' ? '2px solid #C23B2A' : '2px solid transparent', color: mobileTab === 'grade' ? '#C23B2A' : 'var(--mid-grey)' }}>
           Grade
         </button>
       </div>
@@ -201,76 +202,99 @@ function GradingViewInner() {
       <div className="grading-layout" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Student list */}
         <div className={`grading-sidebar ${mobileTab === 'students' ? 'mobile-show' : ''}`} style={{
-          width: 240,
+          width: 260,
           borderRight: '0.5px solid var(--border)',
-          background: 'var(--white)',
+          background: 'var(--page-bg)',
           display: 'flex',
           flexDirection: 'column',
           overflowY: 'auto',
         }}>
-          <div style={{ padding: '14px 14px 8px', borderBottom: '0.5px solid var(--border)' }}>
-            <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mid-grey)' }}>
-              {submissions.length} students
-            </p>
+          <div style={{ padding: '14px 16px 10px' }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', marginBottom: 4 }}>{exam.title}</p>
+            <div style={{ display: 'inline-block', background: 'var(--amber-light)', borderRadius: 6, padding: '4px 10px' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)' }}>
+                {submissions.filter(s => s.score == null).length} to grade
+              </span>
+            </div>
           </div>
 
+          <div style={{ padding: '0 12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {submissions.map((sub) => {
             const score = computeTotalScore(sub)
             const pct = maxMarks > 0 ? Math.round((score / maxMarks) * 100) : 0
-            const grade = gradeFromPercentage(pct)
             const isActive = sub.id === selectedSub
+            const isGraded = sub.score != null
             const rs = sub.result_status ?? 'normal'
             const flagCount = (sub.integrity_flags ?? []).length
             const STATUS_PILL: Record<string, { label: string; color: string; bg: string }> = {
-              disqualified: { label: 'DQ', color: '#7A1A10', bg: '#FDECEA' },
-              withheld:     { label: 'WH', color: '#7A4A00', bg: '#FEF3DC' },
-              voided:       { label: 'VD', color: '#5A5A5A', bg: '#F3F4F6' },
+              disqualified: { label: 'DQ', color: 'var(--coral)', bg: 'var(--coral-light)' },
+              withheld:     { label: 'WH', color: 'var(--amber)', bg: 'var(--amber-light)' },
+              voided:       { label: 'VD', color: 'var(--mid-grey)', bg: 'var(--border)' },
             }
             return (
               <div
                 key={sub.id}
-                onClick={() => setSelectedSub(sub.id)}
+                onClick={() => { setSelectedSub(sub.id); setMobileTab('grade') }}
                 style={{
                   padding: '12px 14px',
                   cursor: 'pointer',
-                  background: isActive ? '#FDECEA' : 'transparent',
-                  borderBottom: '0.5px solid var(--border)',
+                  background: isGraded ? 'var(--teal-light)' : isActive ? 'var(--white)' : 'var(--white)',
+                  borderRadius: 10,
+                  boxShadow: isActive ? 'var(--shadow-soft)' : 'var(--shadow-soft)',
+                  borderLeft: isActive ? '3px solid var(--coral)' : '3px solid transparent',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
-                  opacity: rs !== 'normal' ? 0.7 : 1,
+                  opacity: rs !== 'normal' ? 0.6 : 1,
                 }}
               >
                 <div style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  background: isActive ? '#E05C4B' : 'var(--bg2)',
-                  color: isActive ? '#fff' : 'var(--mid-grey)',
-                  fontSize: 12, fontWeight: 600,
+                  width: 34, height: 34, borderRadius: '50%',
+                  background: isActive ? 'var(--coral)' : isGraded ? 'var(--teal)' : 'var(--border)',
+                  color: isActive || isGraded ? '#fff' : 'var(--mid-grey)',
+                  fontSize: 12, fontWeight: 700,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>
-                  {sub.student_name.charAt(0).toUpperCase()}
+                  {sub.student_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <p style={{ fontSize: 13, fontWeight: isActive ? 600 : 500, color: 'var(--near-black)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {sub.student_name}
                   </p>
                   <div style={{ display: 'flex', gap: 6, marginTop: 2, alignItems: 'center' }}>
-                    <p style={{ fontSize: 11, color: 'var(--mid-grey)' }}>{score}/{maxMarks} pts</p>
-                    {flagCount > 0 && <span style={{ fontSize: 10, color: '#E05C4B', fontWeight: 700 }}>⚑ {flagCount}</span>}
+                    <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                      {isGraded ? `Graded · ${sub.percentage ?? pct}%` : `Submitted ${sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString('en-GH', { month: 'short', day: 'numeric' }) : ''}`}
+                    </p>
+                    {flagCount > 0 && (
+                      <span style={{ fontSize: 10, color: 'var(--coral)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <IconFlag size={10} /> {flagCount}
+                      </span>
+                    )}
                   </div>
                 </div>
                 {rs !== 'normal' && STATUS_PILL[rs] ? (
                   <span style={{ fontSize: 10, fontWeight: 800, color: STATUS_PILL[rs].color, background: STATUS_PILL[rs].bg, padding: '2px 6px', borderRadius: 4 }}>
                     {STATUS_PILL[rs].label}
                   </span>
+                ) : isGraded ? (
+                  <IconCheck size={14} style={{ color: 'var(--teal)', flexShrink: 0 }} />
                 ) : (
-                  <span style={{ fontSize: 13, fontWeight: 700, color: GRADE_COLORS[grade] ?? 'var(--mid-grey)' }}>
-                    {grade}
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: isActive ? '#fff' : 'var(--mid-grey)',
+                    background: isActive ? 'var(--coral)' : 'var(--border)',
+                    borderRadius: 6,
+                    padding: '5px 10px',
+                    flexShrink: 0,
+                  }}>
+                    Grade
                   </span>
                 )}
               </div>
             )
           })}
+          </div>
         </div>
 
         {/* Grading panel — show on desktop, only when grade tab active on mobile */}
@@ -282,7 +306,7 @@ function GradingViewInner() {
                   <div>
                     <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--near-black)' }}>{activeSub.student_name}</h2>
                     <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginTop: 2 }}>
-                      Auto score: {computeAutoScore(activeSub)}/{maxMarks} pts
+                      Auto score: {computeAutoScore(activeSub)}/{maxMarks} pts · {exam.questions.length} questions
                     </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -290,7 +314,7 @@ function GradingViewInner() {
                       {gradeFromPercentage(maxMarks > 0 ? Math.round((computeTotalScore(activeSub) / maxMarks) * 100) : 0)}
                     </p>
                     <p style={{ fontSize: 12, color: 'var(--mid-grey)' }}>
-                      {maxMarks > 0 ? Math.round((computeTotalScore(activeSub) / maxMarks) * 100) : 0}%
+                      {computeTotalScore(activeSub)}/{maxMarks} · {maxMarks > 0 ? Math.round((computeTotalScore(activeSub) / maxMarks) * 100) : 0}%
                     </p>
                   </div>
                 </div>
@@ -300,29 +324,32 @@ function GradingViewInner() {
                   const flags = parseFlagEvents(activeSub.integrity_flags ?? [])
                   if (flags.length === 0) return null
                   return (
-                    <div style={{ background: '#FDECEA', border: '0.5px solid #E05C4B', borderRadius: 10, padding: '16px 18px', marginBottom: 24 }}>
+                    <div style={{ background: 'var(--coral-light)', boxShadow: '0 0 0 1.5px var(--coral)', borderRadius: 10, padding: '16px 18px', marginBottom: 24 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                        <span style={{ fontSize: 14 }}>⚑</span>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: '#7A1A10' }}>
+                        <IconFlag size={14} style={{ color: 'var(--coral)' }} />
+                        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>
                           {flags.length} integrity event{flags.length > 1 ? 's' : ''} recorded during this exam
                         </p>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {flags.map((f, i) => {
-                          const meta = FLAG_LABELS[f.type] ?? { label: f.type, color: '#5A5A5A', bg: '#F3F4F6' }
+                          const meta = FLAG_LABELS[f.type] ?? { label: f.type, color: 'var(--mid-grey)', bg: 'var(--border)' }
                           return (
                             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                              <span style={{ fontSize: 12, color: '#5A5A5A', fontVariantNumeric: 'tabular-nums', flexShrink: 0, width: 56 }}>
+                              <span style={{ fontSize: 12, color: 'var(--mid-grey)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, width: 56 }}>
                                 {new Date(f.at).toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                               </span>
                               <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: meta.color, background: meta.bg, padding: '2px 8px', borderRadius: 4 }}>
                                 {meta.label}
                               </span>
+                              {f.count > 0 && (
+                                <span style={{ fontSize: 11, color: 'var(--mid-grey)' }}>#{f.count}</span>
+                              )}
                             </div>
                           )
                         })}
                       </div>
-                      <p style={{ fontSize: 12, color: '#7A1A10', marginTop: 12, lineHeight: 1.5 }}>
+                      <p style={{ fontSize: 12, color: 'var(--coral)', marginTop: 12, lineHeight: 1.5 }}>
                         Review these events before assigning a grade. Note your findings in the feedback field below.
                       </p>
                     </div>
@@ -334,12 +361,12 @@ function GradingViewInner() {
                   const rs = activeSub.result_status ?? 'normal'
                   const isBusy = statusTarget === activeSub.id
                   const ACTIONS = [
-                    { status: 'disqualified' as const, label: 'Disqualify', desc: 'Score set to 0. Excluded from class stats. Student is notified.', color: '#E05C4B', bg: '#FDECEA' },
-                    { status: 'withheld' as const,     label: 'Withhold',   desc: 'Grade calculated but hidden from student pending review.', color: '#EF9F27', bg: '#FEF3DC' },
-                    { status: 'voided' as const,       label: 'Void',       desc: 'Excluded from all stats. Student sees no grade.',           color: '#5A5A5A', bg: '#F3F4F6' },
+                    { status: 'disqualified' as const, label: 'Disqualify', desc: 'Score set to 0. Excluded from class stats. Student is notified.', color: 'var(--coral)', bg: 'var(--coral-light)' },
+                    { status: 'withheld' as const,     label: 'Withhold',   desc: 'Grade calculated but hidden from student pending review.', color: 'var(--amber)', bg: 'var(--amber-light)' },
+                    { status: 'voided' as const,       label: 'Void',       desc: 'Excluded from all stats. Student sees no grade.',           color: 'var(--mid-grey)', bg: 'var(--border)' },
                   ]
                   return (
-                    <div style={{ background: rs !== 'normal' ? '#FEF3DC' : 'var(--page-bg)', border: `0.5px solid ${rs !== 'normal' ? '#EF9F27' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', marginBottom: 24 }}>
+                    <div style={{ background: rs !== 'normal' ? 'var(--amber-light)' : 'var(--white)', boxShadow: rs !== 'normal' ? '0 0 0 1.5px var(--amber)' : 'var(--shadow-soft)', borderRadius: 10, padding: '14px 16px', marginBottom: 24 }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                         <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mid-grey)' }}>Result status</p>
                         {rs !== 'normal' && (
@@ -349,7 +376,7 @@ function GradingViewInner() {
                         )}
                       </div>
                       {rs !== 'normal' && activeSub.result_note && (
-                        <p style={{ fontSize: 12, color: '#7A4A00', marginBottom: 10, lineHeight: 1.5 }}>Reason: {activeSub.result_note}</p>
+                        <p style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 10, lineHeight: 1.5 }}>Reason: {activeSub.result_note}</p>
                       )}
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                         {ACTIONS.map(a => (
@@ -377,7 +404,7 @@ function GradingViewInner() {
                         onChange={(e) => setNoteInput(prev => ({ ...prev, [activeSub.id]: e.target.value }))}
                         placeholder="Add a reason (saved with the status)"
                         rows={2}
-                        style={{ width: '100%', background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--near-black)', resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                        style={{ width: '100%', background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--near-black)', resize: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
                       />
                     </div>
                   )
@@ -392,7 +419,7 @@ function GradingViewInner() {
                   return (
                     <div key={q.id} style={{
                       background: 'var(--white)',
-                      border: '0.5px solid var(--border)',
+                      boxShadow: 'var(--shadow-soft)',
                       borderRadius: 10,
                       padding: '16px 18px',
                       marginBottom: 14,
@@ -410,53 +437,58 @@ function GradingViewInner() {
                           <span style={{
                             fontSize: 11,
                             fontWeight: 600,
-                            color: isCorrect ? '#085041' : '#7A1A10',
-                            background: isCorrect ? '#E1F5EE' : '#FDECEA',
+                            color: isCorrect ? 'var(--teal)' : 'var(--coral)',
+                            background: isCorrect ? 'var(--teal-light)' : 'var(--coral-light)',
                             padding: '2px 8px',
                             borderRadius: 4,
                           }}>
-                            {isCorrect ? `+${q.marks}` : '0'}
+                            {isCorrect ? `Auto: +${q.marks}` : 'Auto: 0'}
                           </span>
                         )}
                       </div>
 
-                      <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)', marginBottom: 10 }}>{q.text}</p>
+                      <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)', marginBottom: 10, lineHeight: 1.55 }}>{q.text}</p>
+
+                      {!isAuto && q.rubric && (
+                        <div style={{ background: 'var(--amber-light)', borderRadius: 8, padding: '10px 12px', marginBottom: 10, borderLeft: '3px solid var(--amber)' }}>
+                          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--amber)', marginBottom: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Mark scheme hint</p>
+                          <p style={{ fontSize: 13, color: '#9A5800', lineHeight: 1.5 }}>{q.rubric}</p>
+                        </div>
+                      )}
 
                       <div style={{
-                        background: 'var(--bg2)',
+                        background: 'var(--border)',
                         borderRadius: 8,
                         padding: '10px 12px',
                         fontSize: 14,
                         color: 'var(--near-black)',
                         marginBottom: isAuto ? 0 : 12,
+                        lineHeight: 1.6,
                       }}>
                         {studentAnswer || <span style={{ color: 'var(--mid-grey)', fontStyle: 'italic' }}>No answer submitted</span>}
                       </div>
 
                       {!isAuto && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-                          <label style={{ fontSize: 13, color: 'var(--mid-grey)' }}>Marks awarded</label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={q.marks}
-                            value={currentMark}
-                            onChange={(e) => setManualMarks((prev) => ({
-                              ...prev,
-                              [activeSub.id]: { ...(prev[activeSub.id] ?? {}), [q.id]: Number(e.target.value) },
-                            }))}
-                            style={{
-                              background: 'var(--bg2)',
-                              border: 'none',
-                              borderRadius: 6,
-                              padding: '6px 10px',
-                              fontSize: 14,
-                              fontWeight: 600,
-                              color: 'var(--near-black)',
-                              width: 64,
-                              fontFamily: 'inherit',
-                            }}
-                          />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                          <label style={{ fontSize: 13, color: 'var(--mid-grey)', fontWeight: 500 }}>Marks awarded</label>
+                          {Array.from({ length: q.marks + 1 }, (_, m) => (
+                            <button
+                              key={m}
+                              onClick={() => setManualMarks((prev) => ({
+                                ...prev,
+                                [activeSub.id]: { ...(prev[activeSub.id] ?? {}), [q.id]: m },
+                              }))}
+                              style={{
+                                width: 36, height: 36, borderRadius: 8, border: 'none',
+                                background: currentMark === m ? 'var(--teal)' : 'var(--border)',
+                                color: currentMark === m ? '#fff' : 'var(--mid-grey)',
+                                fontSize: 13, fontWeight: currentMark === m ? 700 : 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {m}
+                            </button>
+                          ))}
                           <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>/ {q.marks}</span>
                         </div>
                       )}
@@ -473,7 +505,7 @@ function GradingViewInner() {
                     rows={4}
                     style={{
                       width: '100%',
-                      background: 'var(--bg2)',
+                      background: 'var(--border)',
                       border: 'none',
                       borderRadius: 10,
                       padding: '12px 14px',

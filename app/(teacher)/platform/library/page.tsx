@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
-
-const DEMO = '00000000-0000-0000-0000-000000000001'
+import { getCurrentUser } from '@/lib/auth'
 
 export default function ContentLibraryPage() {
   const [activeTab, setActiveTab] = useState<'quizzes' | 'exams' | 'courses' | 'paths'>('quizzes')
@@ -13,11 +12,12 @@ export default function ContentLibraryPage() {
 
   useEffect(() => {
     async function load() {
+      const institutionId = getCurrentUser().institution_id
       const [q, e, c, p] = await Promise.all([
-        supabase.from('quizzes').select('*').eq('institution_id', DEMO).order('created_at', { ascending: false }),
-        supabase.from('exams').select('*').eq('institution_id', DEMO).order('created_at', { ascending: false }),
-        supabase.from('courses').select('*').eq('institution_id', DEMO).order('created_at', { ascending: false }),
-        supabase.from('learning_paths').select('*').eq('institution_id', DEMO).order('created_at', { ascending: false }),
+        supabase.from('quizzes').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
+        supabase.from('exams').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
+        supabase.from('courses').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
+        supabase.from('learning_paths').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
       ])
       setData({
         quizzes: q.data ?? [],
@@ -31,10 +31,10 @@ export default function ContentLibraryPage() {
   }, [])
 
   const TABS = [
-    { key: 'quizzes', label: 'Quizzes', color: '#EF9F27', href: '/engage/builder' },
-    { key: 'exams', label: 'Exams', color: '#E05C4B', href: '/assess/create' },
-    { key: 'courses', label: 'Courses', color: '#2BA888', href: '/learn/builder' },
-    { key: 'paths', label: 'Training paths', color: '#185FA5', href: '/train/builder' },
+    { key: 'quizzes', label: 'Quizzes', color: '#D97010', href: '/engage/builder' },
+    { key: 'exams', label: 'Exams', color: '#C23B2A', href: '/assess/create' },
+    { key: 'courses', label: 'Courses', color: '#1A8966', href: '/learn/builder' },
+    { key: 'paths', label: 'Training paths', color: '#1052A3', href: '/train/builder' },
   ]
 
   const current = TABS.find((t) => t.key === activeTab)!
@@ -45,7 +45,7 @@ export default function ContentLibraryPage() {
 
       <div style={{ padding: '28px 32px' }}>
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--white)', borderRadius: 10, padding: 4, width: 'fit-content', border: '0.5px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -90,16 +90,16 @@ export default function ContentLibraryPage() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
             {(data[activeTab] as Record<string, unknown>[]).map((item) => (
-              <div key={item.id as string} className="sphere-card" style={{ padding: 18 }}>
+              <div key={item.id as string} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 18 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', lineHeight: 1.3 }}>
                     {(item.title ?? item.name) as string}
                   </h3>
                   <span style={{
                     fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
-                    padding: '2px 7px', borderRadius: 4,
-                    background: item.is_published ? '#E1F5EE' : 'var(--bg2)',
-                    color: item.is_published ? '#0A4A38' : 'var(--mid-grey)',
+                    padding: '3px 9px', borderRadius: 20,
+                    background: item.is_published ? '#DDFAF0' : 'var(--bg2)',
+                    color: item.is_published ? '#1A8966' : 'var(--mid-grey)',
                   }}>
                     {item.is_published ? 'Published' : 'Draft'}
                   </span>

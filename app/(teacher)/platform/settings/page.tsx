@@ -6,10 +6,10 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 
 const MODULES = [
-  { key: 'engage', label: 'Engage', desc: 'Live quiz and game-based learning', color: '#EF9F27', bg: '#FEF3DC' },
-  { key: 'assess', label: 'Assess', desc: 'Formal examinations and assessments', color: '#E05C4B', bg: '#FDECEA' },
-  { key: 'learn', label: 'Learn', desc: 'Structured course delivery and LMS', color: '#2BA888', bg: '#E1F5EE' },
-  { key: 'train', label: 'Train', desc: 'Compliance and skills training paths', color: '#185FA5', bg: '#E6F1FB' },
+  { key: 'engage', label: 'Engage', desc: 'Live quiz and game-based learning', color: '#D97010', bg: '#FEF0DC' },
+  { key: 'assess', label: 'Assess', desc: 'Formal examinations and assessments', color: '#C23B2A', bg: '#FDECEA' },
+  { key: 'learn', label: 'Learn', desc: 'Structured course delivery and LMS', color: '#1A8966', bg: '#DDFAF0' },
+  { key: 'train', label: 'Train', desc: 'Compliance and skills training paths', color: '#1052A3', bg: '#E3EDFB' },
 ]
 
 type ModuleMap = Record<string, boolean>
@@ -94,7 +94,7 @@ export default function PlatformSettingsPage() {
             disabled={saving || loading}
             style={{
               height: 36, padding: '0 18px', borderRadius: 7, border: 'none',
-              background: saved ? '#2BA888' : '#36318F', color: '#fff',
+              background: saved ? '#1A8966' : '#2E2886', color: '#fff',
               fontSize: 13, fontWeight: 500, cursor: saving ? 'not-allowed' : 'pointer',
               fontFamily: 'var(--font)', opacity: loading ? 0.5 : 1,
             }}
@@ -117,7 +117,7 @@ export default function PlatformSettingsPage() {
             </p>
 
             {error && (
-              <div style={{ background: '#FDECEA', border: '1px solid #E05C4B', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#7A1A10' }}>
+              <div style={{ background: '#FDECEA', border: '1px solid #C23B2A', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#C23B2A' }}>
                 {error}
               </div>
             )}
@@ -146,7 +146,7 @@ export default function PlatformSettingsPage() {
                         fontSize: 14, fontFamily: 'var(--font)', color: f.disabled ? 'var(--mid-grey)' : 'var(--near-black)',
                         outline: 'none', opacity: f.disabled ? 0.6 : 1, boxSizing: 'border-box',
                       }}
-                      onFocus={e => { if (!f.disabled) e.currentTarget.style.borderColor = '#36318F' }}
+                      onFocus={e => { if (!f.disabled) e.currentTarget.style.borderColor = '#2E2886' }}
                       onBlur={e => { e.currentTarget.style.borderColor = 'transparent' }}
                     />
                   </div>
@@ -207,13 +207,13 @@ export default function PlatformSettingsPage() {
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', textTransform: 'capitalize' }}>{planLabel}</p>
                   <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2 }}>{activeCount} module{activeCount !== 1 ? 's' : ''} active</p>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#36318F', background: '#EEEDF8', border: '1px solid #C5C3EC', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#2E2886', background: '#EEEDF8', border: '1px solid #C5C3EC', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                   Current
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>
                 To upgrade your plan or add seats, contact{' '}
-                <a href="mailto:hello@spheresds.com" style={{ color: '#36318F', fontWeight: 500, textDecoration: 'none' }}>
+                <a href="mailto:hello@spheresds.com" style={{ color: '#2E2886', fontWeight: 500, textDecoration: 'none' }}>
                   hello@spheresds.com
                 </a>
               </p>

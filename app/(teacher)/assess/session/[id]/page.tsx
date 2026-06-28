@@ -15,18 +15,18 @@ function parseFlagEvents(flags: string[]): FlagEvent[] {
 }
 
 const FLAG_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  tab_switch:    { label: 'Tab switch',    color: '#E05C4B', bg: 'rgba(224,92,75,0.15)' },
-  window_blur:   { label: 'Left window',   color: '#EF9F27', bg: 'rgba(239,159,39,0.15)' },
-  copy_detected: { label: 'Copied text',   color: '#EF9F27', bg: 'rgba(239,159,39,0.15)' },
+  tab_switch:    { label: 'Tab switch',    color: '#C23B2A', bg: 'rgba(224,92,75,0.15)' },
+  window_blur:   { label: 'Left window',   color: '#D97010', bg: 'rgba(239,159,39,0.15)' },
+  copy_detected: { label: 'Copied text',   color: '#D97010', bg: 'rgba(239,159,39,0.15)' },
   right_click:   { label: 'Right-clicked', color: 'rgba(255,255,255,0.5)', bg: 'rgba(255,255,255,0.08)' },
-  manual:        { label: 'Flagged by invigilator', color: '#E05C4B', bg: 'rgba(224,92,75,0.15)' },
+  manual:        { label: 'Flagged by invigilator', color: '#C23B2A', bg: 'rgba(224,92,75,0.15)' },
 }
 
 const STUDENT_STATUS: Record<string, { label: string; color: string; dot: string }> = {
-  not_started: { label: 'Not started', color: 'var(--mid-grey)', dot: '#E2DDD3' },
-  in_progress: { label: 'In progress', color: '#185FA5', dot: '#185FA5' },
-  submitted: { label: 'Submitted', color: '#085041', dot: '#2BA888' },
-  flagged: { label: 'Flagged', color: '#7A1A10', dot: '#E05C4B' },
+  not_started: { label: 'Not started', color: 'var(--mid-grey)', dot: '#EDECE9' },
+  in_progress: { label: 'In progress', color: '#1052A3', dot: '#1052A3' },
+  submitted: { label: 'Submitted', color: '#1A8966', dot: '#1A8966' },
+  flagged: { label: 'Flagged', color: '#C23B2A', dot: '#C23B2A' },
 }
 
 function InvigilatorViewInner() {
@@ -219,7 +219,7 @@ function InvigilatorViewInner() {
 
   if (loading) {
     return (
-      <div style={{ height: '100vh', background: '#0A0E1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ height: '100vh', background: '#0C1021', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>Setting up the exam hall...</p>
       </div>
     )
@@ -227,8 +227,8 @@ function InvigilatorViewInner() {
 
   if (error || !session || !exam) {
     return (
-      <div style={{ height: '100vh', background: '#0A0E1A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#E05C4B', fontSize: 14 }}>{error ?? 'Session not found.'}</p>
+      <div style={{ height: '100vh', background: '#0C1021', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#C23B2A', fontSize: 14 }}>{error ?? 'Session not found.'}</p>
       </div>
     )
   }
@@ -237,7 +237,7 @@ function InvigilatorViewInner() {
   const flaggedCount = submissions.filter((s) => s.integrity_flags?.length > 0).length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0A0E1A', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0C1021', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <style>{`
         @media (max-width: 640px) {
           .session-header { flex-direction: column; gap: 12px; padding: 12px 16px !important; }
@@ -278,13 +278,13 @@ function InvigilatorViewInner() {
             {exam.audience === 'roster_ticket' ? 'Students use their tickets' : 'Join code'}
           </p>
           {exam.audience !== 'roster_ticket' && (
-            <p style={{ fontSize: 28, fontWeight: 700, letterSpacing: '0.15em', color: '#E05C4B' }}>{session.join_code}</p>
+            <p style={{ fontSize: 28, fontWeight: 700, letterSpacing: '0.15em', color: '#C23B2A' }}>{session.join_code}</p>
           )}
         </div>
 
         <div style={{ textAlign: 'right' }}>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>Time remaining</p>
-          <p style={{ fontSize: 28, fontWeight: 700, color: timeLeft !== null && timeLeft < 300 ? '#E05C4B' : '#fff' }}>
+          <p style={{ fontSize: 28, fontWeight: 700, color: timeLeft !== null && timeLeft < 300 ? '#C23B2A' : '#fff' }}>
             {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
           </p>
         </div>
@@ -313,7 +313,7 @@ function InvigilatorViewInner() {
                 <div key={t.code} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
                     <p style={{ fontSize: 13, color: '#fff', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</p>
-                    <p style={{ fontSize: 16, fontWeight: 700, letterSpacing: '0.08em', color: '#E05C4B' }}>{t.code}</p>
+                    <p style={{ fontSize: 16, fontWeight: 700, letterSpacing: '0.08em', color: '#C23B2A' }}>{t.code}</p>
                   </div>
                   <button
                     onClick={() => navigator.clipboard.writeText(t.code)}
@@ -336,7 +336,7 @@ function InvigilatorViewInner() {
           { label: 'Submitted', value: submittedCount },
           { label: 'Flagged', value: flaggedCount },
         ].map((s) => (
-          <div key={s.label} className="stats-cell" style={{ background: '#0A0E1A', padding: '14px 24px', borderRight: '0.5px solid rgba(255,255,255,0.06)' }}>
+          <div key={s.label} className="stats-cell" style={{ background: '#0C1021', padding: '14px 24px', borderRight: '0.5px solid rgba(255,255,255,0.06)' }}>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{s.label}</p>
             <p style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>{s.value}</p>
           </div>
@@ -362,8 +362,8 @@ function InvigilatorViewInner() {
               const flagCount = parsedFlags.length
               return (
                 <div key={sub.id} className="student-row" style={{
-                  background: flagCount > 0 ? 'rgba(224,92,75,0.06)' : 'rgba(255,255,255,0.04)',
-                  border: `0.5px solid ${flagCount > 0 ? 'rgba(224,92,75,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                  background: flagCount > 0 ? 'rgba(194,59,42,0.08)' : 'rgba(255,255,255,0.04)',
+                  borderLeft: flagCount > 0 ? '3px solid #C23B2A' : '3px solid transparent',
                   borderRadius: 10,
                   overflow: 'hidden',
                 }}>
@@ -371,8 +371,8 @@ function InvigilatorViewInner() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', width: '100%' }}>
                     <div style={{
                       width: 36, height: 36, borderRadius: '50%',
-                      background: flagCount > 0 ? 'rgba(224,92,75,0.2)' : 'rgba(255,255,255,0.08)',
-                      color: flagCount > 0 ? '#E05C4B' : 'rgba(255,255,255,0.6)',
+                      background: flagCount > 0 ? 'rgba(194,59,42,0.25)' : alreadySubmitted ? 'rgba(26,137,102,0.25)' : 'rgba(255,255,255,0.08)',
+                      color: flagCount > 0 ? '#C23B2A' : alreadySubmitted ? '#1A8966' : 'rgba(255,255,255,0.6)',
                       fontSize: 13, fontWeight: 600,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                     }}>
@@ -389,7 +389,7 @@ function InvigilatorViewInner() {
                   {/* Flag timeline */}
                   {flagCount > 0 && (
                     <div className="integrity-timeline" style={{ borderTop: '0.5px solid rgba(224,92,75,0.2)', padding: '10px 16px 10px 66px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#E05C4B', marginBottom: 4 }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#C23B2A', marginBottom: 4 }}>
                         Integrity events
                       </p>
                       {parsedFlags.map((f, i) => (
@@ -399,7 +399,7 @@ function InvigilatorViewInner() {
                           </span>
                           <span style={{
                             fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-                            color: FLAG_LABELS[f.type]?.color ?? '#E05C4B',
+                            color: FLAG_LABELS[f.type]?.color ?? '#C23B2A',
                             background: FLAG_LABELS[f.type]?.bg ?? 'rgba(224,92,75,0.15)',
                             padding: '2px 7px', borderRadius: 3,
                           }}>
@@ -412,7 +412,7 @@ function InvigilatorViewInner() {
 
                   {/* Teacher controls */}
                   <div className="student-controls" style={{ display: 'flex', gap: 8, padding: '8px 16px 12px 66px', borderTop: '0.5px solid rgba(255,255,255,0.05)' }}>
-                    <button onClick={() => manualFlag(sub.id)} disabled={isBusy || alreadySubmitted} style={controlBtn('#E05C4B', isBusy || alreadySubmitted)}>
+                    <button onClick={() => manualFlag(sub.id)} disabled={isBusy || alreadySubmitted} style={controlBtn('#C23B2A', isBusy || alreadySubmitted)}>
                       Flag manually
                     </button>
                     {flagCount > 0 && (
@@ -440,7 +440,7 @@ function InvigilatorViewInner() {
       {toast && (
         <div style={{
           position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
-          background: '#2BA888', color: '#fff', borderRadius: 10,
+          background: '#1A8966', color: '#fff', borderRadius: 10,
           padding: '12px 22px', fontSize: 13, fontWeight: 600,
           zIndex: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
           whiteSpace: 'nowrap',
@@ -455,7 +455,7 @@ function InvigilatorViewInner() {
           onClick={endSession}
           disabled={ending}
           style={{
-            background: '#E05C4B',
+            background: '#C23B2A',
             border: 'none',
             borderRadius: 10,
             padding: '12px 28px',

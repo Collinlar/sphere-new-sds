@@ -62,7 +62,7 @@ export default function RostersPage() {
         right={
           <button
             onClick={() => setShowCreate(true)}
-            style={{ background: '#36318F', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            style={{ background: '#2E2886', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
           >
             + New roster
           </button>
@@ -75,7 +75,7 @@ export default function RostersPage() {
         </p>
 
         {showCreate && (
-          <div style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 10, padding: '18px 20px', marginBottom: 20, maxWidth: 420 }}>
+          <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '18px 20px', marginBottom: 20, maxWidth: 420 }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 10 }}>Name your roster</p>
             <input
               value={newName}
@@ -88,7 +88,7 @@ export default function RostersPage() {
               <button
                 onClick={createRoster}
                 disabled={creating || !newName.trim()}
-                style={{ background: '#36318F', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: creating || !newName.trim() ? 0.6 : 1 }}
+                style={{ background: '#2E2886', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: creating || !newName.trim() ? 0.6 : 1 }}
               >
                 {creating ? 'Creating...' : 'Create roster'}
               </button>
@@ -105,12 +105,12 @@ export default function RostersPage() {
         {loading && <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>Loading your rosters...</p>}
 
         {!loading && rosters.length === 0 && !showCreate && (
-          <div style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 10, padding: '56px 32px', textAlign: 'center' }}>
+          <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '56px 32px', textAlign: 'center' }}>
             <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--near-black)', marginBottom: 8 }}>No rosters yet</p>
             <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 20 }}>Create one to start registering your students.</p>
             <button
               onClick={() => setShowCreate(true)}
-              style={{ background: '#36318F', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              style={{ background: '#2E2886', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
             >
               Create your first roster
             </button>
@@ -121,7 +121,7 @@ export default function RostersPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
             {rosters.map(r => (
               <Link key={r.id} href={`/students/${r.id}`} style={{ textDecoration: 'none' }}>
-                <div style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 10, padding: '18px 20px' }}>
+                <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '18px 20px' }}>
                   <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', marginBottom: 4 }}>{r.name}</p>
                   <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>
                     {r.member_count} {r.member_count === 1 ? 'student' : 'students'}

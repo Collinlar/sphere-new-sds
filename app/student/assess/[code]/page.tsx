@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import type { Exam, ExamSession, ExamQuestion } from '@/lib/types'
+import { IconFlag, IconInfo, IconCheck } from '@/components/icons'
 
 type ExamPhase = 'join' | 'instructions' | 'exam' | 'confirmation' | 'done'
 
@@ -21,6 +22,7 @@ export default function StudentExam() {
   const [submissionId, setSubmissionId] = useState<string | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [activeQ, setActiveQ] = useState(0)
+  const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set())
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
   const [joining, setJoining] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -306,11 +308,11 @@ export default function StudentExam() {
 
   const inputStyle = {
     background: '#f9f9f9',
-    border: '0.5px solid #E2DDD3',
+    border: '0.5px solid #EDECE9',
     borderRadius: 10,
     padding: '12px 14px',
     fontSize: 15,
-    color: '#1A1A1A',
+    color: '#18171A',
     width: '100%',
     boxSizing: 'border-box' as const,
     fontFamily: 'inherit',
@@ -320,7 +322,7 @@ export default function StudentExam() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#EFE9DD',
+      background: 'var(--page-bg)',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: 'system-ui, sans-serif',
@@ -331,29 +333,29 @@ export default function StudentExam() {
       {/* JOIN */}
       {phase === 'join' && checkingTicket && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <p style={{ fontSize: 14, color: '#5A5A5A' }}>Checking your code...</p>
+          <p style={{ fontSize: 14, color: '#6B6870' }}>Checking your code...</p>
         </div>
       )}
 
       {phase === 'join' && !checkingTicket && ticketUsed && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12, textAlign: 'center' }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1A1A1A' }}>This ticket has already been used</h1>
-          <p style={{ fontSize: 14, color: '#5A5A5A', lineHeight: 1.6 }}>If you think this is a mistake, ask your teacher to check your exam record.</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#18171A' }}>This ticket has already been used</h1>
+          <p style={{ fontSize: 14, color: '#6B6870', lineHeight: 1.6 }}>If you think this is a mistake, ask your teacher to check your exam record.</p>
         </div>
       )}
 
       {phase === 'join' && !checkingTicket && !ticketUsed && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#5A5A5A' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#6B6870' }}>
             Exam code: {code?.toUpperCase()}
           </p>
           {ticket ? (
-            <h1 style={{ fontSize: 26, fontWeight: 700, color: '#1A1A1A', textAlign: 'center', lineHeight: 1.2 }}>
+            <h1 style={{ fontSize: 26, fontWeight: 700, color: '#18171A', textAlign: 'center', lineHeight: 1.2 }}>
               Welcome, {ticket.name}. Ready for your exam?
             </h1>
           ) : (
             <>
-              <h1 style={{ fontSize: 26, fontWeight: 700, color: '#1A1A1A', textAlign: 'center', lineHeight: 1.2 }}>Ready for your exam?</h1>
+              <h1 style={{ fontSize: 26, fontWeight: 700, color: '#18171A', textAlign: 'center', lineHeight: 1.2 }}>Ready for your exam?</h1>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -363,13 +365,13 @@ export default function StudentExam() {
               />
             </>
           )}
-          {error && <p style={{ color: '#E05C4B', fontSize: 13 }}>{error}</p>}
+          {error && <p style={{ color: '#C23B2A', fontSize: 13 }}>{error}</p>}
           <button
             onClick={handleJoin}
             disabled={joining}
             style={{
               width: '100%',
-              background: '#E05C4B',
+              background: '#C23B2A',
               border: 'none',
               borderRadius: 12,
               padding: 16,
@@ -387,61 +389,78 @@ export default function StudentExam() {
 
       {/* INSTRUCTIONS */}
       {phase === 'instructions' && exam && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 24, gap: 20 }}>
-          <div>
-            <p style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#5A5A5A', marginBottom: 6 }}>
-              Instructions
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: 'var(--navy)', padding: '22px 22px 20px' }}>
+            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>
+              Instructions · {exam.subject ?? 'Exam'}{exam.grade_level ? ` · ${exam.grade_level}` : ''}
             </p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1A1A1A', marginBottom: 12 }}>{exam.title}</h2>
+            <p style={{ fontSize: 24, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>{exam.title}</p>
           </div>
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {[
-              { label: 'Questions', value: exam.questions.length },
-              { label: 'Total marks', value: exam.questions.reduce((s, q) => s + q.marks, 0) },
-              { label: 'Time', value: `${exam.duration_minutes} min` },
-            ].map((s) => (
-              <div key={s.label} style={{
-                background: '#fff',
-                border: '0.5px solid #E2DDD3',
-                borderRadius: 10,
-                padding: '12px 18px',
-                flex: 1,
-                textAlign: 'center',
-              }}>
-                <p style={{ fontSize: 22, fontWeight: 700, color: '#1A1A1A' }}>{s.value}</p>
-                <p style={{ fontSize: 12, color: '#5A5A5A', marginTop: 2 }}>{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {exam.instructions && (
-            <div style={{ background: '#fff', border: '0.5px solid #E2DDD3', borderRadius: 10, padding: '16px 18px', fontSize: 14, color: '#1A1A1A', lineHeight: 1.65 }}>
-              {exam.instructions}
+          <div style={{ padding: '22px 20px 28px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+              {[
+                { label: 'Questions', value: exam.questions.length, isTime: false },
+                { label: 'Total marks', value: exam.questions.reduce((s, q) => s + q.marks, 0), isTime: false },
+                { label: 'Time', value: exam.duration_minutes, isTime: true },
+              ].map((s) => (
+                <div key={s.label} style={{
+                  flex: 1,
+                  background: 'var(--white)',
+                  borderRadius: 12,
+                  padding: 16,
+                  boxShadow: 'var(--shadow-soft)',
+                  textAlign: 'center',
+                }}>
+                  <p style={{ fontSize: s.isTime ? 22 : 28, fontWeight: 700, color: 'var(--near-black)' }}>
+                    {s.isTime ? (
+                      <>{s.value}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-tertiary)' }}>m</span></>
+                    ) : s.value}
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>{s.label}</p>
+                </div>
+              ))}
             </div>
-          )}
 
-          <div style={{ fontSize: 13, color: '#5A5A5A', lineHeight: 1.6 }}>
-            <p>Answer every question. Your timer starts when you tap below. Once you submit, you cannot change your answers.</p>
+            <div style={{ background: 'var(--white)', borderRadius: 12, padding: '16px 18px', boxShadow: 'var(--shadow-soft)', marginBottom: 14 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 6 }}>Instructions</p>
+              <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.65 }}>
+                {exam.instructions || 'Answer all questions. Flag ones you are unsure of and revisit them before submitting.'}
+              </p>
+            </div>
+
+            <div style={{
+              background: 'var(--amber-light)',
+              borderRadius: 10,
+              padding: '13px 16px',
+              marginBottom: 22,
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+            }}>
+              <IconInfo size={14} style={{ flexShrink: 0, marginTop: 1, color: 'var(--amber)' }} />
+              <p style={{ fontSize: 12, color: '#9A5800', lineHeight: 1.55 }}>
+                Your timer starts when you tap below. Once you submit, you cannot change your answers.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setPhase('exam')}
+              style={{
+                background: 'var(--coral)',
+                border: 'none',
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                fontWeight: 700,
+                color: '#fff',
+                cursor: 'pointer',
+                minHeight: 52,
+                marginTop: 'auto',
+              }}
+            >
+              Start the exam →
+            </button>
           </div>
-
-          <button
-            onClick={() => setPhase('exam')}
-            style={{
-              background: '#E05C4B',
-              border: 'none',
-              borderRadius: 12,
-              padding: 16,
-              fontSize: 16,
-              fontWeight: 700,
-              color: '#fff',
-              cursor: 'pointer',
-              minHeight: 56,
-              marginTop: 'auto',
-            }}
-          >
-            Start the exam
-          </button>
         </div>
       )}
 
@@ -456,7 +475,7 @@ export default function StudentExam() {
               top: 16,
               left: '50%',
               transform: 'translateX(-50%)',
-              background: '#E05C4B',
+              background: '#C23B2A',
               color: '#fff',
               borderRadius: 10,
               padding: '12px 20px',
@@ -473,73 +492,74 @@ export default function StudentExam() {
 
           {/* Top bar */}
           <div style={{
-            background: '#fff',
-            borderBottom: '0.5px solid #E2DDD3',
-            padding: '12px 16px',
+            background: 'var(--navy)',
+            padding: '16px 20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexShrink: 0,
           }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>
-              {answeredCount()} / {exam.questions.length}
-            </p>
-            <p style={{
-              fontSize: 15,
-              fontWeight: 700,
-              color: timeLeft !== null && timeLeft < 300 ? '#E05C4B' : '#1A1A1A',
-              fontVariantNumeric: 'tabular-nums',
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>{exam.title}</p>
+              <p style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginTop: 2 }}>
+                Question {activeQ + 1} of {exam.questions.length}
+              </p>
+            </div>
+            <div style={{
+              background: timeLeft !== null && timeLeft < 300 ? 'var(--coral)' : 'var(--amber)',
+              borderRadius: 10,
+              padding: '8px 14px',
             }}>
-              {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
-            </p>
+              <p style={{ fontSize: 20, fontWeight: 800, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.02em' }}>
+                {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
+              </p>
+            </div>
           </div>
 
-          {/* Question navigator */}
-          <div style={{ background: '#fff', borderBottom: '0.5px solid #E2DDD3', padding: '10px 16px', display: 'flex', gap: 6, overflowX: 'auto', flexShrink: 0 }}>
-            {exam.questions.map((q, i) => (
-              <button
-                key={q.id}
-                onClick={() => setActiveQ(i)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 6,
-                  border: `0.5px solid ${activeQ === i ? '#E05C4B' : answered(q.id) ? '#2BA888' : '#E2DDD3'}`,
-                  background: activeQ === i ? '#E05C4B' : answered(q.id) ? '#E1F5EE' : '#fff',
-                  color: activeQ === i ? '#fff' : answered(q.id) ? '#085041' : '#5A5A5A',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-              >
-                {i + 1}
-              </button>
-            ))}
+          {/* Progress strip + question pills */}
+          <div style={{ background: 'var(--white)', padding: '12px 20px 14px', borderBottom: '0.5px solid var(--border)', flexShrink: 0 }}>
+            <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ width: `${Math.round(((activeQ + 1) / exam.questions.length) * 100)}%`, height: '100%', background: 'var(--coral)', borderRadius: 2, transition: 'width 0.3s' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{Math.round(((activeQ + 1) / exam.questions.length) * 100)}% complete</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
+                {currentQ.type === 'mcq' ? 'Multiple choice' : currentQ.type === 'true_false' ? 'True / False' : currentQ.type === 'short' ? 'Short answer' : 'Essay'} · {currentQ.marks} {currentQ.marks === 1 ? 'mark' : 'marks'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 7, overflowX: 'auto' }}>
+              {exam.questions.map((q, i) => (
+                <button
+                  key={q.id}
+                  onClick={() => setActiveQ(i)}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 9,
+                    border: 'none',
+                    background: activeQ === i ? 'var(--coral)' : flaggedQuestions.has(q.id) ? 'var(--amber-light)' : answered(q.id) ? 'var(--teal-light)' : 'var(--border)',
+                    color: activeQ === i ? '#fff' : flaggedQuestions.has(q.id) ? 'var(--amber)' : answered(q.id) ? 'var(--teal)' : 'var(--text-tertiary)',
+                    fontSize: 13,
+                    fontWeight: activeQ === i ? 700 : 600,
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    boxShadow: flaggedQuestions.has(q.id) && activeQ !== i ? '0 0 0 1.5px var(--amber)' : 'none',
+                  }}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Question */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#5A5A5A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Question {activeQ + 1}
-              </p>
-              <span style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#5A5A5A',
-                background: '#EAE6DC',
-                padding: '3px 8px',
-                borderRadius: 4,
-              }}>
-                {currentQ.marks} {currentQ.marks === 1 ? 'mark' : 'marks'}
-              </span>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 22px' }}>
+            <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+              <p style={{ fontSize: 16, fontWeight: 500, color: '#18171A', lineHeight: 1.5 }}>{currentQ.text}</p>
             </div>
 
-            <p style={{ fontSize: 17, fontWeight: 500, color: '#1A1A1A', lineHeight: 1.5, marginBottom: 20 }}>{currentQ.text}</p>
-
             {(currentQ.type === 'mcq' || currentQ.type === 'true_false') && currentQ.options && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
                 {currentQ.options.map((opt) => {
                   const selected = answers[currentQ.id] === opt.label
                   return (
@@ -549,7 +569,7 @@ export default function StudentExam() {
                       style={{
                         width: '100%',
                         background: selected ? '#FDECEA' : '#fff',
-                        border: `0.5px solid ${selected ? '#E05C4B' : '#E2DDD3'}`,
+                        boxShadow: selected ? '0 0 0 1.5px #C23B2A' : 'var(--shadow-soft)',
                         borderRadius: 10,
                         padding: '14px 16px',
                         display: 'flex',
@@ -564,8 +584,8 @@ export default function StudentExam() {
                         width: 30,
                         height: 30,
                         borderRadius: 6,
-                        background: selected ? '#E05C4B' : '#EAE6DC',
-                        color: selected ? '#fff' : '#5A5A5A',
+                        background: selected ? '#C23B2A' : '#EDECE9',
+                        color: selected ? '#fff' : '#6B6870',
                         fontSize: 12,
                         fontWeight: 700,
                         display: 'flex',
@@ -575,7 +595,7 @@ export default function StudentExam() {
                       }}>
                         {opt.label}
                       </span>
-                      <span style={{ fontSize: 15, color: selected ? '#7A1A10' : '#1A1A1A', fontWeight: selected ? 500 : 400 }}>{opt.text}</span>
+                      <span style={{ fontSize: 15, color: selected ? '#C23B2A' : '#18171A', fontWeight: selected ? 500 : 400 }}>{opt.text}</span>
                     </button>
                   )
                 })}
@@ -583,79 +603,121 @@ export default function StudentExam() {
             )}
 
             {(currentQ.type === 'short' || currentQ.type === 'essay') && (
-              <textarea
-                value={answers[currentQ.id] ?? ''}
-                onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }))}
-                placeholder={currentQ.type === 'short' ? 'Write your answer here.' : 'Write your essay response here.'}
-                rows={currentQ.type === 'essay' ? 8 : 4}
-                style={{
-                  ...inputStyle,
-                  resize: 'vertical',
-                  lineHeight: 1.65,
-                }}
-              />
+              <>
+                <textarea
+                  value={answers[currentQ.id] ?? ''}
+                  onChange={(e) => setAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }))}
+                  placeholder={currentQ.type === 'short' ? 'Write your answer here.' : 'Write your essay response here.'}
+                  rows={currentQ.type === 'essay' ? 8 : 4}
+                  style={{
+                    ...inputStyle,
+                    background: '#fff',
+                    boxShadow: 'var(--shadow-soft)',
+                    resize: 'vertical',
+                    lineHeight: 1.7,
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 4px 0' }}>
+                  <span style={{ fontSize: 12, color: '#A09DA8' }}>
+                    {(answers[currentQ.id] ?? '').trim() === '' ? 0 : (answers[currentQ.id] ?? '').trim().split(/\s+/).length} words
+                  </span>
+                  <span style={{ fontSize: 12, color: '#A09DA8' }}>No word limit</span>
+                </div>
+              </>
             )}
           </div>
 
           {/* Nav footer */}
           <div style={{
-            background: '#fff',
-            borderTop: '0.5px solid #E2DDD3',
+            background: 'var(--white)',
+            borderTop: '0.5px solid var(--border)',
             padding: '12px 16px',
             display: 'flex',
-            gap: 10,
+            gap: 8,
             flexShrink: 0,
           }}>
             <button
               onClick={() => setActiveQ((prev) => Math.max(0, prev - 1))}
               disabled={activeQ === 0}
+              aria-label="Previous question"
               style={{
-                flex: 1,
-                background: '#EAE6DC',
+                width: 44,
+                height: 44,
+                flexShrink: 0,
+                background: 'var(--white)',
+                boxShadow: 'var(--shadow-soft)',
                 border: 'none',
-                borderRadius: 10,
-                padding: 14,
-                fontSize: 14,
-                fontWeight: 600,
-                color: activeQ === 0 ? '#B0A898' : '#1A1A1A',
+                borderRadius: 9,
+                fontSize: 18,
+                color: activeQ === 0 ? 'var(--border2)' : 'var(--text-tertiary)',
                 cursor: activeQ === 0 ? 'default' : 'pointer',
               }}
             >
-              Back
+              ‹
+            </button>
+            <button
+              onClick={() => setFlaggedQuestions(prev => {
+                const next = new Set(prev)
+                if (next.has(currentQ.id)) next.delete(currentQ.id)
+                else next.add(currentQ.id)
+                return next
+              })}
+              style={{
+                height: 44,
+                flex: 1,
+                background: flaggedQuestions.has(currentQ.id) ? 'var(--amber-light)' : 'var(--white)',
+                boxShadow: 'var(--shadow-soft)',
+                border: 'none',
+                borderRadius: 9,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                fontSize: 13,
+                fontWeight: 500,
+                color: flaggedQuestions.has(currentQ.id) ? 'var(--amber)' : 'var(--mid-grey)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              <IconFlag size={12} />
+              {flaggedQuestions.has(currentQ.id) ? 'Flagged' : 'Flag'}
             </button>
             {activeQ < exam.questions.length - 1 ? (
               <button
                 onClick={() => setActiveQ((prev) => prev + 1)}
                 style={{
                   flex: 2,
-                  background: '#E05C4B',
+                  height: 44,
+                  background: 'var(--coral)',
                   border: 'none',
-                  borderRadius: 10,
-                  padding: 14,
+                  borderRadius: 9,
+                  padding: '0 14px',
                   fontSize: 14,
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: '#fff',
                   cursor: 'pointer',
                 }}
               >
-                Next question
+                Next question →
               </button>
             ) : (
               <button
                 onClick={() => setPhase('confirmation')}
                 style={{
                   flex: 2,
-                  background: '#E05C4B',
+                  height: 44,
+                  background: 'var(--coral)',
                   border: 'none',
-                  borderRadius: 10,
-                  padding: 14,
+                  borderRadius: 9,
+                  padding: '0 14px',
                   fontSize: 14,
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: '#fff',
                   cursor: 'pointer',
                 }}
               >
-                Submit exam
+                Submit exam →
               </button>
             )}
           </div>
@@ -675,12 +737,12 @@ export default function StudentExam() {
           zIndex: 100,
         }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 440 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A1A', marginBottom: 10 }}>Submit your exam?</h3>
-            <p style={{ fontSize: 14, color: '#5A5A5A', lineHeight: 1.65, marginBottom: 20 }}>
+            <h3 style={{ fontSize: 20, fontWeight: 700, color: '#18171A', marginBottom: 10 }}>Submit your exam?</h3>
+            <p style={{ fontSize: 14, color: '#6B6870', lineHeight: 1.65, marginBottom: 20 }}>
               You have answered {answeredCount()} of {exam.questions.length} questions. Once you submit, you cannot make changes.
             </p>
             {answeredCount() < exam.questions.length && (
-              <div style={{ background: '#FEF3DC', border: '0.5px solid #EF9F27', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#7A4A00', marginBottom: 16 }}>
+              <div style={{ background: '#FEF0DC', border: '0.5px solid #D97010', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#D97010', marginBottom: 16 }}>
                 {exam.questions.length - answeredCount()} question{exam.questions.length - answeredCount() > 1 ? 's' : ''} left unanswered.
               </div>
             )}
@@ -689,13 +751,13 @@ export default function StudentExam() {
                 onClick={() => setPhase('exam')}
                 style={{
                   flex: 1,
-                  background: '#EAE6DC',
+                  background: '#EDECE9',
                   border: 'none',
                   borderRadius: 10,
                   padding: 14,
                   fontSize: 14,
                   fontWeight: 600,
-                  color: '#1A1A1A',
+                  color: '#18171A',
                   cursor: 'pointer',
                 }}
               >
@@ -706,7 +768,7 @@ export default function StudentExam() {
                 disabled={submitting}
                 style={{
                   flex: 2,
-                  background: '#E05C4B',
+                  background: '#C23B2A',
                   border: 'none',
                   borderRadius: 10,
                   padding: 14,
@@ -730,21 +792,20 @@ export default function StudentExam() {
             width: 80,
             height: 80,
             borderRadius: '50%',
-            background: '#E1F5EE',
-            color: '#2BA888',
-            fontSize: 36,
+            background: 'var(--teal-light)',
+            color: 'var(--teal)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}>
-            ✓
+            <IconCheck size={36} />
           </div>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A' }}>Exam submitted</h2>
-          <p style={{ fontSize: 15, color: '#5A5A5A', lineHeight: 1.65 }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#18171A' }}>Exam submitted</h2>
+          <p style={{ fontSize: 15, color: '#6B6870', lineHeight: 1.65 }}>
             Your answers have been recorded, {name}. Your teacher will share your results when grading is complete.
           </p>
-          <div style={{ background: '#fff', border: '0.5px solid #E2DDD3', borderRadius: 12, padding: '16px 24px', marginTop: 8 }}>
-            <p style={{ fontSize: 13, color: '#5A5A5A' }}>Answered {answeredCount()} of {exam?.questions.length ?? 0} questions</p>
+          <div style={{ background: '#fff', border: '0.5px solid #EDECE9', borderRadius: 12, padding: '16px 24px', marginTop: 8 }}>
+            <p style={{ fontSize: 13, color: '#6B6870' }}>Answered {answeredCount()} of {exam?.questions.length ?? 0} questions</p>
           </div>
         </div>
       )}

@@ -27,7 +27,7 @@ function progressFilter(p: number, key: FilterKey) {
 }
 
 function progressColor(p: number) {
-  return p > 75 ? '#2BA888' : p > 25 ? '#EF9F27' : '#E05C4B'
+  return p > 75 ? '#1A8966' : p > 25 ? '#D97010' : '#C23B2A'
 }
 
 export default function ClassPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
@@ -134,7 +134,7 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
   ]
 
   const inputStyle: React.CSSProperties = {
-    width: '100%', background: 'var(--white)', border: '0.5px solid var(--border)',
+    width: '100%', background: 'var(--white)', boxShadow: 'var(--shadow-soft)',
     borderRadius: 8, padding: '9px 12px', fontSize: 14, color: 'var(--near-black)',
     outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
   }
@@ -156,8 +156,27 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
         }
       />
 
+      {!loading && students.length > 0 && (
+        <div style={{ background: 'var(--teal)', padding: '20px 32px' }}>
+          <div style={{ display: 'flex', gap: 10, maxWidth: 420 }}>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 7, padding: 10, textAlign: 'center' }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{students.length}</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Enrolled</p>
+            </div>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 7, padding: 10, textAlign: 'center' }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{students.filter(s => s.progress_percentage > 0 && s.progress_percentage < 100).length}</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Active</p>
+            </div>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 7, padding: 10, textAlign: 'center' }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{Math.round(students.reduce((s, x) => s + x.progress_percentage, 0) / students.length)}%</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Avg progress</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {enrollMessage && (
-        <div style={{ background: '#EEEDF8', color: '#1C196B', fontSize: 13, padding: '10px 32px' }}>
+        <div style={{ background: '#EEEDF8', color: '#2E2886', fontSize: 13, padding: '10px 32px' }}>
           {enrollMessage}
         </div>
       )}
@@ -166,13 +185,13 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
         <div style={{ background: 'var(--white)', borderBottom: '0.5px solid var(--border)', padding: '16px 32px' }}>
           <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 2 }}>Invite a student to this course</div>
-            {inviteError && <div style={{ fontSize: 13, color: '#E05C4B' }}>{inviteError}</div>}
+            {inviteError && <div style={{ fontSize: 13, color: '#C23B2A' }}>{inviteError}</div>}
             <div style={{ display: 'flex', gap: 10 }}>
               <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="Student name" style={{ ...inputStyle, flex: 1 }} />
               <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="Email address" style={{ ...inputStyle, flex: 1 }} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Button accent="#2BA888" size="sm" onClick={inviteStudent} disabled={inviting}>{inviting ? 'Sending invite...' : 'Send invite'}</Button>
+              <Button accent="#1A8966" size="sm" onClick={inviteStudent} disabled={inviting}>{inviting ? 'Sending invite...' : 'Send invite'}</Button>
               <Button variant="ghost" size="sm" onClick={() => { setShowInvite(false); setInviteError('') }}>Cancel</Button>
             </div>
           </div>
@@ -185,15 +204,15 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
         ) : (
           <>
             <div style={{ display: 'flex', gap: 8, marginBottom: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginRight: 12 }}>
+              <div style={{ display: 'flex', background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, overflow: 'hidden', marginRight: 12 }}>
                 {(['roster', 'gradebook'] as TabKey[]).map(t => (
-                  <button key={t} onClick={() => setTab(t)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#2BA888' : 'var(--mid-grey)', background: tab === t ? '#E1F5EE' : 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
+                  <button key={t} onClick={() => setTab(t)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#1A8966' : 'var(--mid-grey)', background: tab === t ? '#DDFAF0' : 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
                     {t}
                   </button>
                 ))}
               </div>
               {tab === 'roster' && filterOptions.map(f => (
-                <button key={f.key} onClick={() => setFilter(f.key)} style={{ padding: '6px 14px', fontSize: 12, fontWeight: filter === f.key ? 600 : 400, color: filter === f.key ? '#0A4A38' : 'var(--mid-grey)', background: filter === f.key ? '#E1F5EE' : 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button key={f.key} onClick={() => setFilter(f.key)} style={{ padding: '6px 14px', fontSize: 12, fontWeight: filter === f.key ? 600 : 400, color: filter === f.key ? '#1A8966' : 'var(--mid-grey)', background: filter === f.key ? '#DDFAF0' : 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
                   {f.label}
                 </button>
               ))}
@@ -201,7 +220,7 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
             </div>
 
             {tab === 'roster' && (
-              <div style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'hidden' }}>
                 {students.length === 0 ? (
                   <div style={{ padding: '48px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
                     No students enrolled yet. Use "Invite student" to add someone to this course.
@@ -220,7 +239,7 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
                         <tr key={s.enrollment_id} style={{ borderBottom: idx < filtered.length - 1 ? '0.5px solid var(--border)' : 'none' }}>
                           <td style={{ padding: '14px 16px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#E1F5EE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#2BA888', flexShrink: 0 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#DDFAF0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#1A8966', flexShrink: 0 }}>
                                 {s.name.split(' ').map(n => n[0]).join('')}
                               </div>
                               <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)' }}>{s.name}</span>
@@ -234,7 +253,9 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
                               <div style={{ width: 80, height: 5, background: 'var(--bg2)', borderRadius: 3, flexShrink: 0 }}>
                                 <div style={{ width: `${s.progress_percentage}%`, height: '100%', background: progressColor(s.progress_percentage), borderRadius: 3 }} />
                               </div>
-                              <span style={{ fontSize: 13, color: 'var(--near-black)', fontWeight: 500 }}>{s.progress_percentage}%</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: progressColor(s.progress_percentage) }}>
+                                {s.progress_percentage >= 100 ? 'Complete' : s.progress_percentage < 25 ? 'Behind' : `${s.progress_percentage}%`}
+                              </span>
                             </div>
                           </td>
                           <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--mid-grey)' }}>
@@ -254,7 +275,7 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
             )}
 
             {tab === 'gradebook' && (
-              <div style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+              <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'auto' }}>
                 {students.length === 0 ? (
                   <div style={{ padding: '48px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
                     No students enrolled yet.
@@ -282,7 +303,7 @@ export default function ClassPage({ params: paramsPromise }: { params: Promise<{
                               const done = s.completed_modules.includes(m.id)
                               return (
                                 <td key={m.id} style={{ padding: '12px 12px', textAlign: 'center' }}>
-                                  <span style={{ fontSize: 15, color: done ? '#2BA888' : '#E2DDD3' }}>{done ? '✓' : '○'}</span>
+                                  <span style={{ fontSize: 15, color: done ? '#1A8966' : '#EDECE9' }}>{done ? '✓' : '○'}</span>
                                 </td>
                               )
                             })}

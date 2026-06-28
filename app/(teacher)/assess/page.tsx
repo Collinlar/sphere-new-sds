@@ -8,10 +8,10 @@ import type { Exam, ExamSession } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  scheduled: { label: 'Scheduled', color: '#185FA5', bg: '#E6F1FB' },
-  active:    { label: 'Live',       color: '#085041', bg: '#E1F5EE' },
-  grading:   { label: 'Needs grading', color: '#7A4A00', bg: '#FEF3DC' },
-  completed: { label: 'Done',       color: '#5A5A5A', bg: '#F3F4F6' },
+  scheduled: { label: 'Scheduled', color: '#1052A3', bg: '#E3EDFB' },
+  active:    { label: 'Live',       color: '#1A8966', bg: '#DDFAF0' },
+  grading:   { label: 'Needs grading', color: '#D97010', bg: '#FEF0DC' },
+  completed: { label: 'Done',       color: '#6B6870', bg: '#EDECE9' },
 }
 
 interface SessionRow extends ExamSession {
@@ -80,17 +80,17 @@ export default function AssessDashboard() {
   function sessionAction(s: SessionRow) {
     if (s.status === 'active') return (
       <Link href={`/assess/session/${s.id}`}>
-        <button style={actionBtn('#E05C4B', '#fff')}>Resume live session</button>
+        <button style={actionBtn('#C23B2A', '#fff')}>Resume live session</button>
       </Link>
     )
     if (s.status === 'scheduled') return (
       <Link href={`/assess/session/${s.id}`}>
-        <button style={actionBtn('#E05C4B', '#fff')}>Start session</button>
+        <button style={actionBtn('#C23B2A', '#fff')}>Start session</button>
       </Link>
     )
     if (s.status === 'grading') return (
       <Link href={`/assess/grading/${s.id}`}>
-        <button style={actionBtn('#EF9F27', '#fff')}>Grade now</button>
+        <button style={actionBtn('#D97010', '#fff')}>Grade now</button>
       </Link>
     )
     if (s.status === 'completed') return (
@@ -111,7 +111,7 @@ export default function AssessDashboard() {
         title="Assess"
         right={
           <Link href="/assess/create">
-            <button style={{ background: '#E05C4B', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <button style={{ background: '#C23B2A', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               + New Exam
             </button>
           </Link>
@@ -124,11 +124,11 @@ export default function AssessDashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
           {[
             { label: 'Total exams',        value: loading ? '...' : exams.length },
-            { label: 'Active sessions',    value: loading ? '...' : activeSessions,   accent: activeSessions > 0 ? '#085041' : undefined },
-            { label: 'Needs grading',      value: loading ? '...' : pendingGrading,   accent: pendingGrading > 0 ? '#7A4A00' : undefined },
+            { label: 'Active sessions',    value: loading ? '...' : activeSessions,   accent: activeSessions > 0 ? '#1A8966' : undefined },
+            { label: 'Needs grading',      value: loading ? '...' : pendingGrading,   accent: pendingGrading > 0 ? '#D97010' : undefined },
             { label: 'Completed sessions', value: loading ? '...' : completedSessions },
           ].map(s => (
-            <div key={s.label} style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '18px 20px' }}>
+            <div key={s.label} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '18px 20px' }}>
               <p style={{ fontSize: 11, color: 'var(--mid-grey)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
                 {s.label}
               </p>
@@ -141,9 +141,9 @@ export default function AssessDashboard() {
 
         {/* Alerts for sessions needing attention */}
         {pendingGrading > 0 && (
-          <div style={{ background: '#FEF3DC', border: '0.5px solid #EF9F27', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ background: '#FEF0DC', boxShadow: '0 0 0 1px #D9701040', borderRadius: 10, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 16 }}>⚑</span>
-            <p style={{ fontSize: 13, color: '#7A4A00' }}>
+            <p style={{ fontSize: 13, color: '#D97010' }}>
               {pendingGrading} session{pendingGrading > 1 ? 's' : ''} waiting to be graded. Students cannot see their results until grading is published.
             </p>
           </div>
@@ -160,18 +160,18 @@ export default function AssessDashboard() {
         )}
 
         {error && (
-          <div style={{ background: '#FDECEA', border: '0.5px solid #E05C4B', borderRadius: 10, padding: '16px 20px', color: '#7A1A10', fontSize: 14 }}>
+          <div style={{ background: '#FDECEA', border: '0.5px solid #C23B2A', borderRadius: 10, padding: '16px 20px', color: '#C23B2A', fontSize: 14 }}>
             {error}
           </div>
         )}
 
         {!loading && !error && exams.length === 0 && (
-          <div style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '56px 32px', textAlign: 'center' }}>
+          <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '56px 32px', textAlign: 'center' }}>
             <p style={{ fontSize: 32, marginBottom: 12 }}>📝</p>
             <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--near-black)', marginBottom: 8 }}>No exams yet</p>
             <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24 }}>Build your first exam and schedule it with a class.</p>
             <Link href="/assess/create">
-              <button style={{ background: '#E05C4B', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              <button style={{ background: '#C23B2A', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                 Create your first exam
               </button>
             </Link>
@@ -186,7 +186,12 @@ export default function AssessDashboard() {
               const needsAttention = exam.sessions.some(s => s.status === 'grading')
 
               return (
-                <div key={exam.id} style={{ background: 'var(--white)', border: `0.5px solid ${needsAttention ? '#EF9F27' : 'var(--border)'}`, borderRadius: 10, overflow: 'hidden' }}>
+                <div key={exam.id} style={{
+                  background: 'var(--white)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  boxShadow: needsAttention ? '0 0 0 1.5px #D97010, 0 4px 14px rgba(217,112,16,.16)' : 'var(--shadow-soft)',
+                }}>
 
                   {/* Exam header row */}
                   <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -194,7 +199,7 @@ export default function AssessDashboard() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
                         <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)' }}>{exam.title}</p>
                         {needsAttention && (
-                          <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#7A4A00', background: '#FEF3DC', padding: '2px 7px', borderRadius: 4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#D97010', background: '#FEF0DC', padding: '3px 9px', borderRadius: 20 }}>
                             Needs grading
                           </span>
                         )}
@@ -205,7 +210,7 @@ export default function AssessDashboard() {
                         <span>{exam.questions?.length ?? 0} questions</span>
                         <span>{totalMarks} marks</span>
                         <span>{exam.duration_minutes} min</span>
-                        <span style={{ color: isExpanded ? '#E05C4B' : 'var(--mid-grey)' }}>
+                        <span style={{ color: isExpanded ? '#C23B2A' : 'var(--mid-grey)' }}>
                           {exam.sessions.length} {exam.sessions.length === 1 ? 'session' : 'sessions'}
                         </span>
                       </div>
@@ -214,7 +219,7 @@ export default function AssessDashboard() {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       {!hasActiveOrGrading(exam) && (
                         <Link href={`/assess/session/new?exam=${exam.id}`}>
-                          <button style={{ background: '#E05C4B', border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+                          <button style={{ background: '#C23B2A', border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
                             + New session
                           </button>
                         </Link>
@@ -222,7 +227,7 @@ export default function AssessDashboard() {
                       {exam.sessions.length > 0 && (
                         <button
                           onClick={() => toggleExpand(exam.id)}
-                          style={{ background: 'var(--page-bg)', border: '0.5px solid var(--border)', borderRadius: 7, padding: '7px 12px', fontSize: 13, color: 'var(--mid-grey)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}
+                          style={{ background: 'var(--page-bg)', boxShadow: 'var(--shadow-soft)', borderRadius: 7, padding: '7px 12px', fontSize: 13, color: 'var(--mid-grey)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}
                         >
                           {isExpanded ? 'Hide' : 'Show'} sessions
                           <span style={{ fontSize: 11 }}>{isExpanded ? '▲' : '▼'}</span>
@@ -265,7 +270,7 @@ export default function AssessDashboard() {
                               {s.submission_count} {s.submission_count === 1 ? 'student' : 'students'}
                             </p>
                             <div>
-                              <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: meta.color, background: meta.bg, padding: '3px 8px', borderRadius: 4 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: meta.color, background: meta.bg, padding: '3px 8px', borderRadius: 20 }}>
                                 {meta.label}
                               </span>
                             </div>
@@ -292,10 +297,10 @@ export default function AssessDashboard() {
                   {/* Collapsed nudge for pending grading */}
                   {!isExpanded && needsAttention && (
                     <div style={{ padding: '10px 20px', borderTop: '0.5px solid #F5DFA0', background: '#FFFBF0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <p style={{ fontSize: 13, color: '#7A4A00' }}>
+                      <p style={{ fontSize: 13, color: '#D97010' }}>
                         {exam.sessions.filter(s => s.status === 'grading').length} session{exam.sessions.filter(s => s.status === 'grading').length > 1 ? 's' : ''} waiting to be graded
                       </p>
-                      <button onClick={() => toggleExpand(exam.id)} style={{ background: 'none', border: 'none', fontSize: 13, fontWeight: 600, color: '#7A4A00', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <button onClick={() => toggleExpand(exam.id)} style={{ background: 'none', border: 'none', fontSize: 13, fontWeight: 600, color: '#D97010', cursor: 'pointer', fontFamily: 'inherit' }}>
                         Show sessions
                       </button>
                     </div>

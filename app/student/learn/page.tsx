@@ -41,7 +41,7 @@ export default function StudentLearnDashboard() {
             id: course?.id ?? e.id,
             title: course?.title ?? 'Untitled course',
             subject: course?.subject ?? '',
-            thumbnail_color: course?.thumbnail_color ?? '#2BA888',
+            thumbnail_color: course?.thumbnail_color ?? '#1A8966',
             progress: e.progress_percentage ?? 0,
             total_modules: modules.length,
             completed_count: completed.length,
@@ -74,13 +74,13 @@ export default function StudentLearnDashboard() {
       <Link href={`/student/learn/${course.id}`} style={{ textDecoration: 'none' }}>
         <div style={{
           background: 'var(--white)',
-          border: '0.5px solid var(--border)',
-          borderRadius: 10,
-          padding: '14px 16px',
+          boxShadow: 'var(--shadow-soft)',
+          borderRadius: 12,
+          overflow: 'hidden',
           display: 'flex',
-          alignItems: 'center',
-          gap: 14,
         }}>
+          <div style={{ width: 4, background: course.thumbnail_color, flexShrink: 0 }} />
+          <div style={{ padding: '14px 14px 14px 12px', flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 44,
             height: 44,
@@ -91,7 +91,7 @@ export default function StudentLearnDashboard() {
             justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <span style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>{course.title[0]?.toUpperCase()}</span>
+            <span style={{ fontSize: 19, fontWeight: 700, color: '#fff' }}>{course.title[0]?.toUpperCase()}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -102,7 +102,7 @@ export default function StudentLearnDashboard() {
                 Up next: {course.next_module || 'Continue where you left off'}
               </div>
             ) : course.progress >= 100 ? (
-              <div style={{ fontSize: 12, color: '#085041', marginBottom: 6 }}>Completed</div>
+              <div style={{ fontSize: 12, color: '#1A8966', marginBottom: 6 }}>Completed</div>
             ) : (
               <div style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 6 }}>
                 {course.total_modules} module{course.total_modules === 1 ? '' : 's'} · {course.subject}
@@ -120,6 +120,7 @@ export default function StudentLearnDashboard() {
             )}
           </div>
           <span style={{ color: 'var(--mid-grey)', fontSize: 18 }}>›</span>
+          </div>
         </div>
       </Link>
     )
@@ -128,8 +129,12 @@ export default function StudentLearnDashboard() {
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: 'var(--page-bg)', paddingBottom: 40 }}>
       {/* Header */}
-      <div style={{ padding: '28px 20px 0', marginBottom: 24 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--near-black)' }}>
+      <div style={{ padding: '28px 20px 0', marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+        <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+          {new Date().toLocaleDateString('en-GH', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+        <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '-0.02em', lineHeight: 1.15 }}>
           {greeting}{name ? `, ${name}` : ''}
         </div>
         <div style={{ fontSize: 14, color: 'var(--mid-grey)', marginTop: 4 }}>
@@ -137,11 +142,17 @@ export default function StudentLearnDashboard() {
             ? 'No courses yet'
             : `${inProgress.length} in progress · ${notStarted.length} not started`}
         </div>
+        </div>
+        <Link href="/student/profile" style={{ flexShrink: 0 }}>
+          <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--teal)', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : '·'}
+          </div>
+        </Link>
       </div>
 
       {courses.length === 0 && (
         <div style={{ padding: '0 16px' }}>
-          <div style={{ background: 'var(--white)', border: '0.5px solid var(--border)', borderRadius: 10, padding: '32px 20px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
+          <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '32px 20px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
             Your teacher has not enrolled you in a course yet.
           </div>
         </div>
@@ -149,7 +160,7 @@ export default function StudentLearnDashboard() {
 
       {inProgress.length > 0 && (
         <div style={{ padding: '0 16px', marginBottom: 28 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 12, letterSpacing: '0.02em' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 12, letterSpacing: '0.1em', textTransform: 'uppercase' as const, paddingLeft: 4 }}>
             In progress
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -160,7 +171,7 @@ export default function StudentLearnDashboard() {
 
       {notStarted.length > 0 && (
         <div style={{ padding: '0 16px', marginBottom: 28 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 12, letterSpacing: '0.02em' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 12, letterSpacing: '0.1em', textTransform: 'uppercase' as const, paddingLeft: 4 }}>
             Not started
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -171,7 +182,7 @@ export default function StudentLearnDashboard() {
 
       {completed.length > 0 && (
         <div style={{ padding: '0 16px', marginBottom: 28 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 12, letterSpacing: '0.02em' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 12, letterSpacing: '0.1em', textTransform: 'uppercase' as const, paddingLeft: 4 }}>
             Completed
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

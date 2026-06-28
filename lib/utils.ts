@@ -32,16 +32,16 @@ export function gradeFromPercentage(pct: number): string {
 }
 
 export const MODE_COLORS = {
-  engage: '#EF9F27',
-  assess: '#E05C4B',
-  learn: '#2BA888',
-  train: '#185FA5',
-  platform: '#36318F',
+  engage: '#D97010',
+  assess: '#C23B2A',
+  learn: '#1A8966',
+  train: '#1052A3',
+  platform: '#2E2886',
 } as const
 
 export const ANSWER_COLORS = {
-  A: '#36318F',
-  B: '#2BA888',
-  C: '#E05C4B',
-  D: '#EF9F27',
+  A: '#2E2886',
+  B: '#1A8966',
+  C: '#C23B2A',
+  D: '#D97010',
 } as const
