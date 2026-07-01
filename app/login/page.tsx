@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { autoClaimBrowserSessions } from '@/lib/guest-sessions'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -23,6 +24,8 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
+
+    await autoClaimBrowserSessions(data.user.id)
 
     const { data: userRecord, error: userError } = await supabase
       .from('users')

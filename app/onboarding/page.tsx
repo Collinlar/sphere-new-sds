@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { autoClaimBrowserSessions } from '@/lib/guest-sessions'
 
-type InstitutionType = 'school' | 'company' | 'individual' | 'university'
 type ModuleKey = 'engage' | 'assess' | 'learn' | 'train'
 
 const MODULE_COLORS: Record<ModuleKey, string> = {
@@ -35,47 +35,95 @@ const MODULE_DESCRIPTIONS: Record<ModuleKey, string> = {
   train: 'Compliance paths and team skill tracking',
 }
 
-const INSTITUTION_TYPES: Array<{
-  key: InstitutionType
-  label: string
-  sublabel: string
+interface InstitutionTypeOption {
+  id: string
+  name: string
+  shortLabel: string
   defaultModules: ModuleKey[]
   accent: string
-}> = [
+  periodLabel: string
+  levelSample: string
+}
+
+const INSTITUTION_TYPES: InstitutionTypeOption[] = [
   {
-    key: 'school',
-    label: 'School or college',
-    sublabel: 'Includes Engage, Assess, and Learn',
+    id: 'primary',
+    name: 'Primary School',
+    shortLabel: 'Primary 1 to Primary 6 · Terms',
     defaultModules: ['engage', 'assess', 'learn'],
     accent: '#1A8966',
+    periodLabel: 'Term',
+    levelSample: 'Primary 1 – 6',
   },
   {
-    key: 'company',
-    label: 'Company or team',
-    sublabel: 'Includes Train',
-    defaultModules: ['train'],
-    accent: '#1052A3',
-  },
-  {
-    key: 'individual',
-    label: 'Individual educator',
-    sublabel: 'Includes Learn',
-    defaultModules: ['learn'],
+    id: 'jhs',
+    name: 'Junior High School (JHS)',
+    shortLabel: 'JHS 1 – 3 · Terms',
+    defaultModules: ['engage', 'assess', 'learn'],
     accent: '#1A8966',
+    periodLabel: 'Term',
+    levelSample: 'JHS 1, JHS 2, JHS 3',
   },
   {
-    key: 'university',
-    label: 'University or polytechnic',
-    sublabel: 'Includes all four modules',
+    id: 'shs',
+    name: 'Senior High School (SHS)',
+    shortLabel: 'SHS 1 – 3 · Terms',
+    defaultModules: ['engage', 'assess', 'learn'],
+    accent: '#C23B2A',
+    periodLabel: 'Term',
+    levelSample: 'SHS 1, SHS 2, SHS 3',
+  },
+  {
+    id: 'university',
+    name: 'University',
+    shortLabel: 'Year 1 – 4 · Semesters',
     defaultModules: ['engage', 'assess', 'learn', 'train'],
     accent: '#2E2886',
+    periodLabel: 'Semester',
+    levelSample: 'Year 1 – Year 4',
+  },
+  {
+    id: 'college',
+    name: 'Polytechnic / College',
+    shortLabel: 'Level 100 – 400 · Semesters',
+    defaultModules: ['engage', 'assess', 'learn'],
+    accent: '#1052A3',
+    periodLabel: 'Semester',
+    levelSample: 'Level 100 – 400',
+  },
+  {
+    id: 'training',
+    name: 'Training Institution',
+    shortLabel: 'Cohort-based · Intake periods',
+    defaultModules: ['learn', 'assess', 'train'],
+    accent: '#D97010',
+    periodLabel: 'Intake',
+    levelSample: 'Cohort-based',
+  },
+  {
+    id: 'corporate',
+    name: 'Company / Corporate',
+    shortLabel: 'Departments · Quarterly',
+    defaultModules: ['train'],
+    accent: '#1052A3',
+    periodLabel: 'Quarter',
+    levelSample: 'Q1 – Q4',
+  },
+  {
+    id: 'professional',
+    name: 'Professional Body',
+    shortLabel: 'Foundation to Professional · Semesters',
+    defaultModules: ['assess', 'learn'],
+    accent: '#2E2886',
+    periodLabel: 'Semester',
+    levelSample: 'Foundation → Professional',
   },
 ]
 
 export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
-  const [institutionType, setInstitutionType] = useState<InstitutionType | null>(null)
+  const [selectedType, setSelectedType] = useState<InstitutionTypeOption | null>(null)
   const [selectedModules, setSelectedModules] = useState<ModuleKey[]>([])
 
   const [institutionName, setInstitutionName] = useState('')
@@ -87,9 +135,9 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  function handleTypeSelect(type: InstitutionType, modules: ModuleKey[]) {
-    setInstitutionType(type)
-    setSelectedModules(modules)
+  function handleTypeSelect(type: InstitutionTypeOption) {
+    setSelectedType(type)
+    setSelectedModules(type.defaultModules)
     setStep(2)
   }
 
@@ -110,12 +158,12 @@ export default function OnboardingPage() {
         email,
         password,
         options: {
-          data: { name: adminName, institution_type: institutionType },
+          data: { name: adminName },
         },
       })
 
       if (authError || !authData.user) {
-        setError(authError?.message ?? 'We could not create your account. Check your details and try again.')
+        setError(authError?.message ?? 'Could not create your account. Check your details and try again.')
         setLoading(false)
         return
       }
@@ -131,15 +179,16 @@ export default function OnboardingPage() {
         .from('institutions')
         .insert({
           name: institutionName,
-          type: institutionType,
+          type: selectedType?.id ?? 'school',
+          institution_type_id: selectedType?.id ?? null,
           modules: modulesObj,
-          subscription_plan: 'trial',
+          subscription_plan: 'membership',
         })
         .select()
         .single()
 
       if (instError || !institution) {
-        setError(`Institution setup failed: ${instError?.message ?? 'unknown error'}`)
+        setError(`Institution setup did not complete. ${instError?.message ?? ''}`)
         setLoading(false)
         return
       }
@@ -158,25 +207,38 @@ export default function OnboardingPage() {
         email,
         role: 'admin',
         avatar_initials: initials,
+        subscription_tier: 'institution',
       })
 
-      localStorage.setItem(
-        'sphere_user',
-        JSON.stringify({
-          id: authData.user.id,
-          name: adminName,
-          email,
-          role: 'admin',
-          institution_id: institution.id,
-          avatar_initials: initials,
-        })
-      )
+      // Initialise creation usage row (unlimited for institution, but row must exist)
+      await supabase.from('creation_usage').insert({
+        user_id: authData.user.id,
+        assess_quota: 9999,
+        engage_quota: 9999,
+        learn_quota: 9999,
+        train_quota: 9999,
+      })
+
+      const userRecord = {
+        id: authData.user.id,
+        name: adminName,
+        email,
+        role: 'admin',
+        institution_id: institution.id,
+        avatar_initials: initials,
+        subscription_tier: 'institution',
+      }
+
+      localStorage.setItem('sphere_user', JSON.stringify(userRecord))
       localStorage.setItem('sphere_institution', institutionName)
+
+      // Claim any guest sessions from this browser
+      await autoClaimBrowserSessions(authData.user.id)
 
       const firstModule = selectedModules[0] ?? 'engage'
       router.push(`/${firstModule}`)
     } catch {
-      setError('Something went wrong on our end. Try again in a moment.')
+      setError('Something went wrong. Try again in a moment.')
       setLoading(false)
     }
   }
@@ -240,11 +302,12 @@ export default function OnboardingPage() {
       padding: '32px 24px 48px',
       fontFamily: 'var(--font)',
     }}>
+
       {/* Step 1: Institution type */}
       {step === 1 && (
         <div style={{
           width: '100%',
-          maxWidth: 600,
+          maxWidth: 680,
           background: 'var(--page-bg)',
           borderRadius: 16,
           boxShadow: 'var(--shadow-card)',
@@ -265,23 +328,23 @@ export default function OnboardingPage() {
           </div>
 
           <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '-0.02em', marginBottom: 6 }}>
-            What kind of institution are you?
+            What kind of institution are you setting up?
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 28 }}>
-            This determines which modules are ready for you on day one.
+            This loads your academic structure automatically — levels, period language, and calendar.
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
             {INSTITUTION_TYPES.map(t => (
               <button
-                key={t.key}
-                onClick={() => handleTypeSelect(t.key, t.defaultModules)}
+                key={t.id}
+                onClick={() => handleTypeSelect(t)}
                 style={{
                   background: 'var(--white)',
                   border: 'none',
                   borderLeft: `3px solid ${t.accent}`,
                   borderRadius: 12,
-                  padding: '22px 20px',
+                  padding: '20px 18px',
                   textAlign: 'left',
                   cursor: 'pointer',
                   fontFamily: 'inherit',
@@ -291,18 +354,20 @@ export default function OnboardingPage() {
                 onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 4px 14px ${t.accent}29, 0 0 0 1.5px ${t.accent}` }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--shadow-soft)' }}
               >
-                <div style={{ display: 'flex', gap: 5, marginBottom: 14, flexWrap: 'wrap' }}>
+                <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', marginBottom: 4 }}>{t.name}</p>
+                <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 10 }}>{t.levelSample}</p>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   {t.defaultModules.map(m => (
                     <span
                       key={m}
                       style={{
-                        fontSize: 10,
+                        fontSize: 9,
                         fontWeight: 700,
                         textTransform: 'uppercase',
                         letterSpacing: '0.06em',
                         color: MODULE_COLORS[m],
                         background: MODULE_LIGHT[m],
-                        padding: '3px 9px',
+                        padding: '2px 8px',
                         borderRadius: 20,
                       }}
                     >
@@ -310,8 +375,6 @@ export default function OnboardingPage() {
                     </span>
                   ))}
                 </div>
-                <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--near-black)', marginBottom: 4 }}>{t.label}</p>
-                <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>{t.sublabel}</p>
               </button>
             ))}
           </div>
@@ -333,10 +396,27 @@ export default function OnboardingPage() {
             <StepDots />
           </div>
 
+          {selectedType && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--bg2)',
+              borderRadius: 20,
+              padding: '4px 12px',
+              marginBottom: 18,
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: selectedType.accent }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--mid-grey)' }}>{selectedType.name}</span>
+            </div>
+          )}
+
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '-0.02em', marginBottom: 5 }}>
             About your institution
           </h1>
-          <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 26 }}>Sets up your admin account and institution profile.</p>
+          <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 26 }}>
+            Sets up your admin account and institution profile.
+          </p>
 
           <div style={{ background: 'var(--white)', borderRadius: 12, padding: '24px 22px', boxShadow: 'var(--shadow-soft)', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
@@ -451,7 +531,7 @@ export default function OnboardingPage() {
             Choose your modules
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24 }}>
-            We have pre-selected the right modules for your institution type. Add or remove as needed.
+            Pre-selected for your institution type. Add or remove as needed.
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
@@ -557,7 +637,7 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {/* Step 4: Summary + start trial */}
+      {/* Step 4: Summary + create account */}
       {step === 4 && (
         <div style={{
           width: '100%',
@@ -573,14 +653,20 @@ export default function OnboardingPage() {
           </div>
 
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '-0.02em', marginBottom: 5 }}>
-            Ready to start your free trial
+            Ready to set up your account
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24 }}>
-            14 days free. No card required. Cancel any time before the trial ends.
+            Free Membership plan. No card required. Upgrade when you need more.
           </p>
 
           <div style={{ background: 'var(--white)', borderRadius: 12, padding: 22, boxShadow: 'var(--shadow-soft)', marginBottom: 14 }}>
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 3 }}>Institution</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              {selectedType && (
+                <span style={{ fontSize: 11, fontWeight: 600, color: selectedType.accent, background: 'var(--bg2)', padding: '2px 8px', borderRadius: 20 }}>
+                  {selectedType.name}
+                </span>
+              )}
+            </div>
             <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--near-black)', marginBottom: 20 }}>{institutionName}</p>
 
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10 }}>Modules</p>
@@ -598,7 +684,7 @@ export default function OnboardingPage() {
 
             <div style={{ borderTop: '0.5px solid var(--bg2)', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>After your free trial</p>
+                <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Starting at</p>
                 <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--near-black)' }}>GHS {totalPrice}/month</p>
               </div>
               <span style={{
@@ -609,7 +695,7 @@ export default function OnboardingPage() {
                 padding: '6px 12px',
                 borderRadius: 20,
               }}>
-                14 days free
+                Free to start
               </span>
             </div>
           </div>
@@ -645,7 +731,7 @@ export default function OnboardingPage() {
               letterSpacing: '-0.01em',
             }}
           >
-            {loading ? 'Setting up your account...' : 'Start my free trial'}
+            {loading ? 'Setting up your account...' : 'Create my account'}
           </button>
 
           <p style={{ textAlign: 'center', marginTop: 14, fontSize: 13, color: 'var(--mid-grey)' }}>

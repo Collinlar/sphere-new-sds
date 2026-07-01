@@ -6,6 +6,8 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { ExamQuestion, ExamAudience, Roster } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import { incrementUsed } from '@/lib/subscription'
+import CreationGate from '@/components/brand/CreationGate'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
 const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'JHS 1', 'JHS 2', 'JHS 3', 'SHS 1', 'SHS 2', 'SHS 3']
@@ -100,8 +102,12 @@ export default function ExamCreate() {
     setDrawerOpen(false)
   }
 
-  async function handleSave() {
+  async function handleSave(gateCheck?: () => Promise<boolean>) {
     if (!title.trim()) { alert('Add a title for your exam.'); return }
+    if (gateCheck) {
+      const allowed = await gateCheck()
+      if (!allowed) return
+    }
     setSaving(true)
 
     const { error } = await supabase.from('exams').insert({
@@ -131,6 +137,7 @@ export default function ExamCreate() {
       return
     }
 
+    await incrementUsed('assess')
     router.push('/assess')
   }
 
@@ -147,6 +154,8 @@ export default function ExamCreate() {
   }
 
   return (
+    <CreationGate module="assess">
+      {({ check }) => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--page-bg)' }}>
       <style>{`
         /* Desktop: both panels always visible, tabs hidden */
@@ -171,7 +180,7 @@ export default function ExamCreate() {
         title="New exam"
         right={
           <button
-            onClick={handleSave}
+            onClick={() => handleSave(check)}
             disabled={saving}
             style={{
               background: '#C23B2A',
@@ -617,5 +626,7 @@ export default function ExamCreate() {
         </div>
       </div>
     </div>
+      )}
+    </CreationGate>
   )
 }

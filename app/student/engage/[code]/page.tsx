@@ -7,6 +7,7 @@ import type { EngageSession, EngageTeam, Quiz, QuizQuestion } from '@/lib/types'
 import { assignParticipantToTeam } from '@/lib/engage-team-service'
 import { StudentTeamDiscuss, StudentTeamFinal, StudentTeamLobby, StudentTeamResult } from '@/components/engage/StudentTeamGame'
 import { IconCheck } from '@/components/icons'
+import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 
@@ -368,7 +369,7 @@ export default function StudentEngageGame() {
       )}
 
       {phase === 'final' && !isTeamMode && (
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', width: '100%' }}>
           <div style={{
             width: 72, height: 72, borderRadius: '50%', background: 'var(--amber-light)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
@@ -380,11 +381,12 @@ export default function StudentEngageGame() {
           <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginBottom: 32 }}>Great job, {name}.</p>
           <div style={{
             background: 'rgba(239,159,39,0.15)', border: '0.5px solid #D97010',
-            borderRadius: 16, padding: '28px 40px',
+            borderRadius: 16, padding: '28px 40px', marginBottom: 20,
           }}>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>Your final score</p>
             <p style={{ fontSize: 52, fontWeight: 700, color: '#D97010' }}>{totalScore}</p>
           </div>
+          {participantId && <GuestClaimBanner sessionType="engage" submissionId={participantId} />}
         </div>
       )}
     </div>

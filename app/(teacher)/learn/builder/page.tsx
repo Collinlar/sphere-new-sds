@@ -6,6 +6,8 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
+import { incrementUsed } from '@/lib/subscription'
+import CreationGate from '@/components/brand/CreationGate'
 import { Suspense } from 'react'
 import type { Roster } from '@/lib/types'
 
@@ -262,8 +264,12 @@ function CourseBuilderInner() {
     window.open('/student/learn/preview', '_blank')
   }
 
-  async function save(publish: boolean) {
+  async function save(publish: boolean, gateCheck?: () => Promise<boolean>) {
     if (!title.trim()) { setError('Give your course a title first.'); return }
+    if (!editId && gateCheck) {
+      const allowed = await gateCheck()
+      if (!allowed) return
+    }
     setSaving(true); setError('')
 
     const payload = {
@@ -288,12 +294,15 @@ function CourseBuilderInner() {
     }
     setSaving(false)
     if (dbError) { setError(`Could not save: ${dbError.message}`); return }
+    if (!editId) await incrementUsed('learn')
     router.push('/learn')
   }
 
   if (loading) return <div style={{ padding: 40, color: 'var(--mid-grey)', fontSize: 14 }}>Loading your course...</div>
 
   return (
+    <CreationGate module="learn">
+      {({ check }) => (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
       <TopBar
         mode="learn"
@@ -301,10 +310,10 @@ function CourseBuilderInner() {
         right={
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="secondary" size="sm" onClick={openPreview}>Preview as student</Button>
-            <Button variant="secondary" size="sm" onClick={() => save(false)} disabled={saving}>
+            <Button variant="secondary" size="sm" onClick={() => save(false, check)} disabled={saving}>
               {saving ? 'Saving...' : 'Save draft'}
             </Button>
-            <Button accent="#1A8966" size="sm" onClick={() => save(true)} disabled={saving}>
+            <Button accent="#1A8966" size="sm" onClick={() => save(true, check)} disabled={saving}>
               {saving ? 'Publishing...' : 'Publish course'}
             </Button>
           </div>
@@ -470,6 +479,8 @@ function CourseBuilderInner() {
         </div>
       </div>
     </div>
+      )}
+    </CreationGate>
   )
 }
 

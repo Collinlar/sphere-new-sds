@@ -45,7 +45,7 @@ const PRICING = [
     modules: 1,
     users: '50 learners',
     highlight: false,
-    cta: 'Start free trial',
+    cta: 'Get started free',
   },
   {
     name: 'Institution',
@@ -55,7 +55,7 @@ const PRICING = [
     modules: 3,
     users: '500 learners',
     highlight: true,
-    cta: 'Start free trial',
+    cta: 'Get started free',
   },
   {
     name: 'Enterprise',
@@ -107,7 +107,7 @@ export default function LandingPage() {
             background: '#D97010', color: '#fff',
             fontSize: 14, fontWeight: 500, textDecoration: 'none',
           }}>
-            Start free trial
+            Get started free
           </Link>
         </div>
       </nav>
@@ -141,7 +141,7 @@ export default function LandingPage() {
                 background: '#D97010', color: '#fff',
                 fontSize: 16, fontWeight: 500, textDecoration: 'none',
               }}>
-                Start free, 14 days, no card
+                Get started free
               </Link>
               <Link href="/join" style={{
                 fontSize: 14, color: '#6B6870', textDecoration: 'none',
@@ -239,7 +239,7 @@ export default function LandingPage() {
                   fontSize: 14, fontWeight: 500, color: '#18171A',
                   textDecoration: 'none',
                 }}>
-                  Start free trial
+                  Get started free
                 </Link>
               </div>
             ))}
@@ -297,7 +297,7 @@ export default function LandingPage() {
                 Pay for what you use. Nothing more.
               </h2>
               <p style={{ fontSize: 15, color: '#6B6870', lineHeight: 1.65, marginBottom: 24 }}>
-                Every plan includes a 14-day free trial. No credit card required. Pay monthly via MTN MoMo, Telecel Cash, or bank transfer.
+                No credit card required. Pay monthly via MTN MoMo, Telecel Cash, or bank transfer.
               </p>
               <p style={{ fontSize: 13, color: '#6B6870' }}>
                 Need a custom combination of modules?{' '}
@@ -335,7 +335,7 @@ export default function LandingPage() {
                     {[
                       `${plan.modules} module${plan.modules > 1 ? 's' : ''}`,
                       plan.users,
-                      '14-day free trial',
+                      'Free Membership plan',
                       'MTN MoMo billing',
                     ].map((f) => (
                       <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>

@@ -8,6 +8,8 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import StepContentFields from '@/components/train/StepContentFields'
 import { getCurrentUser } from '@/lib/auth'
+import { incrementUsed } from '@/lib/subscription'
+import CreationGate from '@/components/brand/CreationGate'
 import {
   defaultStepContent,
   normalizeSteps,
@@ -135,9 +137,13 @@ function TrainBuilderInner() {
     if (editingStepIdx === idx) setEditingStepIdx(null)
   }
 
-  async function savePath(publish: boolean) {
+  async function savePath(publish: boolean, gateCheck?: () => Promise<boolean>) {
     if (!title.trim()) { setError('Give your training path a title first.'); return }
     if (steps.length === 0) { setError('Add at least one step with content before saving.'); return }
+    if (!pathId && gateCheck) {
+      const allowed = await gateCheck()
+      if (!allowed) return
+    }
 
     const missingContent = steps.find(s => !stepHasContent(s))
     if (missingContent) {
@@ -186,6 +192,7 @@ function TrainBuilderInner() {
     }
 
     setter(false)
+    if (!pathId) await incrementUsed('train')
     router.push('/train')
   }
 
@@ -198,16 +205,18 @@ function TrainBuilderInner() {
   }
 
   return (
+    <CreationGate module="train">
+      {({ check }) => (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
       <TopBar
         mode="train"
         title={pathId ? 'Edit path' : 'Path builder'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button variant="secondary" size="sm" onClick={() => savePath(false)} disabled={saving}>
+            <Button variant="secondary" size="sm" onClick={() => savePath(false, check)} disabled={saving}>
               {saving ? 'Saving...' : 'Save draft'}
             </Button>
-            <Button accent="#1052A3" size="sm" onClick={() => savePath(true)} disabled={publishing}>
+            <Button accent="#1052A3" size="sm" onClick={() => savePath(true, check)} disabled={publishing}>
               {publishing ? 'Publishing...' : pathId ? 'Save and assign' : 'Publish path'}
             </Button>
           </div>
@@ -426,6 +435,8 @@ function TrainBuilderInner() {
         </div>
       </div>
     </div>
+      )}
+    </CreationGate>
   )
 }
 

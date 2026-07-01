@@ -6,6 +6,8 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { QuizQuestion, QuestionType } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import { incrementUsed } from '@/lib/subscription'
+import CreationGate from '@/components/brand/CreationGate'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
 const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'JHS 1', 'JHS 2', 'JHS 3', 'SHS 1', 'SHS 2', 'SHS 3']
@@ -126,8 +128,12 @@ function QuizBuilderInner() {
     setActiveQuestion(Math.max(0, index - 1))
   }
 
-  async function save(publish: boolean) {
+  async function save(publish: boolean, gateCheck?: () => Promise<boolean>) {
     if (!title.trim()) { alert('Give your quiz a title first.'); return }
+    if (!editId && gateCheck) {
+      const allowed = await gateCheck()
+      if (!allowed) return
+    }
     setSaving(true)
     const payload = {
       institution_id: getCurrentUser().institution_id,
@@ -154,6 +160,7 @@ function QuizBuilderInner() {
       alert(`Save failed: ${msg}`)
       return
     }
+    if (!editId) await incrementUsed('engage')
     router.push('/engage')
   }
 
@@ -166,16 +173,18 @@ function QuizBuilderInner() {
   )
 
   return (
+    <CreationGate module="engage">
+      {({ check }) => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--page-bg)' }}>
       <TopBar
         mode="engage"
         title={editId ? 'Edit quiz' : 'New quiz'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => save(false)} disabled={saving} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--near-black)' }}>
+            <button onClick={() => save(false, check)} disabled={saving} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--near-black)' }}>
               {saving ? 'Saving...' : 'Save draft'}
             </button>
-            <button onClick={() => save(true)} disabled={saving} style={{ background: '#D97010', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+            <button onClick={() => save(true, check)} disabled={saving} style={{ background: '#D97010', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
               Publish quiz
             </button>
           </div>
@@ -356,6 +365,8 @@ function QuizBuilderInner() {
         </div>
       </div>
     </div>
+      )}
+    </CreationGate>
   )
 }
 

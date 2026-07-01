@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import type { ExamSubmission, Exam, ExamSession } from '@/lib/types'
 import { IconCheck, IconXCircle, IconInfo } from '@/components/icons'
 import { shouldOfferAccountSetup } from '@/lib/assess-account'
+import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
 
 const GRADE_COLORS: Record<string, { text: string; bg: string }> = {
   A: { text: 'var(--teal)', bg: 'var(--teal-light)' },
@@ -212,6 +213,7 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
         {/* Pending grading state */}
         {status === 'pending' && (
           <>
+            <GuestClaimBanner sessionType="exam" submissionId={id} />
             <div style={{ background: 'var(--white)', borderRadius: 14, padding: '28px 20px', boxShadow: 'var(--shadow-soft)', textAlign: 'center', marginBottom: 14 }}>
               <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--amber-light)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <GradingPendingIcon />
@@ -234,6 +236,7 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
         {/* Graded state */}
         {status === 'graded' && (
           <>
+            <GuestClaimBanner sessionType="exam" submissionId={id} />
             {/* Score card */}
             <div style={{ background: 'var(--white)', borderRadius: 14, padding: '18px 20px', boxShadow: 'var(--shadow-soft)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
               <div style={{ width: 64, height: 64, borderRadius: 14, background: gradeStyle.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
