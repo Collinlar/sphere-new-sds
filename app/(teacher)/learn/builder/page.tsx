@@ -8,6 +8,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
+import AddOnGate from '@/components/brand/AddOnGate'
+import { useInstitutionLevels } from '@/lib/use-institution-levels'
+import { generateWithAi } from '@/lib/checkout-client'
 import { Suspense } from 'react'
 import type { Roster } from '@/lib/types'
 
@@ -154,6 +157,7 @@ function CourseBuilderInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams.get('id')
+  const gradeLevels = useInstitutionLevels()
 
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
@@ -168,6 +172,7 @@ function CourseBuilderInner() {
   const [newModuleRequired, setNewModuleRequired] = useState(true)
   const [expandedModule, setExpandedModule] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
   const [loading, setLoading] = useState(!!editId)
   const [error, setError] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -309,6 +314,45 @@ function CourseBuilderInner() {
         title={editId ? 'Edit course' : 'Course builder'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
+            <AddOnGate addOnId="ai_course_builder">
+              {({ check: checkAddOn }) => (
+                <Button variant="secondary" size="sm" disabled={aiLoading} onClick={async () => {
+                  if (!(await checkAddOn())) return
+                  const topic = window.prompt('What should this course cover?')
+                  if (!topic?.trim()) return
+                  setAiLoading(true)
+                  const result = await generateWithAi({
+                    addOnId: 'ai_course_builder',
+                    task: 'course_modules',
+                    prompt: topic.trim(),
+                    context: { subject, gradeLevel: grade, count: 4 },
+                  })
+                  setAiLoading(false)
+                  if (!result.ok) {
+                    window.alert(result.error)
+                    return
+                  }
+                  const generated = (result.data.modules as Module[] | undefined) ?? []
+                  if (generated.length === 0) {
+                    window.alert('No modules came back. Try a clearer topic.')
+                    return
+                  }
+                  setModules(
+                    generated.map((m, index) => ({
+                      ...emptyModule(),
+                      ...m,
+                      id: m.id || `m-${Date.now()}-${index}`,
+                      type: (m.type ?? 'reading') as ModuleType,
+                      is_mandatory: m.is_mandatory ?? true,
+                      duration_minutes: m.duration_minutes ?? 10,
+                      content: m.content ?? {},
+                    }))
+                  )
+                }}>
+                  {aiLoading ? 'Drafting modules...' : 'Generate with AI'}
+                </Button>
+              )}
+            </AddOnGate>
             <Button variant="secondary" size="sm" onClick={openPreview}>Preview as student</Button>
             <Button variant="secondary" size="sm" onClick={() => save(false, check)} disabled={saving}>
               {saving ? 'Saving...' : 'Save draft'}
@@ -348,7 +392,16 @@ function CourseBuilderInner() {
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Grade</label>
-                <input value={grade} onChange={e => setGrade(e.target.value)} placeholder="e.g. JHS 1" style={inputStyle} />
+                <select
+                  value={grade}
+                  onChange={e => setGrade(e.target.value)}
+                  style={{ ...inputStyle, color: grade ? 'var(--near-black)' : 'var(--mid-grey)' }}
+                >
+                  <option value="">Select level</option>
+                  {gradeLevels.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div>

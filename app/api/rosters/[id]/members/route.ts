@@ -34,6 +34,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Nothing to import.' }, { status: 400 })
   }
 
+  const { checkEnrolledStudentCapacity } = await import('@/lib/enrollment-limits')
+  const capCheck = await checkEnrolledStudentCapacity(institutionId, members.length)
+  if (!capCheck.allowed) {
+    return NextResponse.json({ error: capCheck.reason }, { status: 403 })
+  }
+
   const { data: roster, error: rosterError } = await admin
     .from('rosters')
     .select('id, institution_id')

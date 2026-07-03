@@ -1,5 +1,14 @@
 import { supabase } from './supabase'
 import { MARKETPLACE_DEMO_RESOURCES } from './marketplace-seed'
+import {
+  createBackingResource,
+  importFromListing,
+  insertListing,
+  listingToResource,
+  resourceStatusToListing,
+  type MarketplaceListingRow,
+} from './marketplace-bridge'
+import { assertMarketplacePublish } from './plan-privileges'
 import { normalizeSteps } from './train-paths'
 
 export type MarketplaceResourceType =
@@ -20,6 +29,10 @@ export interface MarketplaceResourceMetadata {
   stats?: Record<string, string | number>
   attachments?: string[]
   content?: Record<string, unknown>
+  listing_id?: string
+  backing_resource_id?: string
+  backing_resource_type?: string
+  reviewer_notes?: string
 }
 
 export interface MarketplaceResource {
@@ -140,8 +153,69 @@ function filterDemoResources(filters: ResourceFilters): MarketplaceResource[] {
   return items
 }
 
-export async function fetchResources(filters: ResourceFilters = {}): Promise<MarketplaceResource[]> {
-  let query = supabase.from('marketplace_resources').select('*')
+function filterResources(resources: MarketplaceResource[], filters: ResourceFilters): MarketplaceResource[] {
+  let items = resources
+
+  if (filters.status) {
+    items = items.filter((r) => r.status === filters.status)
+  } else {
+    items = items.filter((r) => r.status === 'published')
+  }
+
+  if (filters.featured) {
+    items = items.filter((r) => r.metadata.featured)
+  }
+
+  if (filters.type && filters.type !== 'all') {
+    items = items.filter((r) => r.resource_type === filters.type)
+  }
+
+  if (filters.freeOnly) {
+    items = items.filter((r) => isFreeResource(r))
+  }
+
+  if (filters.search?.trim()) {
+    const q = filters.search.trim().toLowerCase()
+    items = items.filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) ||
+        (r.subject?.toLowerCase().includes(q) ?? false) ||
+        (r.description?.toLowerCase().includes(q) ?? false)
+    )
+  }
+
+  return items
+}
+
+async function fetchListings(filters: ResourceFilters): Promise<MarketplaceResource[]> {
+  let query = supabase.from('marketplace_listings').select('*')
+
+  if (filters.status) {
+    query = query.eq('status', resourceStatusToListing(filters.status))
+  } else {
+    query = query.eq('status', 'approved')
+  }
+
+  query = query.order('created_at', { ascending: false })
+
+  const { data, error } = await query
+  if (error || !data?.length) return []
+
+  let resources = (data as MarketplaceListingRow[]).map((row) => listingToResource(row))
+
+  if (filters.type && filters.type !== 'all') {
+    resources = resources.filter((r) => r.resource_type === filters.type)
+  }
+
+  if (filters.freeOnly) {
+    resources = resources.filter((r) => isFreeResource(r))
+  }
+
+  return filterResources(resources, { ...filters, status: filters.status, type: 'all', freeOnly: false })
+}
+
+async function fetchLegacyResources(filters: ResourceFilters): Promise<MarketplaceResource[]> {
+  let query = supabase.from('marketplace_resources').select('*').is('listing_id', null)
 
   if (filters.status) {
     query = query.eq('status', filters.status)
@@ -160,31 +234,31 @@ export async function fetchResources(filters: ResourceFilters = {}): Promise<Mar
   query = query.order('created_at', { ascending: false })
 
   const { data, error } = await query
+  if (error || !data?.length) return []
 
-  if (error || !data?.length) {
-    return filterDemoResources(filters)
-  }
+  return filterResources(data as MarketplaceResource[], { ...filters, type: 'all', freeOnly: false })
+}
 
-  let resources = data as MarketplaceResource[]
+export async function fetchResources(filters: ResourceFilters = {}): Promise<MarketplaceResource[]> {
+  const [fromListings, fromLegacy] = await Promise.all([fetchListings(filters), fetchLegacyResources(filters)])
+  const merged = [...fromListings, ...fromLegacy].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
 
-  if (filters.featured) {
-    resources = resources.filter((r) => r.metadata?.featured)
-  }
+  if (merged.length) return merged
+  return filterDemoResources(filters)
+}
 
-  if (filters.search?.trim()) {
-    const q = filters.search.trim().toLowerCase()
-    resources = resources.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        (r.subject?.toLowerCase().includes(q) ?? false) ||
-        (r.description?.toLowerCase().includes(q) ?? false)
-    )
-  }
-
-  return resources
+async function fetchListingById(id: string): Promise<MarketplaceResource | null> {
+  const { data, error } = await supabase.from('marketplace_listings').select('*').eq('id', id).maybeSingle()
+  if (error || !data) return null
+  return listingToResource(data as MarketplaceListingRow)
 }
 
 export async function fetchResourceById(id: string): Promise<MarketplaceResource | null> {
+  const listing = await fetchListingById(id)
+  if (listing) return listing
+
   const { data, error } = await supabase.from('marketplace_resources').select('*').eq('id', id).maybeSingle()
   if (!error && data) return data as MarketplaceResource
 
@@ -219,6 +293,14 @@ export async function fetchResourceReviews(resourceId: string): Promise<Marketpl
 }
 
 export async function hasImported(resourceId: string, institutionId: string): Promise<boolean> {
+  const { data: byListing } = await supabase
+    .from('marketplace_imports')
+    .select('id')
+    .eq('listing_id', resourceId)
+    .eq('institution_id', institutionId)
+    .maybeSingle()
+  if (byListing) return true
+
   const { data } = await supabase
     .from('marketplace_imports')
     .select('id')
@@ -234,6 +316,42 @@ export async function importResource(
   userId: string,
   institutionId: string
 ): Promise<{ ok: true; targetType: string; targetId: string } | { ok: false; error: string }> {
+  const { data: listingRow } = await supabase
+    .from('marketplace_listings')
+    .select('*')
+    .eq('id', resourceId)
+    .maybeSingle()
+
+  if (listingRow) {
+    const listing = listingRow as MarketplaceListingRow
+    if (!listing.is_free && (listing.price_ghs ?? 0) > 0) {
+      return { ok: false, error: 'Paid checkout coming soon. Free resources can be imported now.' }
+    }
+
+    const already = await hasImported(resourceId, institutionId)
+    if (already) return { ok: false, error: 'Your institution already imported this resource.' }
+
+    const copied = await importFromListing(listing, userId, institutionId)
+    if (!copied.ok) return copied
+
+    const now = new Date().toISOString()
+    await supabase.from('marketplace_imports').insert({
+      listing_id: listing.id,
+      institution_id: institutionId,
+      imported_by: userId,
+    })
+
+    await supabase
+      .from('marketplace_listings')
+      .update({
+        total_purchases: (listing.total_purchases ?? 0) + 1,
+        updated_at: now,
+      })
+      .eq('id', listing.id)
+
+    return copied
+  }
+
   const resource = await fetchResourceById(resourceId)
   if (!resource) return { ok: false, error: 'That resource is no longer available.' }
 
@@ -356,42 +474,18 @@ export async function importResource(
 }
 
 export async function publishResource(input: PublishResourceInput): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const gate = await assertMarketplacePublish()
+  if (!gate.ok) return gate
+
+  const listingStatus = input.status === 'draft' ? 'draft' : 'pending_review'
+  const backing = await createBackingResource(input)
+  if (!backing.ok) return backing
+
+  const listing = await insertListing(input, backing, listingStatus)
+  if (!listing.ok) return listing
+
   const now = new Date().toISOString()
-  const { data, error } = await supabase
-    .from('marketplace_resources')
-    .insert({
-      creator_id: input.creator_id,
-      institution_id: input.institution_id,
-      title: input.title.trim(),
-      resource_type: input.resource_type,
-      subject: input.subject,
-      level: input.level,
-      description: input.description.trim(),
-      price_ghs: input.price_ghs,
-      status: input.status ?? 'pending_review',
-      metadata: {
-        ...input.metadata,
-        creator_name: input.metadata?.creator_name,
-        creator_initials: input.metadata?.creator_initials,
-      },
-      created_at: now,
-      updated_at: now,
-    })
-    .select('id')
-    .single()
-
-  if (error || !data) {
-    return { ok: false, error: 'Your submission did not go through. Check your connection and try again.' }
-  }
-
-  return { ok: true, id: data.id as string }
-}
-
-export async function saveResourceDraft(
-  input: PublishResourceInput & { id?: string }
-): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const now = new Date().toISOString()
-  const payload = {
+  const { error } = await supabase.from('marketplace_resources').insert({
     creator_id: input.creator_id,
     institution_id: input.institution_id,
     title: input.title.trim(),
@@ -400,29 +494,128 @@ export async function saveResourceDraft(
     level: input.level,
     description: input.description.trim(),
     price_ghs: input.price_ghs,
-    status: 'draft' as const,
-    metadata: input.metadata ?? {},
+    status: input.status ?? 'pending_review',
+    listing_id: listing.listingId,
+    metadata: {
+      ...input.metadata,
+      listing_id: listing.listingId,
+      backing_resource_id: backing.resourceId,
+      backing_resource_type: backing.listingType,
+      creator_name: input.metadata?.creator_name,
+      creator_initials: input.metadata?.creator_initials,
+    },
+    created_at: now,
     updated_at: now,
+  })
+
+  if (error) {
+    await supabase.from('marketplace_listings').delete().eq('id', listing.listingId)
+    return { ok: false, error: 'Your submission did not go through. Check your connection and try again.' }
   }
+
+  return { ok: true, id: listing.listingId }
+}
+
+export async function saveResourceDraft(
+  input: PublishResourceInput & { id?: string }
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const gate = await assertMarketplacePublish()
+  if (!gate.ok) return gate
+
+  const now = new Date().toISOString()
 
   if (input.id) {
-    const { error } = await supabase.from('marketplace_resources').update(payload).eq('id', input.id)
-    if (error) return { ok: false, error: 'Could not save your draft.' }
-    return { ok: true, id: input.id }
+    const existing = await fetchResourceById(input.id)
+    const listingId = existing?.metadata?.listing_id ?? input.id
+
+    const { error: listingErr } = await supabase
+      .from('marketplace_listings')
+      .update({
+        title: input.title.trim(),
+        description: input.description.trim(),
+        subject: input.subject,
+        target_levels: [input.level],
+        price_ghs: input.price_ghs ?? 0,
+        is_free: input.price_ghs === null || input.price_ghs === 0,
+        status: 'draft',
+        updated_at: now,
+      })
+      .eq('id', listingId)
+
+    if (listingErr) return { ok: false, error: 'Could not save your draft.' }
+
+    const payload = {
+      creator_id: input.creator_id,
+      institution_id: input.institution_id,
+      title: input.title.trim(),
+      resource_type: input.resource_type,
+      subject: input.subject,
+      level: input.level,
+      description: input.description.trim(),
+      price_ghs: input.price_ghs,
+      status: 'draft' as const,
+      listing_id: listingId,
+      metadata: { ...(input.metadata ?? {}), listing_id: listingId },
+      updated_at: now,
+    }
+
+    if (existing && existing.metadata?.listing_id) {
+      const { error } = await supabase
+        .from('marketplace_resources')
+        .update(payload)
+        .eq('listing_id', listingId)
+      if (error) return { ok: false, error: 'Could not save your draft.' }
+    } else {
+      await supabase.from('marketplace_resources').insert({ ...payload, created_at: now })
+    }
+
+    return { ok: true, id: listingId }
   }
 
-  const { data, error } = await supabase
-    .from('marketplace_resources')
-    .insert({ ...payload, created_at: now })
-    .select('id')
-    .single()
+  const backing = await createBackingResource(input)
+  if (!backing.ok) return backing
 
-  if (error || !data) return { ok: false, error: 'Could not save your draft.' }
-  return { ok: true, id: data.id as string }
+  const listing = await insertListing(input, backing, 'draft')
+  if (!listing.ok) return listing
+
+  const { error } = await supabase.from('marketplace_resources').insert({
+    creator_id: input.creator_id,
+    institution_id: input.institution_id,
+    title: input.title.trim(),
+    resource_type: input.resource_type,
+    subject: input.subject,
+    level: input.level,
+    description: input.description.trim(),
+    price_ghs: input.price_ghs,
+    status: 'draft',
+    listing_id: listing.listingId,
+    metadata: { ...(input.metadata ?? {}), listing_id: listing.listingId },
+    created_at: now,
+    updated_at: now,
+  })
+
+  if (error) return { ok: false, error: 'Could not save your draft.' }
+  return { ok: true, id: listing.listingId }
 }
 
 export async function fetchPendingResources(): Promise<MarketplaceResource[]> {
-  return fetchResources({ status: 'pending_review' })
+  const [listings, legacy] = await Promise.all([
+    fetchResources({ status: 'pending_review' }),
+    supabase
+      .from('marketplace_resources')
+      .select('*')
+      .eq('status', 'pending_review')
+      .is('listing_id', null)
+      .order('created_at', { ascending: false }),
+  ])
+
+  const legacyRows = (legacy.data ?? []) as MarketplaceResource[]
+  const listingIds = new Set(listings.map((l) => l.id))
+  const extraLegacy = legacyRows.filter((r) => !listingIds.has(r.id))
+
+  return [...listings, ...extraLegacy].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
 }
 
 export async function reviewResource(
@@ -430,7 +623,59 @@ export async function reviewResource(
   action: 'approve' | 'reject',
   reviewerNotes?: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const status = action === 'approve' ? 'published' : 'rejected'
+  const { canReviewMarketplace } = await import('./plan-privileges')
+  if (!(await canReviewMarketplace())) {
+    return { ok: false, error: 'Only Sphere staff can review marketplace submissions.' }
+  }
+
+  const listingStatus = action === 'approve' ? 'approved' : 'rejected'
+  const resourceStatus = action === 'approve' ? 'published' : 'rejected'
+  const now = new Date().toISOString()
+
+  const { data: listing } = await supabase
+    .from('marketplace_listings')
+    .select('*')
+    .eq('id', resourceId)
+    .maybeSingle()
+
+  if (listing) {
+    const { error: listingErr } = await supabase
+      .from('marketplace_listings')
+      .update({
+        status: listingStatus,
+        approved_at: action === 'approve' ? now : null,
+        admin_notes: reviewerNotes ?? null,
+        updated_at: now,
+      })
+      .eq('id', resourceId)
+
+    if (listingErr) {
+      return { ok: false, error: 'That review action did not save. Try again in a moment.' }
+    }
+
+    const { data: linkedResource } = await supabase
+      .from('marketplace_resources')
+      .select('metadata')
+      .eq('listing_id', resourceId)
+      .maybeSingle()
+
+    const linkedMetadata = (linkedResource?.metadata ?? {}) as MarketplaceResourceMetadata
+
+    await supabase
+      .from('marketplace_resources')
+      .update({
+        status: resourceStatus,
+        updated_at: now,
+        metadata: {
+          ...linkedMetadata,
+          ...(reviewerNotes ? { reviewer_notes: reviewerNotes } : {}),
+        },
+      })
+      .eq('listing_id', resourceId)
+
+    return { ok: true }
+  }
+
   const existing = await fetchResourceById(resourceId)
   const metadata = {
     ...(existing?.metadata ?? {}),
@@ -439,8 +684,8 @@ export async function reviewResource(
   const { error } = await supabase
     .from('marketplace_resources')
     .update({
-      status,
-      updated_at: new Date().toISOString(),
+      status: resourceStatus,
+      updated_at: now,
       metadata,
     })
     .eq('id', resourceId)

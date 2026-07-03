@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-type Tab = 'active' | 'addons' | 'plans'
+type Tab = 'active' | 'addons' | 'plans' | 'inquiries'
 
 interface SubUser {
   id: string
@@ -38,6 +38,20 @@ interface Plan {
   marketplace_commission_rate?: number
 }
 
+interface InstitutionInquiry {
+  id: string
+  institution_name: string
+  contact_name: string
+  contact_email: string
+  contact_phone?: string
+  student_count?: number
+  message?: string
+  status: string
+  deposit_reference?: string
+  deposit_paid_at?: string
+  created_at: string
+}
+
 const TIER_COLOR: Record<string, string> = {
   institution: '#1A8966',
   creator_marketplace: '#2E2886',
@@ -52,6 +66,7 @@ export default function SubscriptionsPage() {
   const [users, setUsers] = useState<SubUser[]>([])
   const [addOns, setAddOns] = useState<AddOnRow[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
+  const [inquiries, setInquiries] = useState<InstitutionInquiry[]>([])
   const [loading, setLoading] = useState(true)
   const [tierFilter, setTierFilter] = useState('all')
   const [savingPlan, setSavingPlan] = useState<string | null>(null)
@@ -59,14 +74,16 @@ export default function SubscriptionsPage() {
 
   useEffect(() => {
     async function load() {
-      const [{ data: userData }, { data: addOnData }, { data: planData }] = await Promise.all([
+      const [{ data: userData }, { data: addOnData }, { data: planData }, { data: inquiryData }] = await Promise.all([
         supabase.from('users').select('id, name, email, subscription_tier, created_at').order('created_at', { ascending: false }).limit(500),
         supabase.from('user_add_ons').select('*, users(name, email)').order('started_at', { ascending: false }),
         supabase.from('subscription_plans').select('*'),
+        supabase.from('institution_plan_inquiries').select('*').order('created_at', { ascending: false }).limit(100),
       ])
       setUsers((userData ?? []) as SubUser[])
       setAddOns((addOnData ?? []) as AddOnRow[])
       setPlans((planData ?? []) as Plan[])
+      setInquiries((inquiryData ?? []) as InstitutionInquiry[])
       setLoading(false)
     }
     load()
@@ -77,6 +94,13 @@ export default function SubscriptionsPage() {
   async function grantAddOn(userId: string, addOnId: string) {
     await supabase.from('user_add_ons').upsert({ user_id: userId, add_on_id: addOnId, status: 'active', started_at: new Date().toISOString() })
     setPlanMsg(`Add-on granted to user.`)
+    setTimeout(() => setPlanMsg(''), 3000)
+  }
+
+  async function updateInquiryStatus(id: string, status: string) {
+    await supabase.from('institution_plan_inquiries').update({ status }).eq('id', id)
+    setInquiries(prev => prev.map(row => row.id === id ? { ...row, status } : row))
+    setPlanMsg('Inquiry status updated.')
     setTimeout(() => setPlanMsg(''), 3000)
   }
 
@@ -126,6 +150,7 @@ export default function SubscriptionsPage() {
           { key: 'active', label: 'Active subscriptions' },
           { key: 'addons', label: 'Add-ons' },
           { key: 'plans', label: 'Plan editor' },
+          { key: 'inquiries', label: `Institution enquiries${inquiries.filter(i => i.status === 'new').length ? ` (${inquiries.filter(i => i.status === 'new').length})` : ''}` },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             height: 36, padding: '0 18px', borderRadius: 20, border: 'none',
@@ -230,6 +255,65 @@ export default function SubscriptionsPage() {
               <PlanEditorCard key={plan.id} plan={plan} saving={savingPlan === plan.id} onSave={updated => savePlan(updated)} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* INSTITUTION ENQUIRIES */}
+      {!loading && tab === 'inquiries' && (
+        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--page-bg)' }}>
+                {['Institution', 'Contact', 'Students', 'Message', 'Status', 'Deposit', 'Received'].map(h => (
+                  <th key={h} style={{ padding: '9px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', textAlign: 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {inquiries.map((row, i) => (
+                <tr key={row.id} style={{ borderTop: i > 0 ? '0.5px solid var(--border)' : 'none' }}>
+                  <td style={{ padding: '10px 16px' }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>{row.institution_name}</p>
+                  </td>
+                  <td style={{ padding: '10px 16px' }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{row.contact_name}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{row.contact_email}</p>
+                    {row.contact_phone && <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{row.contact_phone}</p>}
+                  </td>
+                  <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--mid-grey)' }}>{row.student_count ?? '—'}</td>
+                  <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--mid-grey)', maxWidth: 220 }}>
+                    {row.message ? row.message.slice(0, 120) + (row.message.length > 120 ? '…' : '') : '—'}
+                  </td>
+                  <td style={{ padding: '10px 16px' }}>
+                    <select
+                      value={row.status}
+                      onChange={(e) => updateInquiryStatus(row.id, e.target.value)}
+                      style={{ height: 32, borderRadius: 6, border: '0.5px solid var(--border)', padding: '0 8px', fontSize: 12, fontFamily: 'inherit' }}
+                    >
+                      {['new', 'contacted', 'quoted', 'deposit_paid', 'closed'].map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                    {row.deposit_paid_at
+                      ? new Date(row.deposit_paid_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                      : '—'}
+                  </td>
+                  <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                    {new Date(row.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </td>
+                </tr>
+              ))}
+              {inquiries.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>
+                    No institution enquiries yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

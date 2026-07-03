@@ -12,6 +12,7 @@ import {
   getResourceTypeLabel,
   type MarketplaceResource,
 } from '@/lib/marketplace'
+import { usePlanContext } from '@/lib/use-plan-context'
 
 const ACCENT_GRADIENTS: Record<string, string> = {
   teal: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)',
@@ -170,6 +171,7 @@ export default function MarketplacePage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [activeChip, setActiveChip] = useState('all')
+  const { canSellMarketplace, isSphereStaff } = usePlanContext()
 
   useEffect(() => {
     async function load() {
@@ -222,21 +224,39 @@ export default function MarketplacePage() {
                 Marketplace
               </p>
             </div>
-            <Link href="/platform/marketplace/publish" style={{
-              height: 38,
-              background: 'var(--amber)',
-              borderRadius: 8,
-              padding: '0 18px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              fontSize: 13,
-              fontWeight: 600,
-              color: '#fff',
-              textDecoration: 'none',
-              flexShrink: 0,
-            }}>
-              + Publish resource
-            </Link>
+            {canSellMarketplace ? (
+              <Link href="/platform/marketplace/publish" style={{
+                height: 38,
+                background: 'var(--amber)',
+                borderRadius: 8,
+                padding: '0 18px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#fff',
+                textDecoration: 'none',
+                flexShrink: 0,
+              }}>
+                + Publish resource
+              </Link>
+            ) : (
+              <Link href="/platform/settings/billing" style={{
+                height: 38,
+                background: 'rgba(255,255,255,0.12)',
+                borderRadius: 8,
+                padding: '0 18px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'rgba(255,255,255,0.85)',
+                textDecoration: 'none',
+                flexShrink: 0,
+              }}>
+                Upgrade to publish
+              </Link>
+            )}
           </div>
           <div style={{
             background: 'rgba(255,255,255,0.08)',
@@ -328,9 +348,11 @@ export default function MarketplacePage() {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>Recently added</p>
-                <Link href="/platform/marketplace/review" style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 500, textDecoration: 'none' }}>
-                  Review queue →
-                </Link>
+                {isSphereStaff && (
+                  <Link href="/platform/marketplace/review" style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 500, textDecoration: 'none' }}>
+                    Review queue →
+                  </Link>
+                )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {(recent.length > 0 ? recent : resources).map((r) => (

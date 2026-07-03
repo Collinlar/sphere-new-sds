@@ -6,6 +6,7 @@ import Link from 'next/link'
 import TopBar from '@/components/brand/TopBar'
 import { IconInfo } from '@/components/icons'
 import { getCurrentUser } from '@/lib/auth'
+import { usePlanContext } from '@/lib/use-plan-context'
 import {
   publishResource,
   saveResourceDraft,
@@ -18,6 +19,7 @@ import {
 export default function PublishMarketplacePage() {
   const router = useRouter()
   const user = getCurrentUser()
+  const { canSellMarketplace, loading: planLoading, planId } = usePlanContext()
   const initials = user.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
 
   const [title, setTitle] = useState('')
@@ -134,6 +136,61 @@ export default function PublishMarketplacePage() {
     color: 'var(--near-black)',
     fontFamily: 'var(--font)',
     cursor: 'pointer',
+  }
+
+  if (planLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+        <TopBar mode="platform" title="Publish to marketplace" />
+        <p style={{ padding: 32, fontSize: 14, color: 'var(--mid-grey)' }}>Checking your plan...</p>
+      </div>
+    )
+  }
+
+  if (!canSellMarketplace) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+        <TopBar mode="platform" title="Publish to marketplace" />
+        <div style={{ maxWidth: 480, margin: '48px auto', padding: '0 20px', textAlign: 'center' }}>
+          <div style={{
+            background: 'var(--white)',
+            borderRadius: 12,
+            padding: '32px 28px',
+            boxShadow: 'var(--shadow-soft)',
+          }}>
+            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--near-black)', marginBottom: 8 }}>
+              Publishing needs a Creator plan
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 20 }}>
+              Your {planId === 'membership' ? 'Membership' : 'current'} plan lets you browse and import resources.
+              Upgrade to Creator Quarterly or Institution to publish and sell on the marketplace.
+            </p>
+            <Link
+              href="/platform/settings/billing"
+              style={{
+                display: 'inline-flex',
+                height: 44,
+                alignItems: 'center',
+                padding: '0 20px',
+                borderRadius: 8,
+                background: '#2E2886',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 600,
+                textDecoration: 'none',
+              }}
+            >
+              See upgrade options
+            </Link>
+            <p style={{ marginTop: 16 }}>
+              <Link href="/platform/marketplace" style={{ fontSize: 13, color: 'var(--mid-grey)', textDecoration: 'none' }}>
+                Back to marketplace
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -81,7 +81,7 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
           progress,
           steps_completed: completedSteps.length,
           steps_total: totalSteps || completedSteps.length,
-          certificate: !!e.certificate_issued_at || progress === 100,
+          certificate: !!e.certificate_issued_at,
           skills: [0, 0, 0, 0, 0],
         }
       }))

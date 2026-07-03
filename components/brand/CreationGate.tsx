@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { canCreate, type Module } from '@/lib/subscription'
+import { canCreate, type Module, getEffectivePlanId } from '@/lib/subscription'
 import type { CreationUsage } from '@/lib/types'
 import { getCreationUsage } from '@/lib/subscription'
-import { getCurrentUser } from '@/lib/auth'
 
 const MODULE_COLOR: Record<Module, string> = {
   assess: '#C23B2A',
@@ -22,9 +21,9 @@ const PLAN_LABELS: Record<string, string> = {
 
 const UPGRADE_PERKS: Record<string, string[]> = {
   membership: [
-    'Up to 40 creations across all modules',
-    '50 students per live session',
-    'Publish to the marketplace',
+    '40 creations across Assess, Engage, Learn, and Train',
+    'Up to 50 students per live session',
+    'Publish and sell on the marketplace',
     'Issue certificates',
   ],
   creator_quarterly: [
@@ -48,8 +47,7 @@ export default function CreationGate({ module, children }: Props) {
   const [tier, setTier] = useState<string>('membership')
 
   useEffect(() => {
-    const user = getCurrentUser()
-    setTier((user as { subscription_tier?: string }).subscription_tier ?? 'membership')
+    getEffectivePlanId().then(setTier)
     getCreationUsage().then(u => setUsage(u))
   }, [])
 

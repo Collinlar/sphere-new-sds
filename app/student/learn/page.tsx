@@ -150,6 +150,27 @@ export default function StudentLearnDashboard() {
         </Link>
       </div>
 
+      <div style={{ padding: '0 16px', marginBottom: 24 }}>
+        <Link href="/student/resources" style={{ textDecoration: 'none' }}>
+          <div style={{
+            background: 'var(--white)',
+            boxShadow: 'var(--shadow-soft)',
+            borderRadius: 12,
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', marginBottom: 2 }}>Reading materials</p>
+              <p style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Guides, notes, and documents from your teachers</p>
+            </div>
+            <span style={{ color: 'var(--amber)', fontSize: 18, fontWeight: 700 }}>›</span>
+          </div>
+        </Link>
+      </div>
+
       {courses.length === 0 && (
         <div style={{ padding: '0 16px' }}>
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '32px 20px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>

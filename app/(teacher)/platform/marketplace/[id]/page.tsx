@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState, use, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
 import { IconCheck } from '@/components/icons'
 import { getCurrentUser } from '@/lib/auth'
@@ -16,6 +17,7 @@ import {
   type MarketplaceResource,
   type MarketplaceReview,
 } from '@/lib/marketplace'
+import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
 
 const ACCENT_GRADIENTS: Record<string, string> = {
   teal: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)',
@@ -26,14 +28,39 @@ const ACCENT_GRADIENTS: Record<string, string> = {
 }
 
 export default function MarketplaceResourcePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--page-bg)' }} />}>
+      <MarketplaceResourcePageInner paramsPromise={paramsPromise} />
+    </Suspense>
+  )
+}
+
+function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) {
   const params = use(paramsPromise)
+  const searchParams = useSearchParams()
   const [resource, setResource] = useState<MarketplaceResource | null>(null)
   const [reviews, setReviews] = useState<MarketplaceReview[]>([])
   const [imported, setImported] = useState(false)
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [buying, setBuying] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const reference = searchParams.get('reference')
+    if (!reference) return
+
+    verifyCheckoutReference(reference).then(async (result) => {
+      if (result.ok) {
+        setImported(true)
+        setMessage('Purchase confirmed. This resource is now in your library.')
+        window.history.replaceState({}, '', `/platform/marketplace/${params.id}`)
+      } else {
+        setError(result.error)
+      }
+    })
+  }, [searchParams, params.id])
 
   useEffect(() => {
     async function load() {
@@ -66,6 +93,21 @@ export default function MarketplaceResourcePage({ params: paramsPromise }: { par
     }
     setImported(true)
     setMessage(`Copied to your library as a ${result.targetType.replace('_', ' ')}.`)
+  }
+
+  async function handleBuy() {
+    if (!resource) return
+    setBuying(true)
+    setError(null)
+    setMessage(null)
+    const user = getCurrentUser()
+    const result = await startCheckout({
+      intentType: 'marketplace',
+      payload: { listingId: resource.id, institutionId: user.institution_id },
+      callbackPath: `/platform/marketplace/${resource.id}`,
+    })
+    setBuying(false)
+    if (!result.ok) setError(result.error)
   }
 
   if (loading) {
@@ -327,25 +369,26 @@ export default function MarketplaceResourcePage({ params: paramsPromise }: { par
           ) : (
             <div>
               <button
-                disabled
+                onClick={handleBuy}
+                disabled={buying || imported}
                 style={{
                   width: '100%',
                   height: 50,
-                  background: 'var(--bg2)',
+                  background: imported ? 'var(--bg2)' : 'var(--amber)',
                   border: 'none',
                   borderRadius: 12,
                   fontSize: 15,
                   fontWeight: 700,
-                  color: 'var(--mid-grey)',
-                  cursor: 'not-allowed',
+                  color: imported ? 'var(--mid-grey)' : '#fff',
+                  cursor: imported || buying ? 'default' : 'pointer',
                   fontFamily: 'var(--font)',
                   marginBottom: 8,
                 }}
               >
-                Buy — {formatPrice(resource.price_ghs)}
+                {imported ? 'Already in your library' : buying ? 'Opening MoMo checkout...' : `Buy with MoMo — ${formatPrice(resource.price_ghs)}`}
               </button>
               <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                Paid checkout coming soon
+                Paid via MTN MoMo or card through Paystack
               </p>
             </div>
           )}

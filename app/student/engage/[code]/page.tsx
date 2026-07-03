@@ -107,6 +107,14 @@ export default function StudentEngageGame() {
       return
     }
 
+    const { checkEngageSessionJoin } = await import('@/lib/session-limits')
+    const joinCheck = await checkEngageSessionJoin(sessionData.id)
+    if (!joinCheck.allowed) {
+      setError(joinCheck.reason ?? 'This session is full.')
+      setJoining(false)
+      return
+    }
+
     const { data: participant, error: pErr } = await supabase
       .from('session_participants')
       .insert({

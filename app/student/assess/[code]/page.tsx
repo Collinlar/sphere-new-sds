@@ -23,6 +23,7 @@ export default function StudentExam() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [activeQ, setActiveQ] = useState(0)
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set())
+  const [revealedHints, setRevealedHints] = useState<Set<string>>(new Set())
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
   const [joining, setJoining] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -189,6 +190,14 @@ export default function StudentExam() {
         return
       }
 
+      const { checkAssessSessionJoin } = await import('@/lib/session-limits')
+      const ticketJoinCheck = await checkAssessSessionJoin(sessionData.id)
+      if (!ticketJoinCheck.allowed) {
+        setError(ticketJoinCheck.reason ?? 'This exam session is full.')
+        setJoining(false)
+        return
+      }
+
       const { data: sub, error: subErr } = await supabase
         .from('exam_submissions')
         .insert({
@@ -235,6 +244,14 @@ export default function StudentExam() {
 
     if (!sessionData) {
       setError('That exam code is not active. Check with your teacher.')
+      setJoining(false)
+      return
+    }
+
+    const { checkAssessSessionJoin } = await import('@/lib/session-limits')
+    const joinCheck = await checkAssessSessionJoin(sessionData.id)
+    if (!joinCheck.allowed) {
+      setError(joinCheck.reason ?? 'This exam session is full.')
       setJoining(false)
       return
     }
@@ -556,6 +573,36 @@ export default function StudentExam() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 22px' }}>
             <div style={{ background: '#fff', boxShadow: 'var(--shadow-soft)', borderRadius: 12, padding: 20, marginBottom: 16 }}>
               <p style={{ fontSize: 16, fontWeight: 500, color: '#18171A', lineHeight: 1.5 }}>{currentQ.text}</p>
+              {currentQ.hint && (
+                <div style={{ marginTop: 14 }}>
+                  {!revealedHints.has(currentQ.id) ? (
+                    <button
+                      type="button"
+                      onClick={() => setRevealedHints((prev) => new Set(prev).add(currentQ.id))}
+                      style={{
+                        background: 'var(--amber-light)',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 14px',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: '#9A5800',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Show hint for this question
+                    </button>
+                  ) : (
+                    <div style={{ background: 'var(--amber-light)', borderRadius: 8, padding: '10px 12px' }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#9A5800', marginBottom: 4 }}>
+                        Hint
+                      </p>
+                      <p style={{ fontSize: 13, color: '#633806', lineHeight: 1.55 }}>{currentQ.hint}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {(currentQ.type === 'mcq' || currentQ.type === 'true_false') && currentQ.options && (

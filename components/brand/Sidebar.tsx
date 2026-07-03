@@ -5,6 +5,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { getCurrentUser } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
+import {
+  type ModuleKey,
+  getEffectiveModules,
+  parseInstitutionModules,
+} from '@/lib/institution-modules'
 
 const ALL_MODES = [
   { key: 'engage', label: 'Engage', color: '#D97010', href: '/engage' },
@@ -32,9 +37,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
   const router = useRouter()
   const [displayName, setDisplayName] = useState(userName ?? '')
   const [displayInstitution, setDisplayInstitution] = useState(institutionName ?? '')
-  const [activeModules, setActiveModules] = useState<Record<string, boolean>>({
-    engage: true, assess: true, learn: true, train: true,
-  })
+  const [enabledModules, setEnabledModules] = useState<ModuleKey[]>(['engage', 'assess'])
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
@@ -51,12 +54,16 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
     if (user.institution_id) {
       supabase
         .from('institutions')
-        .select('modules, name')
+        .select('modules, name, subscription_plan')
         .eq('id', user.institution_id)
         .single()
         .then(({ data }) => {
-          if (data?.modules) setActiveModules(data.modules as Record<string, boolean>)
-          if (data?.name) setDisplayInstitution(data.name)
+          if (data) {
+            const provisioned = parseInstitutionModules(data.modules)
+            const planId = data.subscription_plan === 'trial' ? 'membership' : (data.subscription_plan ?? 'membership')
+            setEnabledModules(getEffectiveModules(provisioned, planId))
+            if (data.name) setDisplayInstitution(data.name)
+          }
         })
     }
   }, [institutionName])
@@ -104,7 +111,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
       </p>
       {ALL_MODES.map((m) => {
         const isActive = pathname.startsWith(m.href)
-        const isEnabled = activeModules[m.key] !== false
+        const isEnabled = enabledModules.includes(m.key as ModuleKey)
 
         if (!isEnabled) {
           return (

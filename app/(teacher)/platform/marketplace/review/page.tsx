@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
 import { IconCheck, IconDocument, IconPlay } from '@/components/icons'
+import { usePlanContext } from '@/lib/use-plan-context'
 import {
   fetchPendingResources,
   reviewResource,
@@ -14,6 +16,8 @@ import {
 } from '@/lib/marketplace'
 
 export default function MarketplaceReviewPage() {
+  const router = useRouter()
+  const { isSphereStaff, loading: planLoading } = usePlanContext()
   const [pending, setPending] = useState<MarketplaceResource[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [checklist, setChecklist] = useState<boolean[]>(REVIEW_CHECKLIST.map(() => false))
@@ -31,9 +35,14 @@ export default function MarketplaceReviewPage() {
   }
 
   useEffect(() => {
+    if (planLoading) return
+    if (!isSphereStaff) {
+      router.replace('/platform/marketplace')
+      return
+    }
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [planLoading, isSphereStaff])
 
   const active = pending.find((p) => p.id === activeId) ?? pending[0] ?? null
 
@@ -64,6 +73,15 @@ export default function MarketplaceReviewPage() {
     const remaining = pending.filter((p) => p.id !== active.id)
     setPending(remaining)
     setActiveId(remaining[0]?.id ?? null)
+  }
+
+  if (planLoading || !isSphereStaff) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+        <TopBar mode="platform" title="Marketplace review queue" />
+        <p style={{ padding: 32, fontSize: 14, color: 'var(--mid-grey)' }}>Checking access...</p>
+      </div>
+    )
   }
 
   return (

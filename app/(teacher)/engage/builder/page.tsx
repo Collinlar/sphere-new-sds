@@ -8,9 +8,9 @@ import type { QuizQuestion, QuestionType } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
+import { useInstitutionLevels } from '@/lib/use-institution-levels'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
-const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'JHS 1', 'JHS 2', 'JHS 3', 'SHS 1', 'SHS 2', 'SHS 3']
 const TIME_OPTIONS = [10, 20, 30, 60]
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 
@@ -54,6 +54,7 @@ function QuizBuilderInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams.get('edit')
+  const gradeLevels = useInstitutionLevels()
 
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
@@ -201,7 +202,7 @@ function QuizBuilderInner() {
           </select>
           <select value={gradeLevel} onChange={e => setGradeLevel(e.target.value)} style={{ background: 'var(--bg2)', border: 'none', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: gradeLevel ? 'var(--near-black)' : 'var(--mid-grey)', width: '100%', boxSizing: 'border-box' }}>
             <option value="">Grade level</option>
-            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+            {gradeLevels.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
 
           <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: 12 }}>

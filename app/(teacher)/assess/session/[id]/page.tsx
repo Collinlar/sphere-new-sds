@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import type { ExamSession, ExamSubmission, Exam } from '@/lib/types'
 import { generateJoinCode } from '@/lib/utils'
 import { getCurrentUser } from '@/lib/auth'
+import { getHostSessionCap } from '@/lib/session-limits'
 import { generateTicketsForSession, type TicketWithStudent } from '@/lib/tickets'
 
 interface FlagEvent { type: string; at: string; count: number }
@@ -45,6 +46,7 @@ function InvigilatorViewInner() {
   const [actionTarget, setActionTarget] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [tickets, setTickets] = useState<TicketWithStudent[]>([])
+  const [sessionCap, setSessionCap] = useState<number | null>(null)
   const creatingRef = useRef(false)
 
   const loadData = useCallback(async () => {
@@ -144,6 +146,10 @@ function InvigilatorViewInner() {
   }, [id, examId])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    getHostSessionCap(getCurrentUser().id).then(setSessionCap)
+  }, [])
 
   useEffect(() => {
     if (timeLeft === null || timeLeft <= 0) return
@@ -331,7 +337,7 @@ function InvigilatorViewInner() {
       {/* Stats */}
       <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'rgba(255,255,255,0.05)', flexShrink: 0 }}>
         {[
-          { label: 'Total students', value: submissions.length },
+          { label: 'Total students', value: sessionCap !== null ? `${submissions.length} / ${sessionCap}` : submissions.length },
           { label: 'In progress', value: submissions.filter((s) => !s.submitted_at).length },
           { label: 'Submitted', value: submittedCount },
           { label: 'Flagged', value: flaggedCount },

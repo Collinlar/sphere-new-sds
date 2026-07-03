@@ -86,6 +86,14 @@ export default function InstitutionDetailPage({ params: paramsPromise }: { param
       modules,
       subscription_plan: plan,
     }).eq('id', id)
+
+    // Keep institution admin subscription_tier aligned with institution plan
+    await supabase
+      .from('users')
+      .update({ subscription_tier: plan })
+      .eq('institution_id', id)
+      .eq('role', 'admin')
+
     setSaving(false)
     setMsg('Saved.')
     setTimeout(() => setMsg(''), 3000)

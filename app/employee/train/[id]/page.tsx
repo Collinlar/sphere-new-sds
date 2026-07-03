@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, use } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { LearningPath, PathStep } from '@/lib/types'
 import { IconDocument, IconLock, IconPlay, IconCheck } from '@/components/icons'
@@ -609,12 +610,16 @@ export default function EmployeeTrainPage({ params: paramsPromise }: { params: P
   const [completed, setCompleted] = useState<Set<string>>(new Set())
   const [activeStep, setActiveStep] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
+  const [userId, setUserId] = useState('')
+  const [certState, setCertState] = useState<'pending' | 'issued' | 'blocked'>('pending')
+  const [certError, setCertError] = useState('')
 
   useEffect(() => {
     async function load() {
       const { getCurrentUser } = await import('@/lib/auth')
       const user = getCurrentUser()
       setUserName(user.name)
+      setUserId(user.id)
 
       const { data, error } = await supabase
         .from('learning_paths')
@@ -639,11 +644,44 @@ export default function EmployeeTrainPage({ params: paramsPromise }: { params: P
     setActiveStep(null)
   }
 
+  useEffect(() => {
+    if (!allDone || !userId || certState !== 'pending') return
+    async function issueCert() {
+      const { issuePathCertificate } = await import('@/lib/train-paths')
+      const result = await issuePathCertificate(params.id, userId)
+      if (result.ok) {
+        setCertState('issued')
+      } else {
+        setCertState('blocked')
+        setCertError(result.error)
+      }
+    }
+    issueCert()
+  }, [allDone, userId, certState, params.id])
+
   if (loading) {
     return <div style={{ padding: 24, color: 'var(--mid-grey)', fontSize: 14 }}>Getting your training path...</div>
   }
 
   if (allDone) {
+    if (certState === 'pending') {
+      return <div style={{ padding: 24, color: 'var(--mid-grey)', fontSize: 14 }}>Recording your completion...</div>
+    }
+    if (certState === 'blocked') {
+      return (
+        <div style={{ maxWidth: 480, margin: '48px auto', padding: '0 20px' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 12, padding: '32px 24px', boxShadow: 'var(--shadow-soft)', textAlign: 'center' }}>
+            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--near-black)', marginBottom: 8 }}>Training complete</p>
+            <p style={{ fontSize: 14, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 16 }}>
+              You finished {path.title}. {certError}
+            </p>
+            <Link href="/employee/train/demo" style={{ fontSize: 13, color: '#1052A3', fontWeight: 600, textDecoration: 'none' }}>
+              Back to training
+            </Link>
+          </div>
+        </div>
+      )
+    }
     return <CertificateScreen name={userName} pathTitle={path.title} />
   }
 

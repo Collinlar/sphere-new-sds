@@ -98,6 +98,7 @@ export interface ExamQuestion {
   correct?: string
   marks: number
   rubric?: string
+  hint?: string
   explanation?: string
 }
 
@@ -467,6 +468,16 @@ export interface IssuedCertificate {
   issued_at: string
   certificate_url?: string
   verification_code: string
+}
+
+export interface CertificatePermission {
+  id: string
+  owner_id: string
+  owner_type: 'creator' | 'institution'
+  is_enabled: boolean
+  updated_by?: string
+  updated_at: string
+  users?: { name: string; email: string }
 }
 
 // =====================

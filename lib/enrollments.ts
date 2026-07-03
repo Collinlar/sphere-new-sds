@@ -1,10 +1,12 @@
 import { supabase } from '@/lib/supabase'
 import type { Course } from '@/lib/types'
+import { checkEnrolledStudentCapacity, countInstitutionStudents } from '@/lib/enrollment-limits'
 
 export interface EnrollResult {
   added: number
   alreadyEnrolled: number
   total: number
+  blocked?: string
 }
 
 export async function enrollRosterInCourse(course: Course): Promise<EnrollResult> {
@@ -32,6 +34,21 @@ export async function enrollRosterInCourse(course: Course): Promise<EnrollResult
 
   if (toEnroll.length === 0) {
     return { added: 0, alreadyEnrolled: filtered.length, total: filtered.length }
+  }
+
+  if (course.institution_id) {
+    const capCheck = await checkEnrolledStudentCapacity(course.institution_id, 0)
+    if (capCheck.cap !== null) {
+      const current = await countInstitutionStudents(course.institution_id)
+      if (current + toEnroll.length > capCheck.cap) {
+        return {
+          added: 0,
+          alreadyEnrolled: filtered.length - toEnroll.length,
+          total: filtered.length,
+          blocked: `Enrolling ${toEnroll.length} students would exceed your plan limit of ${capCheck.cap} enrolled students.`,
+        }
+      }
+    }
   }
 
   const { error } = await supabase.from('enrollments').insert(

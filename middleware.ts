@@ -4,15 +4,25 @@ import type { NextRequest } from 'next/server'
 
 const PROTECTED = ['/engage', '/assess', '/learn', '/train', '/platform', '/student', '/employee', '/admin']
 
-const PUBLIC_STUDENT_PREFIXES = ['/student/assess/', '/student/engage/']
+const PUBLIC_PREFIXES = [
+  '/student/assess/',
+  '/student/engage/',
+  '/join-roster/',
+  '/c/',
+  '/verify/',
+]
 
-function isPublicStudentPath(pathname: string) {
-  return PUBLIC_STUDENT_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+const PUBLIC_EXACT = new Set(['/signup'])
+
+function isPublicPath(pathname: string) {
+  if (PUBLIC_EXACT.has(pathname)) return true
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  if (isPublicStudentPath(pathname)) return NextResponse.next()
+  if (pathname.startsWith('/api/')) return NextResponse.next()
+  if (isPublicPath(pathname)) return NextResponse.next()
 
   const isProtected = PROTECTED.some(p => pathname.startsWith(p))
   if (!isProtected) return NextResponse.next()
@@ -52,6 +62,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|login|onboarding|join|forgot-password|reset-password|$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|login|signup|onboarding|join|forgot-password|reset-password|$).*)',
   ],
 }

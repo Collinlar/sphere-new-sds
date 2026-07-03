@@ -61,6 +61,24 @@ export default function LoginPage() {
       employee: '/employee/train/demo',
     }
 
+    if (userRecord.is_sphere_staff) {
+      router.push('/admin')
+      return
+    }
+
+    if (userRecord.role === 'employee') {
+      const { data: enrollment } = await supabase
+        .from('path_enrollments')
+        .select('path_id')
+        .eq('employee_id', userRecord.id)
+        .order('enrolled_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      router.push(enrollment?.path_id ? `/employee/train/${enrollment.path_id}` : roleRoutes.employee)
+      return
+    }
+
     if (['teacher', 'admin'].includes(userRecord?.role)) {
       const firstActive = (['engage', 'assess', 'learn', 'train'] as const).find(m => modules[m]) ?? 'engage'
       router.push(moduleRoutes[firstActive])

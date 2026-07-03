@@ -14,7 +14,7 @@ export async function adminGetStats() {
     supabase.from('users').select('id', { count: 'exact', head: true }),
     supabase.from('users').select('id', { count: 'exact', head: true }).eq('subscription_tier', 'membership'),
     supabase.from('creator_profiles').select('id', { count: 'exact', head: true }).eq('is_approved', false).is('rejected_at', null),
-    supabase.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('guest_sessions').select('id', { count: 'exact', head: true }).is('claimed_by', null).lt('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
     supabase.from('users').select('created_at').gte('created_at', new Date(Date.now() - 14 * 86400000).toISOString()).order('created_at', { ascending: false }),
   ])
@@ -40,17 +40,17 @@ export async function adminGetStats() {
 export async function adminGetMarketplaceRevenue() {
   const { data } = await supabase
     .from('marketplace_purchases')
-    .select('amount_ghs, created_at, sphere_commission_ghs')
-    .order('created_at', { ascending: false })
+    .select('price_ghs, purchased_at, commission_ghs')
+    .order('purchased_at', { ascending: false })
     .limit(500)
 
   const purchases = data ?? []
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
-  const thisMonth = purchases.filter(p => p.created_at >= monthAgo)
+  const thisMonth = purchases.filter(p => p.purchased_at >= monthAgo)
 
   return {
-    revenueThisMonth: thisMonth.reduce((s, p) => s + (p.sphere_commission_ghs ?? 0), 0),
+    revenueThisMonth: thisMonth.reduce((s, p) => s + (p.commission_ghs ?? 0), 0),
     salesThisMonth: thisMonth.length,
-    totalRevenue: purchases.reduce((s, p) => s + (p.sphere_commission_ghs ?? 0), 0),
+    totalRevenue: purchases.reduce((s, p) => s + (p.commission_ghs ?? 0), 0),
   }
 }

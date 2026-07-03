@@ -33,9 +33,9 @@ interface Listing {
 
 interface Purchase {
   id: string
-  amount_ghs: number
-  sphere_commission_ghs: number
-  created_at: string
+  price_ghs: number
+  commission_ghs: number
+  purchased_at: string
   marketplace_listings?: { title: string }
   buyer_id?: string
 }
@@ -105,13 +105,13 @@ export default function MarketplacePage() {
   }
 
   const pendingCreators = creators.filter(c => !c.is_approved && !c.rejected_at)
-  const pendingListings = listings.filter(l => l.status === 'pending')
+  const pendingListings = listings.filter(l => l.status === 'pending_review')
 
   const filteredListings = listingFilter === 'all' ? listings : listings.filter(l => l.status === listingFilter)
 
-  const totalRevenue = purchases.reduce((s, p) => s + (p.sphere_commission_ghs ?? 0), 0)
+  const totalRevenue = purchases.reduce((s, p) => s + (p.commission_ghs ?? 0), 0)
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
-  const revenueThisMonth = purchases.filter(p => p.created_at >= monthAgo).reduce((s, p) => s + (p.sphere_commission_ghs ?? 0), 0)
+  const revenueThisMonth = purchases.filter(p => p.purchased_at >= monthAgo).reduce((s, p) => s + (p.commission_ghs ?? 0), 0)
 
   return (
     <div style={{ padding: '32px 32px 60px', maxWidth: 1000 }}>
@@ -281,10 +281,10 @@ export default function MarketplacePage() {
                     <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--near-black)' }}>
                       {(p as { marketplace_listings?: { title: string } }).marketplace_listings?.title ?? '—'}
                     </td>
-                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>GH₵ {p.amount_ghs}</td>
-                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: 'var(--teal)' }}>GH₵ {p.sphere_commission_ghs}</td>
+                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>GH₵ {p.price_ghs}</td>
+                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: 'var(--teal)' }}>GH₵ {p.commission_ghs}</td>
                     <td style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-tertiary)' }}>
-                      {new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {new Date(p.purchased_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
                   </tr>
                 ))}

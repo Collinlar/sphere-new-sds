@@ -3,6 +3,7 @@
 interface TopBarProps {
   mode: 'engage' | 'assess' | 'learn' | 'train' | 'platform' | 'students'
   title?: string
+  left?: React.ReactNode
   right?: React.ReactNode
 }
 
@@ -15,7 +16,7 @@ const MODE_META = {
   students: { label: 'Students', accent: '#2E2886', bg: '#EEEDF8', text: '#2E2886' },
 }
 
-export default function TopBar({ mode, title, right }: TopBarProps) {
+export default function TopBar({ mode, title, left, right }: TopBarProps) {
   const meta = MODE_META[mode]
   return (
     <div style={{
@@ -29,6 +30,7 @@ export default function TopBar({ mode, title, right }: TopBarProps) {
       flexShrink: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {left}
         {title && (
           <>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.accent, flexShrink: 0 }} />

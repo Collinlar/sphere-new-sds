@@ -207,16 +207,15 @@ export default function OnboardingPage() {
         email,
         role: 'admin',
         avatar_initials: initials,
-        subscription_tier: 'institution',
+        subscription_tier: 'membership',
       })
 
-      // Initialise creation usage row (unlimited for institution, but row must exist)
       await supabase.from('creation_usage').insert({
         user_id: authData.user.id,
-        assess_quota: 9999,
-        engage_quota: 9999,
-        learn_quota: 9999,
-        train_quota: 9999,
+        assess_quota: 5,
+        engage_quota: 5,
+        learn_quota: 0,
+        train_quota: 0,
       })
 
       const userRecord = {
@@ -226,7 +225,7 @@ export default function OnboardingPage() {
         role: 'admin',
         institution_id: institution.id,
         avatar_initials: initials,
-        subscription_tier: 'institution',
+        subscription_tier: 'membership',
       }
 
       localStorage.setItem('sphere_user', JSON.stringify(userRecord))

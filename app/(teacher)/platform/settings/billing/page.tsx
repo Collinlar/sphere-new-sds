@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
-import { getCreationUsage } from '@/lib/subscription'
+import { getCreationUsage, getEffectivePlanId, updateQuotaAllocation } from '@/lib/subscription'
+import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
 import type { CreationUsage } from '@/lib/types'
 
 const MODULE_COLOR = { assess: '#C23B2A', engage: '#D97010', learn: '#1A8966', train: '#1052A3' }
@@ -63,6 +65,15 @@ const ADD_ONS = [
 ]
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--page-bg)' }} />}>
+      <BillingPageInner />
+    </Suspense>
+  )
+}
+
+function BillingPageInner() {
+  const searchParams = useSearchParams()
   const [userId, setUserId] = useState<string | null>(null)
   const [currentTier, setCurrentTier] = useState('membership')
   const [usage, setUsage] = useState<CreationUsage | null>(null)
@@ -73,6 +84,9 @@ export default function BillingPage() {
   const [poolTrain, setPoolTrain] = useState(10)
   const [savingAlloc, setSavingAlloc] = useState(false)
   const [allocMsg, setAllocMsg] = useState('')
+  const [checkoutMsg, setCheckoutMsg] = useState('')
+  const [checkoutError, setCheckoutError] = useState('')
+  const [checkingOut, setCheckingOut] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -81,8 +95,7 @@ export default function BillingPage() {
       if (!uid) return
       setUserId(uid)
 
-      const { data: userRow } = await supabase.from('users').select('subscription_tier').eq('id', uid).maybeSingle()
-      const tier = (userRow as { subscription_tier?: string } | null)?.subscription_tier ?? 'membership'
+      const tier = await getEffectivePlanId(uid)
       setCurrentTier(tier)
 
       const u = await getCreationUsage(uid)
@@ -100,19 +113,82 @@ export default function BillingPage() {
     load()
   }, [])
 
+  useEffect(() => {
+    const reference = searchParams.get('reference')
+    if (!reference) return
+
+    verifyCheckoutReference(reference).then((result) => {
+      if (result.ok) {
+        setCheckoutMsg('Payment confirmed. Your plan is updated.')
+        window.history.replaceState({}, '', '/platform/settings/billing')
+        if (userId) {
+          getEffectivePlanId(userId).then(setCurrentTier)
+          getCreationUsage(userId).then(setUsage)
+          supabase.from('user_add_ons').select('add_on_id').eq('user_id', userId).eq('status', 'active').then(({ data }) => {
+            setActiveAddOns((data ?? []).map((r: { add_on_id: string }) => r.add_on_id))
+          })
+        }
+      } else {
+        setCheckoutError(result.error)
+      }
+    })
+  }, [searchParams, userId])
+
+  async function handlePlanCheckout(planId: string) {
+    if (planId === 'institution') {
+      window.location.href = '/platform/settings/billing/institution'
+      return
+    }
+
+    setCheckingOut(true)
+    setCheckoutError('')
+
+    const intentType = planId === 'creator_marketplace' ? 'plan_switch' : 'subscription'
+    const result = await startCheckout({
+      intentType,
+      payload: { planId },
+      callbackPath: '/platform/settings/billing',
+    })
+
+    setCheckingOut(false)
+    if (!result.ok) {
+      setCheckoutError(result.error)
+      return
+    }
+    if (result.switched) {
+      setCheckoutMsg('Your plan was updated.')
+      setCurrentTier(planId)
+    }
+  }
+
+  async function handleAddOnCheckout(addOnId: string) {
+    setCheckingOut(true)
+    setCheckoutError('')
+    const result = await startCheckout({
+      intentType: 'addon',
+      payload: { addOnId },
+      callbackPath: '/platform/settings/billing',
+    })
+    setCheckingOut(false)
+    if (!result.ok) setCheckoutError(result.error)
+  }
+
   const poolTotal = poolAssess + poolEngage + poolLearn + poolTrain
 
   async function saveAllocation() {
     if (poolTotal > 40 || !userId) return
     setSavingAlloc(true)
-    await supabase.from('creation_usage').upsert({
-      user_id: userId,
-      assess_quota: poolAssess,
-      engage_quota: poolEngage,
-      learn_quota: poolLearn,
-      train_quota: poolTrain,
+    const result = await updateQuotaAllocation(userId, {
+      assess: poolAssess,
+      engage: poolEngage,
+      learn: poolLearn,
+      train: poolTrain,
     })
     setSavingAlloc(false)
+    if (!result.ok) {
+      setAllocMsg(result.error ?? 'Could not save allocation.')
+      return
+    }
     setAllocMsg('Allocation saved.')
     setTimeout(() => setAllocMsg(''), 3000)
   }
@@ -132,6 +208,17 @@ export default function BillingPage() {
       />
 
       <div style={{ padding: '28px 32px 60px', maxWidth: 860 }}>
+
+        {checkoutMsg && (
+          <div style={{ background: 'var(--teal-light)', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: 'var(--teal-dark)' }}>{checkoutMsg}</p>
+          </div>
+        )}
+        {checkoutError && (
+          <div style={{ background: '#FEE2E2', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: '#991B1B' }}>{checkoutError}</p>
+          </div>
+        )}
 
         {/* Current plan banner */}
         <div style={{
@@ -245,14 +332,14 @@ export default function BillingPage() {
                   ))}
                 </div>
                 <button
-                  disabled={isCurrent}
-                  onClick={() => { if (plan.id === 'institution') window.location.href = 'mailto:hello@spheresds.com?subject=Institution plan enquiry' }}
+                  disabled={isCurrent || checkingOut}
+                  onClick={() => handlePlanCheckout(plan.id)}
                   style={{
                     height: 34, background: isCurrent ? 'var(--bg2)' : plan.accent,
                     color: isCurrent ? 'var(--mid-grey)' : '#fff', border: 'none', borderRadius: 7,
-                    fontSize: 12, fontWeight: 600, cursor: isCurrent ? 'default' : 'pointer', fontFamily: 'inherit',
+                    fontSize: 12, fontWeight: 600, cursor: isCurrent || checkingOut ? 'default' : 'pointer', fontFamily: 'inherit',
                   }}
-                >{isCurrent ? 'Current plan' : plan.cta}</button>
+                >{isCurrent ? 'Current plan' : checkingOut ? 'Opening checkout...' : plan.cta}</button>
               </div>
             )
           })}
@@ -283,12 +370,15 @@ export default function BillingPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: comingSoon ? 'var(--text-tertiary)' : 'var(--near-black)' }}>{addon.price}</span>
                   {!comingSoon && !locked && (
-                    <button style={{
+                    <button
+                      onClick={() => !isActive && handleAddOnCheckout(addon.id)}
+                      disabled={isActive || checkingOut}
+                      style={{
                       height: 30, padding: '0 12px', borderRadius: 20, border: 'none',
                       background: isActive ? 'var(--teal-light)' : 'var(--amber)',
                       color: isActive ? 'var(--teal)' : '#fff', fontSize: 12, fontWeight: 600,
-                      cursor: 'pointer', fontFamily: 'inherit',
-                    }}>{isActive ? 'Active' : 'Add to plan'}</button>
+                      cursor: isActive || checkingOut ? 'default' : 'pointer', fontFamily: 'inherit',
+                    }}>{isActive ? 'Active' : checkingOut ? '...' : 'Add to plan'}</button>
                   )}
                   {(locked || comingSoon) && (
                     <span style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--bg2)', padding: '4px 10px', borderRadius: 20 }}>

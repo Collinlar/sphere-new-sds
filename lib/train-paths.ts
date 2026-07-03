@@ -155,6 +155,67 @@ export async function syncPathEnrollments(
   return eligible.length
 }
 
+/** Issue a completion certificate when the institution plan allows it. */
+export async function issuePathCertificate(
+  pathId: string,
+  employeeId: string
+): Promise<{ ok: true; verificationCode?: string } | { ok: false; error: string }> {
+  const { canIssueCertificates } = await import('./subscription')
+  if (!(await canIssueCertificates())) {
+    return {
+      ok: false,
+      error: 'Your institution plan does not include certificates. Upgrade to Creator or Institution.',
+    }
+  }
+
+  const { data: path } = await supabase
+    .from('learning_paths')
+    .select('id, title, creator_id, institution_id')
+    .eq('id', pathId)
+    .single()
+
+  if (!path) {
+    return { ok: false, error: 'Training path not found.' }
+  }
+
+  const { isCertificateIssuingEnabled } = await import('./certificate-permissions')
+  if (path.creator_id && !(await isCertificateIssuingEnabled(path.creator_id))) {
+    return { ok: false, error: 'Certificate issuing is disabled for this account.' }
+  }
+
+  const { error } = await supabase
+    .from('path_enrollments')
+    .update({
+      certificate_issued_at: new Date().toISOString(),
+      progress_percentage: 100,
+    })
+    .eq('path_id', pathId)
+    .eq('employee_id', employeeId)
+
+  if (error) {
+    return { ok: false, error: 'Certificate could not be issued. Try again.' }
+  }
+
+  const { data: issued, error: certError } = await supabase
+    .from('issued_certificates')
+    .insert({
+      recipient_id: employeeId,
+      issuer_id: path.creator_id,
+      resource_type: 'training_path',
+      resource_id: pathId,
+      resource_title: path.title,
+      issued_at: new Date().toISOString(),
+    })
+    .select('verification_code')
+    .single()
+
+  if (certError) {
+    return { ok: true }
+  }
+
+  return { ok: true, verificationCode: issued?.verification_code as string | undefined }
+}
+
 export function parseAssignedDepartments(path: LearningPath & { assigned_departments?: string[] }): string[] {
   if (Array.isArray(path.assigned_departments) && path.assigned_departments.length > 0) {
     return path.assigned_departments

@@ -5,6 +5,14 @@ import Link from 'next/link'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import {
+  type ModuleKey,
+  getEffectiveModules,
+  getPlanModuleDescription,
+  parseInstitutionModules,
+} from '@/lib/institution-modules'
+import { fetchInstitutionTypeByInstitutionId } from '@/lib/institution-type'
+import { formatInstitutionCalendar } from '@/lib/institution-periods'
 
 const MODULE_META: Record<string, { label: string; color: string; bg: string; desc: string }> = {
   engage: { label: 'Engage', color: '#D97010', bg: '#FEF0DC', desc: 'Live quiz and game-based learning' },
@@ -31,13 +39,16 @@ export default function PlatformSettingsPage() {
   const [institutionTypeId, setInstitutionTypeId] = useState('')
   const [institutionTypes, setInstitutionTypes] = useState<InstitutionType[]>([])
   const [adminEmail, setAdminEmail] = useState('')
-  const [activeModules, setActiveModules] = useState<string[]>([])
+  const [provisionedModules, setProvisionedModules] = useState<ModuleKey[]>([])
+  const [effectiveModules, setEffectiveModules] = useState<ModuleKey[]>([])
   const [subscriptionPlan, setSubscriptionPlan] = useState('membership')
   const [institutionId, setInstitutionId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [academicYear, setAcademicYear] = useState('')
+  const [currentPeriod, setCurrentPeriod] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -63,24 +74,33 @@ export default function PlatformSettingsPage() {
       if (data) {
         setInstitutionName(data.name ?? '')
         setInstitutionTypeId(data.institution_type_id ?? '')
-        setSubscriptionPlan(data.subscription_plan ?? 'membership')
+        const plan = data.subscription_plan === 'trial' ? 'membership' : (data.subscription_plan ?? 'membership')
+        setSubscriptionPlan(plan)
 
-        // modules is stored as an array in the DB
-        const raw = data.modules
-        const parsed: string[] = Array.isArray(raw)
-          ? raw
-          : typeof raw === 'string'
-            ? JSON.parse(raw)
-            : typeof raw === 'object' && raw !== null
-              // handle legacy boolean-map format {engage:true, assess:false}
-              ? Object.entries(raw).filter(([, v]) => v).map(([k]) => k)
-              : []
-        setActiveModules(parsed)
+        const provisioned = parseInstitutionModules(data.modules)
+        setProvisionedModules(provisioned)
+        setEffectiveModules(getEffectiveModules(provisioned, plan))
       }
       setLoading(false)
     }
     load()
   }, [])
+
+  useEffect(() => {
+    async function loadCalendar() {
+      if (!institutionId || !institutionTypeId) {
+        setAcademicYear('')
+        setCurrentPeriod('')
+        return
+      }
+      const type = await fetchInstitutionTypeByInstitutionId(institutionId)
+      if (!type) return
+      const calendar = formatInstitutionCalendar(type)
+      setAcademicYear(calendar.academicYear)
+      setCurrentPeriod(calendar.currentPeriod)
+    }
+    loadCalendar()
+  }, [institutionId, institutionTypeId])
 
   async function saveSettings() {
     if (!institutionId) return
@@ -196,6 +216,11 @@ export default function PlatformSettingsPage() {
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
+                  {academicYear && (
+                    <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 8, lineHeight: 1.5 }}>
+                      Academic year {academicYear} · Current {currentPeriod.toLowerCase()}
+                    </p>
+                  )}
                 </div>
 
                 {/* Admin email — read only */}
@@ -223,7 +248,10 @@ export default function PlatformSettingsPage() {
                 <div>
                   <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 3 }}>Active modules</h2>
                   <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>
-                    {activeModules.length} of 4 modules active on your account.
+                    {effectiveModules.length} of 4 modules on your {planLabel} plan.
+                    {provisionedModules.length > effectiveModules.length && (
+                      <> {provisionedModules.length - effectiveModules.length} provisioned module{provisionedModules.length - effectiveModules.length !== 1 ? 's' : ''} need a plan upgrade.</>
+                    )}
                   </p>
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--mid-grey)', background: 'var(--bg2)', padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>
@@ -233,34 +261,41 @@ export default function PlatformSettingsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {(['engage', 'assess', 'learn', 'train'] as const).map(key => {
                   const m = MODULE_META[key]
-                  const isOn = activeModules.includes(key)
+                  const isProvisioned = provisionedModules.includes(key)
+                  const isAccessible = effectiveModules.includes(key)
+                  const statusLabel = isAccessible
+                    ? 'Active'
+                    : isProvisioned
+                      ? 'Upgrade'
+                      : 'Off'
+                  const statusColor = isAccessible ? m.color : isProvisioned ? '#2E2886' : 'var(--mid-grey)'
                   return (
                     <div
                       key={key}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 12,
                         padding: '12px 14px', borderRadius: 10,
-                        border: isOn ? `1.5px solid ${m.color}` : '1.5px solid var(--border)',
-                        background: isOn ? m.bg : 'var(--white)',
-                        opacity: isOn ? 1 : 0.45,
+                        border: isAccessible ? `1.5px solid ${m.color}` : '1.5px solid var(--border)',
+                        background: isAccessible ? m.bg : 'var(--white)',
+                        opacity: isAccessible ? 1 : isProvisioned ? 0.85 : 0.45,
                       }}
                     >
                       <div style={{
                         width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                        background: isOn ? m.color : 'var(--mid-grey)',
+                        background: isAccessible ? m.color : 'var(--mid-grey)',
                       }} />
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: isOn ? m.color : 'var(--near-black)' }}>{m.label}</p>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: isAccessible ? m.color : 'var(--near-black)' }}>{m.label}</p>
                         <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 1 }}>{m.desc}</p>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: isOn ? m.color : 'var(--mid-grey)' }}>
-                        {isOn ? 'Active' : 'Off'}
+                      <span style={{ fontSize: 11, fontWeight: 600, color: statusColor }}>
+                        {statusLabel}
                       </span>
                     </div>
                   )
                 })}
               </div>
-              {activeModules.length === 0 && (
+              {provisionedModules.length === 0 && (
                 <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginTop: 10 }}>
                   No modules active yet. Contact <a href="mailto:hello@spheresds.com" style={{ color: '#2E2886', textDecoration: 'none' }}>hello@spheresds.com</a> to get set up.
                 </p>
@@ -277,9 +312,7 @@ export default function PlatformSettingsPage() {
                 <div>
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)' }}>{planLabel}</p>
                   <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2 }}>
-                    {subscriptionPlan === 'membership'
-                      ? 'Free plan · 5 creations per module'
-                      : `${activeModules.length} module${activeModules.length !== 1 ? 's' : ''} active`}
+                    {getPlanModuleDescription(subscriptionPlan)}
                   </p>
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 600, color: '#2E2886', background: '#EEEDF8', border: '1px solid #C5C3EC', padding: '3px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>

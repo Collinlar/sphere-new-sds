@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { EngageSession, Quiz, SessionParticipant, QuizQuestion, EngageTeam } from '@/lib/types'
 import { ensureTeamsForSession, scoreTeamQuestion } from '@/lib/engage-team-service'
+import { getHostSessionCap } from '@/lib/session-limits'
+import { getCurrentUser } from '@/lib/auth'
 import { TeamHostFinal, TeamHostLobby, TeamHostScores } from '@/components/engage/TeamHostSections'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
@@ -17,6 +19,7 @@ export default function EngageSessionHost() {
   const [session, setSession] = useState<EngageSession | null>(null)
   const [quiz, setQuiz] = useState<Quiz | null>(null)
   const [participants, setParticipants] = useState<SessionParticipant[]>([])
+  const [sessionCap, setSessionCap] = useState<number | null>(null)
   const [phase, setPhase] = useState<HostPhase>('lobby')
   const [questionIndex, setQuestionIndex] = useState(0)
   const [timeLeft, setTimeLeft] = useState(0)
@@ -28,6 +31,10 @@ export default function EngageSessionHost() {
   const [teams, setTeams] = useState<EngageTeam[]>([])
 
   const isTeamMode = (session?.settings as { game_mode?: string })?.game_mode === 'team'
+
+  useEffect(() => {
+    getHostSessionCap(getCurrentUser().id).then(setSessionCap)
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -202,10 +209,14 @@ export default function EngageSessionHost() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1A8966' }} />
               <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
-                {participants.length} joined
+                {participants.length}{sessionCap !== null ? ` / ${sessionCap}` : ''} joined
               </span>
             </div>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Waiting for more...</span>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>
+              {sessionCap !== null && participants.length >= sessionCap
+                ? 'Session full on your plan'
+                : 'Waiting for more...'}
+            </span>
           </div>
 
           {participants.length > 0 && (

@@ -8,9 +8,11 @@ import type { ExamQuestion, ExamAudience, Roster } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
+import AddOnGate from '@/components/brand/AddOnGate'
+import { useInstitutionLevels } from '@/lib/use-institution-levels'
+import { generateWithAi } from '@/lib/checkout-client'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
-const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'JHS 1', 'JHS 2', 'JHS 3', 'SHS 1', 'SHS 2', 'SHS 3']
 const QUESTION_TYPES: { value: ExamQuestion['type']; label: string }[] = [
   { value: 'mcq', label: 'Multiple choice' },
   { value: 'true_false', label: 'True / False' },
@@ -36,6 +38,7 @@ function emptyQuestion(): ExamQuestion {
 
 export default function ExamCreate() {
   const router = useRouter()
+  const gradeLevels = useInstitutionLevels()
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
   const [gradeLevel, setGradeLevel] = useState('')
@@ -44,6 +47,10 @@ export default function ExamCreate() {
   const [questions, setQuestions] = useState<ExamQuestion[]>([emptyQuestion()])
   const [activeQ, setActiveQ] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [hintLoading, setHintLoading] = useState(false)
+  const [explanationLoading, setExplanationLoading] = useState(false)
+  const [bulkExplanationLoading, setBulkExplanationLoading] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [integrityAction, setIntegrityAction] = useState<'record' | 'warn' | 'auto_disqualify'>('warn')
   const [integrityThreshold, setIntegrityThreshold] = useState(3)
@@ -78,6 +85,50 @@ export default function ExamCreate() {
 
   const q = questions[activeQ]
   const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
+
+  async function generateAllExplanations(checkAddOn: () => Promise<boolean>) {
+    if (!(await checkAddOn())) return
+
+    const eligible = questions.filter(
+      (item) => item.text.trim() && (item.type === 'mcq' || item.type === 'true_false')
+    )
+    if (eligible.length === 0) {
+      window.alert('Add multiple choice or true/false questions with text first.')
+      return
+    }
+
+    setBulkExplanationLoading(true)
+    const result = await generateWithAi({
+      addOnId: 'ai_explanations',
+      task: 'bulk_explanations',
+      context: {
+        subject,
+        gradeLevel,
+        questions: eligible.map((item) => ({
+          text: item.text,
+          correct: item.correct,
+          type: item.type,
+        })),
+      },
+    })
+    setBulkExplanationLoading(false)
+
+    if (!result.ok) {
+      window.alert(result.error)
+      return
+    }
+
+    const explanations = (result.data.explanations as string[] | undefined) ?? []
+    let index = 0
+    setQuestions((prev) =>
+      prev.map((item) => {
+        if (!item.text.trim() || (item.type !== 'mcq' && item.type !== 'true_false')) return item
+        const explanation = explanations[index] ?? item.explanation ?? ''
+        index += 1
+        return { ...item, explanation }
+      })
+    )
+  }
 
   function updateQ(updates: Partial<ExamQuestion>) {
     setQuestions((prev) => prev.map((item, i) => (i === activeQ ? { ...item, ...updates } : item)))
@@ -179,22 +230,96 @@ export default function ExamCreate() {
         mode="assess"
         title="New exam"
         right={
-          <button
-            onClick={() => handleSave(check)}
-            disabled={saving}
-            style={{
-              background: '#C23B2A',
-              border: 'none',
-              borderRadius: 8,
-              padding: '7px 18px',
-              fontSize: 13,
-              fontWeight: 600,
-              color: '#fff',
-              cursor: 'pointer',
-            }}
-          >
-            {saving ? 'Saving...' : 'Save exam'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <AddOnGate addOnId="ai_assessment_builder">
+              {({ check: checkAddOn }) => (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!(await checkAddOn())) return
+                    const topic = window.prompt('What topic or syllabus should these questions cover?')
+                    if (!topic?.trim()) return
+                    setAiLoading(true)
+                    const result = await generateWithAi({
+                      addOnId: 'ai_assessment_builder',
+                      task: 'assessment_questions',
+                      prompt: topic.trim(),
+                      context: { subject, gradeLevel, count: 5 },
+                    })
+                    setAiLoading(false)
+                    if (!result.ok) {
+                      window.alert(result.error)
+                      return
+                    }
+                    const generated = (result.data.questions as ExamQuestion[] | undefined) ?? []
+                    if (generated.length === 0) {
+                      window.alert('No questions came back. Try a more specific topic.')
+                      return
+                    }
+                    setQuestions(
+                      generated.map((q) => ({
+                        ...emptyQuestion(),
+                        ...q,
+                        id: q.id || crypto.randomUUID(),
+                      }))
+                    )
+                  }}
+                  disabled={aiLoading}
+                  style={{
+                    background: 'var(--bg2)',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '7px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--near-black)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {aiLoading ? 'Drafting questions...' : 'Generate with AI'}
+                </button>
+              )}
+            </AddOnGate>
+            <AddOnGate addOnId="ai_explanations">
+              {({ check: checkExplanationAddOn }) => (
+                <button
+                  type="button"
+                  onClick={() => generateAllExplanations(checkExplanationAddOn)}
+                  disabled={bulkExplanationLoading}
+                  style={{
+                    background: 'var(--bg2)',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '7px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--near-black)',
+                    cursor: bulkExplanationLoading ? 'default' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {bulkExplanationLoading ? 'Writing explanations...' : 'Explain all answers'}
+                </button>
+              )}
+            </AddOnGate>
+            <button
+              onClick={() => handleSave(check)}
+              disabled={saving}
+              style={{
+                background: '#C23B2A',
+                border: 'none',
+                borderRadius: 8,
+                padding: '7px 18px',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#fff',
+                cursor: 'pointer',
+              }}
+            >
+              {saving ? 'Saving...' : 'Save exam'}
+            </button>
+          </div>
         }
       />
 
@@ -259,7 +384,7 @@ export default function ExamCreate() {
             </select>
             <select value={gradeLevel} onChange={(e) => setGradeLevel(e.target.value)} style={{ ...inputStyle, color: gradeLevel ? 'var(--near-black)' : 'var(--mid-grey)' }}>
               <option value="">Grade level</option>
-              {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+              {gradeLevels.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12, color: 'var(--mid-grey)', whiteSpace: 'nowrap' }}>Duration (min)</span>
@@ -571,11 +696,109 @@ export default function ExamCreate() {
               </div>
             )}
 
+            {(q.type === 'mcq' || q.type === 'true_false' || q.type === 'short') && (
+              <div style={{ background: 'var(--white)', borderRadius: 10, padding: '14px 16px', boxShadow: 'var(--shadow-soft)', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                    Hint (shown during exam)
+                  </p>
+                  <AddOnGate addOnId="ai_hints">
+                    {({ check: checkHintAddOn }) => (
+                      <button
+                        type="button"
+                        disabled={hintLoading || !q.text.trim()}
+                        onClick={async () => {
+                          if (!(await checkHintAddOn())) return
+                          setHintLoading(true)
+                          const result = await generateWithAi({
+                            addOnId: 'ai_hints',
+                            task: 'question_hint',
+                            prompt: q.text,
+                            context: { subject, gradeLevel, questionText: q.text },
+                          })
+                          setHintLoading(false)
+                          if (!result.ok) {
+                            window.alert(result.error)
+                            return
+                          }
+                          updateQ({ hint: String(result.data.hint ?? '') })
+                        }}
+                        style={{
+                          background: 'var(--bg2)',
+                          border: 'none',
+                          borderRadius: 6,
+                          padding: '4px 10px',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: 'var(--near-black)',
+                          cursor: hintLoading ? 'default' : 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {hintLoading ? 'Writing hint...' : 'Draft hint with AI'}
+                      </button>
+                    )}
+                  </AddOnGate>
+                </div>
+                <textarea
+                  value={q.hint ?? ''}
+                  onChange={(e) => updateQ({ hint: e.target.value })}
+                  placeholder="A nudge that helps without giving the answer..."
+                  rows={2}
+                  style={{ width: '100%', border: 'none', outline: 'none', resize: 'vertical', fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.55, fontFamily: 'inherit', background: 'transparent' }}
+                />
+              </div>
+            )}
+
             {(q.type === 'mcq' || q.type === 'true_false') && (
               <div style={{ background: 'var(--white)', borderRadius: 10, padding: '14px 16px', boxShadow: 'var(--shadow-soft)', marginBottom: 20 }}>
-                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 8 }}>
-                  Explanation (shown after answer)
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                    Explanation (shown after answer)
+                  </p>
+                  <AddOnGate addOnId="ai_explanations">
+                    {({ check: checkExplanationAddOn }) => (
+                      <button
+                        type="button"
+                        disabled={explanationLoading || !q.text.trim()}
+                        onClick={async () => {
+                          if (!(await checkExplanationAddOn())) return
+                          setExplanationLoading(true)
+                          const result = await generateWithAi({
+                            addOnId: 'ai_explanations',
+                            task: 'question_explanation',
+                            prompt: q.text,
+                            context: {
+                              subject,
+                              gradeLevel,
+                              questionText: q.text,
+                              correctAnswer: q.correct ?? '',
+                            },
+                          })
+                          setExplanationLoading(false)
+                          if (!result.ok) {
+                            window.alert(result.error)
+                            return
+                          }
+                          updateQ({ explanation: String(result.data.explanation ?? '') })
+                        }}
+                        style={{
+                          background: 'var(--bg2)',
+                          border: 'none',
+                          borderRadius: 6,
+                          padding: '4px 10px',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: 'var(--near-black)',
+                          cursor: explanationLoading ? 'default' : 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {explanationLoading ? 'Writing explanation...' : 'Draft explanation with AI'}
+                      </button>
+                    )}
+                  </AddOnGate>
+                </div>
                 <textarea
                   value={q.explanation ?? ''}
                   onChange={(e) => updateQ({ explanation: e.target.value })}

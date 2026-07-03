@@ -10,6 +10,7 @@ import StepContentFields from '@/components/train/StepContentFields'
 import { getCurrentUser } from '@/lib/auth'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
+import AddOnGate from '@/components/brand/AddOnGate'
 import {
   defaultStepContent,
   normalizeSteps,
@@ -19,6 +20,7 @@ import {
   sanitizeStepContent,
   type TrainStepType,
 } from '@/lib/train-paths'
+import { generateWithAi } from '@/lib/checkout-client'
 
 const STEP_TYPES = [
   { type: 'video' as const, label: 'Video' },
@@ -64,6 +66,7 @@ function TrainBuilderInner() {
   const [editingStepIdx, setEditingStepIdx] = useState<number | null>(null)
   const [assignedDepts, setAssignedDepts] = useState<string[]>(['All staff'])
   const [saving, setSaving] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState('')
 
@@ -213,6 +216,35 @@ function TrainBuilderInner() {
         title={pathId ? 'Edit path' : 'Path builder'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
+            <AddOnGate addOnId="ai_training_builder">
+              {({ check: checkAddOn }) => (
+                <Button variant="secondary" size="sm" disabled={aiLoading} onClick={async () => {
+                  if (!(await checkAddOn())) return
+                  const brief = window.prompt('Describe the training path you need')
+                  if (!brief?.trim()) return
+                  setAiLoading(true)
+                  const result = await generateWithAi({
+                    addOnId: 'ai_training_builder',
+                    task: 'training_steps',
+                    prompt: brief.trim(),
+                    context: { category, count: 5 },
+                  })
+                  setAiLoading(false)
+                  if (!result.ok) {
+                    window.alert(result.error)
+                    return
+                  }
+                  const generated = normalizeSteps((result.data.steps as unknown[]) ?? [])
+                  if (generated.length === 0) {
+                    window.alert('No steps came back. Try a clearer brief.')
+                    return
+                  }
+                  setSteps(generated)
+                }}>
+                  {aiLoading ? 'Drafting steps...' : 'Generate with AI'}
+                </Button>
+              )}
+            </AddOnGate>
             <Button variant="secondary" size="sm" onClick={() => savePath(false, check)} disabled={saving}>
               {saving ? 'Saving...' : 'Save draft'}
             </Button>
