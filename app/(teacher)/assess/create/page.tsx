@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { ExamQuestion, ExamAudience, Roster } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import { getContentInstitutionId } from '@/lib/context'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
 import AddOnGate from '@/components/brand/AddOnGate'
@@ -162,7 +163,7 @@ export default function ExamCreate() {
     setSaving(true)
 
     const { error } = await supabase.from('exams').insert({
-      institution_id: getCurrentUser().institution_id,
+      institution_id: getContentInstitutionId(),
       creator_id: getCurrentUser().id,
       title: title.trim(),
       subject: subject || null,

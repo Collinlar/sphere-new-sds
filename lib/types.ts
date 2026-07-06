@@ -51,6 +51,7 @@ export interface Quiz {
   questions: QuizQuestion[]
   settings: Record<string, unknown>
   is_published: boolean
+  marketplace_listing_id?: string
   created_at: string
   updated_at: string
 }
@@ -116,6 +117,7 @@ export interface Exam {
   instructions?: string
   settings: Record<string, unknown>
   is_published: boolean
+  marketplace_listing_id?: string
   created_at: string
   audience: ExamAudience
   roster_id?: string
@@ -398,7 +400,7 @@ export interface Guide {
   updated_at: string
 }
 
-export type NoteBlockType = 'text' | 'image' | 'video_link' | 'link' | 'callout'
+export type NoteBlockType = 'heading' | 'text' | 'image' | 'video_link' | 'link' | 'callout'
 
 export interface NoteBlock {
   id: string

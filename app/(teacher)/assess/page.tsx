@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { Exam, ExamSession } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   scheduled: { label: 'Scheduled', color: '#1052A3', bg: '#E3EDFB' },
@@ -27,6 +28,8 @@ export default function AssessDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [publishingExam, setPublishingExam] = useState<ExamWithSessions | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const allSessions = exams.flatMap(e => e.sessions)
   const activeSessions  = allSessions.filter(s => s.status === 'active').length
@@ -66,12 +69,12 @@ export default function AssessDashboard() {
           autoExpand[e.id] = true
         }
       })
-      setExpanded(autoExpand)
+      setExpanded(prev => ({ ...autoExpand, ...prev }))
 
       setLoading(false)
     }
     load()
-  }, [])
+  }, [reloadKey])
 
   function toggleExpand(examId: string) {
     setExpanded(prev => ({ ...prev, [examId]: !prev[examId] }))
@@ -217,6 +220,21 @@ export default function AssessDashboard() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {exam.is_published && (
+                        <button
+                          onClick={() => setPublishingExam(exam)}
+                          style={{
+                            background: exam.marketplace_listing_id ? '#DDFAF0' : 'var(--page-bg)',
+                            boxShadow: exam.marketplace_listing_id ? 'none' : 'var(--shadow-soft)',
+                            border: exam.marketplace_listing_id ? '1px solid #1A8966' : 'none',
+                            borderRadius: 7, padding: '7px 12px', fontSize: 12, fontWeight: 600,
+                            color: exam.marketplace_listing_id ? '#1A8966' : 'var(--mid-grey)',
+                            cursor: 'pointer', fontFamily: 'inherit',
+                          }}
+                        >
+                          {exam.marketplace_listing_id ? 'On marketplace' : 'Marketplace'}
+                        </button>
+                      )}
                       {!hasActiveOrGrading(exam) && (
                         <Link href={`/assess/session/new?exam=${exam.id}`}>
                           <button style={{ background: '#C23B2A', border: 'none', borderRadius: 7, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
@@ -311,6 +329,18 @@ export default function AssessDashboard() {
           </div>
         )}
       </div>
+
+      {publishingExam && (
+        <PublishToMarketplaceModal
+          open={!!publishingExam}
+          onClose={() => setPublishingExam(null)}
+          onPublished={() => setReloadKey(k => k + 1)}
+          resourceType="exam"
+          resourceId={publishingExam.id}
+          defaultTitle={publishingExam.title}
+          defaultSubject={publishingExam.subject}
+        />
+      )}
     </div>
   )
 }

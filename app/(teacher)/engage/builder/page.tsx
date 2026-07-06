@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { QuizQuestion, QuestionType } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import { getContentInstitutionId } from '@/lib/context'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
 import { useInstitutionLevels } from '@/lib/use-institution-levels'
@@ -137,7 +138,7 @@ function QuizBuilderInner() {
     }
     setSaving(true)
     const payload = {
-      institution_id: getCurrentUser().institution_id,
+      institution_id: getContentInstitutionId(),
       creator_id: getCurrentUser().id,
       title: title.trim(),
       subject: subject || null,

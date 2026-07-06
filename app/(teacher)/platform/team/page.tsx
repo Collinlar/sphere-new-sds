@@ -1,39 +1,31 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import TopBar from '@/components/brand/TopBar'
 import InviteUsersModal from '@/components/platform/InviteUsersModal'
 import { IconSearch } from '@/components/icons'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { getActiveContext, memberLabels, type MemberRole } from '@/lib/context'
 
-interface UserRow {
+interface MemberRow {
   id: string
+  user_id: string | null
+  member_role: MemberRole
+  status: 'invited' | 'active' | 'removed'
+  invited_email: string | null
+  claim_code: string | null
+  joined_at: string | null
+  created_at: string
   name: string
   email: string
-  role: string
-  department: string | null
-  last_active_at: string | null
   avatar_initials: string
-  created_at: string
-  kind: 'user'
-}
-
-interface InviteRow {
-  id: string
-  email: string
-  role: string
-  department: string | null
-  sent_at: string
-  kind: 'invite'
 }
 
 type TabKey = 'all' | 'teacher' | 'student' | 'admin' | 'pending'
 
-const DEPARTMENTS = ['All', 'Sales', 'Operations', 'HR', 'Finance', 'Customer Support', 'General']
-
-function formatLastActive(iso: string | null) {
-  if (!iso) return 'Never'
+function formatDate(iso: string | null) {
+  if (!iso) return '—'
   const date = new Date(iso)
   const now = new Date()
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
@@ -43,191 +35,144 @@ function formatLastActive(iso: string | null) {
   return date.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function roleLabel(role: string) {
-  if (role === 'admin') return 'Admin'
-  if (role === 'teacher') return 'Teacher'
-  if (role === 'student') return 'Student'
-  return role.charAt(0).toUpperCase() + role.slice(1)
-}
-
-function InviteTableRow({ inv, onCancel, isLast }: { inv: InviteRow; onCancel: (id: string) => void; isLast: boolean }) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1.4fr 100px 120px 120px 90px 100px',
-        padding: '13px 20px',
-        borderBottom: isLast ? 'none' : '0.5px solid var(--bg2)',
-        alignItems: 'center',
-        background: '#FEF0DC',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#FEF0DC', border: '1px solid #E8A020', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#9A5800', flexShrink: 0 }}>
-          {inv.email[0].toUpperCase()}
-        </div>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{inv.email}</p>
-          <p style={{ fontSize: 11, color: '#9A5800' }}>Invite sent {formatLastActive(inv.sent_at)}</p>
-        </div>
-      </div>
-      <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{roleLabel(inv.role)}</span>
-      <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{inv.department ?? '—'}</span>
-      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>—</span>
-      <span style={{ fontSize: 11, fontWeight: 600, color: '#9A5800', background: '#FEF0DC', padding: '3px 8px', borderRadius: 20, border: '0.5px solid #E8A020', width: 'fit-content' }}>Pending</span>
-      <button type="button" onClick={() => onCancel(inv.id)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--mid-grey)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', padding: 0 }}>Cancel</button>
-    </div>
-  )
-}
-
-function UserTableRow({ user, isLast }: { user: UserRow; isLast: boolean }) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1.4fr 100px 120px 120px 90px 100px',
-        padding: '13px 20px',
-        borderBottom: isLast ? 'none' : '0.5px solid var(--bg2)',
-        alignItems: 'center',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 30,
-          height: 30,
-          borderRadius: '50%',
-          background: user.role === 'admin' ? 'var(--amber-light)' : user.role === 'student' ? 'var(--blue-light)' : 'var(--teal-light)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 10,
-          fontWeight: 700,
-          color: user.role === 'admin' ? '#9A5800' : user.role === 'student' ? 'var(--blue)' : 'var(--teal)',
-          flexShrink: 0,
-        }}>
-          {user.avatar_initials || user.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
-        </div>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{user.name}</p>
-          <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{user.email}</p>
-        </div>
-      </div>
-      <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{roleLabel(user.role)}</span>
-      <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{user.department ?? '—'}</span>
-      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{formatLastActive(user.last_active_at)}</span>
-      <span style={{ fontSize: 11, fontWeight: 600, color: '#1A8966', background: '#DDFAF0', padding: '3px 8px', borderRadius: 20, width: 'fit-content' }}>Active</span>
-      <button type="button" style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--blue)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', padding: 0 }}>Edit</button>
-    </div>
-  )
-}
-
 export default function TeamPage() {
-  const [users, setUsers] = useState<UserRow[]>([])
-  const [invites, setInvites] = useState<InviteRow[]>([])
+  const [members, setMembers] = useState<MemberRow[]>([])
   const [loading, setLoading] = useState(true)
   const [showInvite, setShowInvite] = useState(false)
   const [tab, setTab] = useState<TabKey>('all')
   const [search, setSearch] = useState('')
-  const [deptFilter, setDeptFilter] = useState('All')
+  const [copiedCode, setCopiedCode] = useState('')
 
   const currentUser = getCurrentUser()
+  const context = getActiveContext()
+  const institutionId = context.type === 'institution' ? context.institutionId : currentUser.institution_id
+  const [institutionTypeId, setInstitutionTypeId] = useState<string | null>(null)
+  const labels = memberLabels(institutionTypeId)
 
-  async function load() {
-    if (!currentUser.institution_id) {
+  useEffect(() => {
+    if (!institutionId) return
+    supabase
+      .from('institutions')
+      .select('institution_type_id')
+      .eq('id', institutionId)
+      .maybeSingle()
+      .then(({ data }) => setInstitutionTypeId(data?.institution_type_id ?? null))
+  }, [institutionId])
+
+  const load = useCallback(async () => {
+    if (!institutionId) {
       setLoading(false)
       return
     }
 
-    const [usersRes, invitesRes] = await Promise.all([
-      supabase
-        .from('users')
-        .select('id, name, email, role, department, last_active_at, avatar_initials, created_at')
-        .eq('institution_id', currentUser.institution_id)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('user_invites')
-        .select('id, email, role, department, sent_at')
-        .eq('institution_id', currentUser.institution_id)
-        .eq('status', 'pending')
-        .order('sent_at', { ascending: false }),
-    ])
+    const { data } = await supabase
+      .from('institution_members')
+      .select('id, user_id, member_role, status, invited_email, claim_code, joined_at, created_at, users(name, email, avatar_initials)')
+      .eq('institution_id', institutionId)
+      .neq('status', 'removed')
+      .order('created_at', { ascending: false })
 
-    setUsers((usersRes.data ?? []).map(u => ({ ...u, kind: 'user' as const })))
-    setInvites((invitesRes.data ?? []).map(i => ({ ...i, kind: 'invite' as const })))
+    const rows: MemberRow[] = (data ?? []).map(row => {
+      const u = (row as unknown as { users?: { name: string; email: string; avatar_initials: string } }).users
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        member_role: row.member_role as MemberRole,
+        status: row.status as MemberRow['status'],
+        invited_email: row.invited_email,
+        claim_code: row.claim_code,
+        joined_at: row.joined_at,
+        created_at: row.created_at,
+        name: u?.name ?? row.invited_email ?? 'Invited user',
+        email: u?.email ?? row.invited_email ?? '',
+        avatar_initials: u?.avatar_initials ?? (row.invited_email?.[0] ?? 'U').toUpperCase(),
+      }
+    })
+
+    setMembers(rows)
     setLoading(false)
-  }
+  }, [institutionId])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
 
   const counts = useMemo(() => ({
-    all: users.length + invites.length,
-    teacher: users.filter(u => u.role === 'teacher').length,
-    student: users.filter(u => u.role === 'student').length,
-    admin: users.filter(u => u.role === 'admin').length,
-    pending: invites.length,
-  }), [users, invites])
+    all: members.length,
+    teacher: members.filter(m => m.member_role === 'teacher' && m.status === 'active').length,
+    student: members.filter(m => m.member_role === 'student' && m.status === 'active').length,
+    admin: members.filter(m => (m.member_role === 'admin' || m.member_role === 'owner') && m.status === 'active').length,
+    pending: members.filter(m => m.status === 'invited').length,
+  }), [members])
 
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: counts.all },
-    { key: 'teacher', label: 'Teachers', count: counts.teacher },
-    { key: 'student', label: 'Students', count: counts.student },
+    { key: 'teacher', label: labels.teachers, count: counts.teacher },
+    { key: 'student', label: labels.students, count: counts.student },
     { key: 'admin', label: 'Admins', count: counts.admin },
     { key: 'pending', label: 'Pending invites', count: counts.pending },
   ]
 
-  const filteredInvites = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return invites.filter(inv => {
-      if (deptFilter !== 'All' && inv.department !== deptFilter) return false
-      if (!q) return true
-      return inv.email.toLowerCase().includes(q)
-    })
-  }, [invites, search, deptFilter])
+    let list = members
+    if (tab === 'teacher') list = list.filter(m => m.member_role === 'teacher' && m.status === 'active')
+    else if (tab === 'student') list = list.filter(m => m.member_role === 'student' && m.status === 'active')
+    else if (tab === 'admin') list = list.filter(m => (m.member_role === 'admin' || m.member_role === 'owner') && m.status === 'active')
+    else if (tab === 'pending') list = list.filter(m => m.status === 'invited')
 
-  const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    let list = users
-    if (tab === 'teacher') list = list.filter(u => u.role === 'teacher')
-    else if (tab === 'student') list = list.filter(u => u.role === 'student')
-    else if (tab === 'admin') list = list.filter(u => u.role === 'admin')
-    else if (tab === 'pending') list = []
-
-    return list.filter(u => {
-      if (deptFilter !== 'All' && u.department !== deptFilter) return false
-      if (!q) return true
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-    })
-  }, [users, tab, search, deptFilter])
+    if (!q) return list
+    return list.filter(m => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q))
+  }, [members, tab, search])
 
   async function cancelInvite(id: string) {
-    await supabase.from('user_invites').delete().eq('id', id)
+    await supabase.from('institution_members').delete().eq('id', id).eq('status', 'invited')
     load()
+  }
+
+  async function removeMember(id: string, name: string) {
+    if (!confirm(`Remove ${name} from this institution? They keep their personal Sphere account.`)) return
+    await supabase
+      .from('institution_members')
+      .update({ status: 'removed', removed_at: new Date().toISOString() })
+      .eq('id', id)
+    load()
+  }
+
+  async function changeRole(id: string, newRole: string) {
+    await supabase.from('institution_members').update({ member_role: newRole }).eq('id', id)
+    load()
+  }
+
+  function copyCode(code: string) {
+    navigator.clipboard.writeText(code)
+    setCopiedCode(code)
+    setTimeout(() => setCopiedCode(''), 2000)
+  }
+
+  function roleLabel(role: MemberRole) {
+    if (role === 'owner') return 'Owner'
+    if (role === 'admin') return 'Admin'
+    if (role === 'teacher') return labels.teacher
+    return labels.student
   }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
       <TopBar
         mode="platform"
-        title="User management"
+        title="Members"
         right={
           <button
             type="button"
             onClick={() => setShowInvite(true)}
             style={{
-              background: 'var(--near-black)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 7,
-              padding: '8px 16px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
+              background: 'var(--near-black)', color: '#fff', border: 'none',
+              borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit',
             }}
           >
-            + Invite users
+            + Invite members
           </button>
         }
       />
@@ -236,7 +181,7 @@ export default function TeamPage() {
         open={showInvite}
         onClose={() => setShowInvite(false)}
         onSent={load}
-        institutionId={currentUser.institution_id}
+        institutionId={institutionId ?? ''}
         invitedBy={currentUser.id}
       />
 
@@ -251,40 +196,12 @@ export default function TeamPage() {
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by name or email"
               style={{
-                width: '100%',
-                height: 40,
-                padding: '0 12px 0 36px',
-                borderRadius: 8,
-                border: 'none',
-                background: 'var(--white)',
-                boxShadow: 'var(--shadow-soft)',
-                fontSize: 14,
-                fontFamily: 'inherit',
-                boxSizing: 'border-box',
-                color: 'var(--near-black)',
+                width: '100%', height: 40, padding: '0 12px 0 36px', borderRadius: 8,
+                border: 'none', background: 'var(--white)', boxShadow: 'var(--shadow-soft)',
+                fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', color: 'var(--near-black)',
               }}
             />
           </div>
-          <select
-            value={deptFilter}
-            onChange={e => setDeptFilter(e.target.value)}
-            style={{
-              height: 40,
-              padding: '0 12px',
-              borderRadius: 8,
-              border: 'none',
-              background: 'var(--white)',
-              boxShadow: 'var(--shadow-soft)',
-              fontSize: 13,
-              fontFamily: 'inherit',
-              color: 'var(--near-black)',
-              cursor: 'pointer',
-            }}
-          >
-            {DEPARTMENTS.map(d => (
-              <option key={d} value={d}>{d === 'All' ? 'Filter by department' : d}</option>
-            ))}
-          </select>
         </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -296,30 +213,21 @@ export default function TeamPage() {
                 type="button"
                 onClick={() => setTab(t.key)}
                 style={{
-                  height: 32,
-                  padding: '0 12px',
+                  height: 32, padding: '0 12px',
                   background: isActive ? 'var(--near-black)' : 'var(--white)',
                   boxShadow: isActive ? 'none' : 'var(--shadow-soft)',
-                  borderRadius: 6,
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  fontSize: 12,
-                  fontWeight: isActive ? 600 : 500,
+                  borderRadius: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12, fontWeight: isActive ? 600 : 500,
                   color: isActive ? '#fff' : 'var(--mid-grey)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
                 }}
               >
                 {t.label}
                 <span style={{
-                  fontSize: 11,
-                  fontWeight: 600,
+                  fontSize: 11, fontWeight: 600,
                   background: isActive ? 'rgba(255,255,255,0.18)' : 'var(--bg2)',
                   color: isActive ? '#fff' : 'var(--text-tertiary)',
-                  borderRadius: 4,
-                  padding: '1px 6px',
+                  borderRadius: 4, padding: '1px 6px',
                 }}>
                   {t.count}
                 </span>
@@ -329,47 +237,119 @@ export default function TeamPage() {
         </div>
 
         {loading ? (
-          <div style={{ color: 'var(--mid-grey)', fontSize: 14 }}>Loading users...</div>
+          <div style={{ color: 'var(--mid-grey)', fontSize: 14 }}>Loading members...</div>
         ) : (
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 12, overflow: 'hidden' }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1.4fr 100px 120px 120px 90px 100px',
+              gridTemplateColumns: '1.5fr 110px 130px 110px 90px 140px',
               padding: '10px 20px',
               borderBottom: '0.5px solid var(--bg2)',
             }}>
-              {['Name', 'Role', 'Department', 'Last active', 'Status', 'Actions'].map(h => (
+              {['Name', 'Role', 'Joined', 'Claim code', 'Status', 'Actions'].map(h => (
                 <span key={h} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>{h}</span>
               ))}
             </div>
 
-            {(() => {
-              const showInvites = tab === 'pending' || tab === 'all'
-              const showUsers = tab !== 'pending'
-              const totalRows = (showInvites ? filteredInvites.length : 0) + (showUsers ? filteredUsers.length : 0)
-
-              if (totalRows === 0) {
+            {filtered.length === 0 ? (
+              <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
+                {tab === 'pending' ? 'No pending invites. Tap "+ Invite members" to add someone.' : 'No members match your search.'}
+              </div>
+            ) : (
+              filtered.map((m, i) => {
+                const isPending = m.status === 'invited'
                 return (
-                  <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
-                    {tab === 'pending' ? 'No pending invites. Tap "+ Invite users" to add someone.' : 'No users match your search.'}
+                  <div
+                    key={m.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1.5fr 110px 130px 110px 90px 140px',
+                      padding: '13px 20px',
+                      borderBottom: i === filtered.length - 1 ? 'none' : '0.5px solid var(--bg2)',
+                      alignItems: 'center',
+                      background: isPending ? '#FEF9F1' : 'transparent',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%',
+                        background: m.member_role === 'owner' || m.member_role === 'admin' ? 'var(--amber-light)' : m.member_role === 'student' ? 'var(--blue-light)' : 'var(--teal-light)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 10, fontWeight: 700,
+                        color: m.member_role === 'owner' || m.member_role === 'admin' ? '#9A5800' : m.member_role === 'student' ? 'var(--blue)' : 'var(--teal)',
+                        flexShrink: 0,
+                      }}>
+                        {m.avatar_initials}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--near-black)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</p>
+                        <p style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</p>
+                      </div>
+                    </div>
+
+                    {/* Role — editable unless owner */}
+                    {m.member_role === 'owner' ? (
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#9A5800' }}>Owner</span>
+                    ) : (
+                      <select
+                        value={m.member_role}
+                        onChange={e => changeRole(m.id, e.target.value)}
+                        style={{
+                          fontSize: 12, color: 'var(--mid-grey)', border: 'none', background: 'transparent',
+                          fontFamily: 'inherit', cursor: 'pointer', padding: 0, width: 'fit-content',
+                        }}
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="teacher">{labels.teacher}</option>
+                        <option value="student">{labels.student}</option>
+                      </select>
+                    )}
+
+                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{formatDate(m.joined_at ?? m.created_at)}</span>
+
+                    {/* Claim code (pending invites only) */}
+                    {isPending && m.claim_code ? (
+                      <button
+                        type="button"
+                        onClick={() => copyCode(m.claim_code!)}
+                        title="Copy claim code"
+                        style={{
+                          fontSize: 12, fontWeight: 700, letterSpacing: '0.1em',
+                          color: copiedCode === m.claim_code ? '#1A8966' : '#9A5800',
+                          background: 'none', border: '0.5px dashed #E8A020', borderRadius: 5,
+                          padding: '3px 8px', cursor: 'pointer', fontFamily: 'monospace', width: 'fit-content',
+                        }}
+                      >
+                        {copiedCode === m.claim_code ? 'Copied' : m.claim_code}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>—</span>
+                    )}
+
+                    <span style={{
+                      fontSize: 11, fontWeight: 600,
+                      color: isPending ? '#9A5800' : '#1A8966',
+                      background: isPending ? '#FEF0DC' : '#DDFAF0',
+                      padding: '3px 8px', borderRadius: 20, width: 'fit-content',
+                    }}>
+                      {isPending ? 'Pending' : 'Active'}
+                    </span>
+
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      {isPending ? (
+                        <button type="button" onClick={() => cancelInvite(m.id)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--mid-grey)', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                          Cancel invite
+                        </button>
+                      ) : m.member_role !== 'owner' ? (
+                        <button type="button" onClick={() => removeMember(m.id, m.name)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--coral)', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 )
-              }
-
-              let rowIndex = 0
-              return (
-                <>
-                  {showInvites && filteredInvites.map(inv => {
-                    rowIndex += 1
-                    return <InviteTableRow key={inv.id} inv={inv} onCancel={cancelInvite} isLast={rowIndex === totalRows} />
-                  })}
-                  {showUsers && filteredUsers.map(u => {
-                    rowIndex += 1
-                    return <UserTableRow key={u.id} user={u} isLast={rowIndex === totalRows} />
-                  })}
-                </>
-              )
-            })()}
+              })
+            )}
           </div>
         )}
       </div>

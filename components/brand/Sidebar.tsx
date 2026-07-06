@@ -10,20 +10,24 @@ import {
   getEffectiveModules,
   parseInstitutionModules,
 } from '@/lib/institution-modules'
+import {
+  type ActiveContext,
+  type Membership,
+  getActiveContext,
+  setActiveContext,
+  getCachedMemberships,
+  loadMemberships,
+  onContextChange,
+  canManagePlatform,
+  memberLabels,
+  clearContextState,
+} from '@/lib/context'
 
 const ALL_MODES = [
   { key: 'engage', label: 'Engage', color: '#D97010', href: '/engage' },
   { key: 'assess', label: 'Assess', color: '#C23B2A', href: '/assess' },
   { key: 'learn', label: 'Learn', color: '#1A8966', href: '/learn' },
   { key: 'train', label: 'Train', color: '#1052A3', href: '/train' },
-]
-
-const PLATFORM = [
-  { key: 'team', label: 'Teachers', href: '/platform/team' },
-  { key: 'library', label: 'Content library', href: '/platform/library' },
-  { key: 'marketplace', label: 'Marketplace', href: '/platform/marketplace' },
-  { key: 'analytics', label: 'Analytics', href: '/platform/analytics' },
-  { key: 'settings', label: 'Settings', href: '/platform/settings' },
 ]
 
 interface SidebarProps {
@@ -36,46 +40,93 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
   const pathname = usePathname()
   const router = useRouter()
   const [displayName, setDisplayName] = useState(userName ?? '')
-  const [displayInstitution, setDisplayInstitution] = useState(institutionName ?? '')
   const [enabledModules, setEnabledModules] = useState<ModuleKey[]>(['engage', 'assess'])
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [context, setContext] = useState<ActiveContext>({ type: 'personal' })
+  const [memberships, setMemberships] = useState<Membership[]>([])
+  const [switcherOpen, setSwitcherOpen] = useState(false)
 
   useEffect(() => {
     const user = getCurrentUser()
     setDisplayName(user.name)
-    setIsAdmin(user.role === 'admin')
+    setContext(getActiveContext())
+    setMemberships(getCachedMemberships().filter(m => m.status === 'active'))
 
-    const cachedInstitution = typeof window !== 'undefined'
-      ? localStorage.getItem('sphere_institution') ?? ''
-      : ''
-    setDisplayInstitution(cachedInstitution || institutionName || '')
+    // Refresh memberships from DB
+    if (user.id) {
+      loadMemberships(user.id).then(fresh => {
+        setMemberships(fresh.filter(m => m.status === 'active'))
+        setContext(getActiveContext()) // may have been reset if membership was revoked
+      })
+    }
 
-    // Fetch live module state for this institution
-    if (user.institution_id) {
+    return onContextChange(ctx => setContext(ctx))
+  }, [])
+
+  // Module availability follows the active context
+  useEffect(() => {
+    if (context.type === 'institution') {
       supabase
         .from('institutions')
-        .select('modules, name, subscription_plan')
-        .eq('id', user.institution_id)
+        .select('modules, subscription_plan')
+        .eq('id', context.institutionId)
         .single()
         .then(({ data }) => {
           if (data) {
             const provisioned = parseInstitutionModules(data.modules)
             const planId = data.subscription_plan === 'trial' ? 'membership' : (data.subscription_plan ?? 'membership')
             setEnabledModules(getEffectiveModules(provisioned, planId))
-            if (data.name) setDisplayInstitution(data.name)
           }
         })
+    } else {
+      // Personal context: membership tier gives engage + assess.
+      // Creator tiers unlock all four (checked from users table).
+      const user = getCurrentUser()
+      supabase
+        .from('users')
+        .select('subscription_tier')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          const tier = data?.subscription_tier ?? 'membership'
+          setEnabledModules(tier === 'membership' ? ['engage', 'assess'] : ['engage', 'assess', 'learn', 'train'])
+        })
     }
-  }, [institutionName])
+  }, [context])
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     localStorage.removeItem('sphere_user')
     localStorage.removeItem('sphere_institution')
+    clearContextState()
     router.push('/login')
   }
 
+  function switchContext(ctx: ActiveContext) {
+    setActiveContext(ctx)
+    setSwitcherOpen(false)
+    // Land somewhere valid for the new context
+    if (ctx.type === 'personal' && pathname.startsWith('/platform')) {
+      router.push('/home')
+    } else {
+      router.refresh()
+    }
+  }
+
   const currentAccent = getAccentForPath(pathname, activeMode)
+  const showPlatform = canManagePlatform(context)
+  const contextLabel = context.type === 'personal' ? 'Personal' : context.institutionName
+  const activeInstitutionType = context.type === 'institution'
+    ? memberships.find(m => m.institution_id === context.institutionId)?.institution_type_id ?? null
+    : null
+  const labels = memberLabels(activeInstitutionType)
+
+  const PLATFORM = [
+    { key: 'team', label: labels.teachers, href: '/platform/team' },
+    { key: 'library', label: 'Content library', href: '/platform/library' },
+    { key: 'marketplace', label: 'Marketplace', href: '/platform/marketplace' },
+    { key: 'analytics', label: 'Analytics', href: '/platform/analytics' },
+    { key: 'settings', label: 'Settings', href: '/platform/settings' },
+  ]
 
   return (
     <aside style={{
@@ -92,7 +143,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
       overflowY: 'auto',
     }}>
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 6px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 6px 10px' }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="11" stroke={currentAccent} strokeWidth="1.5" />
           <ellipse cx="12" cy="12" rx="5" ry="11" stroke={currentAccent} strokeWidth="1.2" />
@@ -104,6 +155,113 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
           Sphere<span style={{ color: currentAccent }}>SDS</span>
         </span>
       </div>
+
+      {/* Context switcher */}
+      <div style={{ position: 'relative', marginBottom: 8 }}>
+        <button
+          onClick={() => setSwitcherOpen(o => !o)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 10px', borderRadius: 8,
+            border: '0.5px solid var(--border)', background: 'var(--bg2)',
+            cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+          }}
+        >
+          <span style={{
+            width: 8, height: 8, borderRadius: context.type === 'personal' ? '50%' : 2,
+            background: context.type === 'personal' ? '#D97010' : '#2E2886', flexShrink: 0,
+          }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--near-black)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {contextLabel}
+            </span>
+            <span style={{ display: 'block', fontSize: 10, color: 'var(--text-tertiary)' }}>
+              {context.type === 'personal' ? 'My account' : roleLabel(context.memberRole, labels)}
+            </span>
+          </span>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, transform: switcherOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+            <path d="M2 3.5l3 3 3-3" stroke="var(--mid-grey)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        {switcherOpen && (
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+            background: 'var(--white)', borderRadius: 10, border: '0.5px solid var(--border)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 6, zIndex: 300,
+          }}>
+            <button
+              onClick={() => switchContext({ type: 'personal' })}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 10px', borderRadius: 7, border: 'none',
+                background: context.type === 'personal' ? 'var(--bg2)' : 'transparent',
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#D97010', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, fontWeight: context.type === 'personal' ? 700 : 400, color: 'var(--near-black)' }}>Personal</span>
+            </button>
+            <Link
+              href="/create-institution"
+              onClick={() => setSwitcherOpen(false)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 10px', borderRadius: 7, textDecoration: 'none',
+                boxSizing: 'border-box',
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: 2, border: '1px dashed var(--mid-grey)', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>+ Create an institution</span>
+            </Link>
+            {memberships.map(m => {
+              const isActive = context.type === 'institution' && context.institutionId === m.institution_id
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => switchContext({
+                    type: 'institution',
+                    institutionId: m.institution_id,
+                    institutionName: m.institution_name,
+                    memberRole: m.member_role,
+                  })}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 10px', borderRadius: 7, border: 'none',
+                    background: isActive ? 'var(--bg2)' : 'transparent',
+                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                  }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: '#2E2886', flexShrink: 0 }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 12, fontWeight: isActive ? 700 : 400, color: 'var(--near-black)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {m.institution_name}
+                    </span>
+                    <span style={{ display: 'block', fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{m.member_role}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Home */}
+      <Link
+        href="/home"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: pathname.startsWith('/home') ? '7px 8px 7px 5px' : '7px 8px',
+          borderRadius: 7, textDecoration: 'none',
+          borderLeft: pathname.startsWith('/home') ? '3px solid var(--near-black)' : '3px solid transparent',
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--near-black)', flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: pathname.startsWith('/home') ? 700 : 400, color: pathname.startsWith('/home') ? 'var(--near-black)' : 'var(--mid-grey)' }}>
+          Home
+        </span>
+      </Link>
 
       {/* Modes */}
       <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '4px 8px 4px', marginBottom: 4 }}>
@@ -117,7 +275,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
           return (
             <Link
               key={m.key}
-              href="/platform/settings"
+              href="/platform/settings/billing"
               title="Upgrade to unlock"
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -153,27 +311,31 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
         )
       })}
 
-      {/* Students (rosters) */}
-      <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
-        Classes
-      </p>
-      <Link
-        href="/students"
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: pathname.startsWith('/students') ? '7px 8px 7px 5px' : '7px 8px',
-          borderRadius: 7, textDecoration: 'none',
-          borderLeft: pathname.startsWith('/students') ? '3px solid #2E2886' : '3px solid transparent',
-        }}
-      >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#2E2886', flexShrink: 0 }} />
-        <span style={{ fontSize: 13, fontWeight: pathname.startsWith('/students') ? 700 : 400, color: pathname.startsWith('/students') ? '#2E2886' : 'var(--mid-grey)' }}>
-          Students
-        </span>
-      </Link>
+      {/* Classes — only meaningful in institution context for staff */}
+      {context.type === 'institution' && context.memberRole !== 'student' && (
+        <>
+          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
+            Classes
+          </p>
+          <Link
+            href="/students"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: pathname.startsWith('/students') ? '7px 8px 7px 5px' : '7px 8px',
+              borderRadius: 7, textDecoration: 'none',
+              borderLeft: pathname.startsWith('/students') ? '3px solid #2E2886' : '3px solid transparent',
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#2E2886', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: pathname.startsWith('/students') ? 700 : 400, color: pathname.startsWith('/students') ? '#2E2886' : 'var(--mid-grey)' }}>
+              {labels.students}
+            </span>
+          </Link>
+        </>
+      )}
 
-      {/* Platform (admin only) */}
-      {isAdmin && (
+      {/* Platform (institution owner/admin only) */}
+      {showPlatform && (
         <>
           <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
             Platform
@@ -212,7 +374,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
               {displayName || 'Loading...'}
             </p>
             <p style={{ fontSize: 11, color: 'var(--mid-grey)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {displayInstitution}
+              {contextLabel}
             </p>
           </div>
         </div>
@@ -230,6 +392,13 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
       </div>
     </aside>
   )
+}
+
+function roleLabel(role: string, labels: { student: string; teacher: string }): string {
+  if (role === 'owner') return 'Owner'
+  if (role === 'admin') return 'Admin'
+  if (role === 'teacher') return labels.teacher
+  return labels.student
 }
 
 function getAccentForPath(pathname: string, activeMode?: string): string {

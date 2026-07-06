@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { getCurrentUser } from './auth'
+import { getActiveContext, canCreateContent } from './context'
 import {
   getEffectiveModules,
   getPlanIncludedModules,
@@ -137,6 +138,28 @@ export async function canAccessModule(module: Module): Promise<boolean> {
 // Check whether the user can create one more resource in the given module.
 // Returns { allowed, reason } so callers can show a specific message.
 export async function canCreate(module: Module): Promise<{ allowed: boolean; reason?: string }> {
+  // Institution context: quota comes from the institution, not the user.
+  const ctx = getActiveContext()
+  if (ctx.type === 'institution') {
+    if (!canCreateContent(ctx)) {
+      return { allowed: false, reason: 'Students cannot create content inside an institution. Switch to your Personal workspace to create your own.' }
+    }
+    const { data: institution } = await supabase
+      .from('institutions')
+      .select('modules, subscription_plan')
+      .eq('id', ctx.institutionId)
+      .single()
+    const provisioned = parseInstitutionModules(institution?.modules)
+    const instPlan = institution?.subscription_plan === 'trial'
+      ? 'membership'
+      : (institution?.subscription_plan ?? 'membership')
+    if (!isModuleAccessible(module as ModuleKey, provisioned, instPlan)) {
+      return { allowed: false, reason: `${capitalize(module)} is not active for ${ctx.institutionName}. An admin can enable it from Settings.` }
+    }
+    // Institution plan has unlimited creations
+    return { allowed: true }
+  }
+
   const plan = await getUserPlan()
   if (!plan) return { allowed: false, reason: 'Could not load your plan. Try again.' }
 
@@ -182,7 +205,11 @@ export async function canCreate(module: Module): Promise<{ allowed: boolean; rea
 }
 
 // Increment the used count for a module after a resource is created.
+// Institution-context creations draw on the institution pool, not the
+// user's personal quota, so they are not counted here.
 export async function incrementUsed(module: Module, userId?: string): Promise<void> {
+  if (getActiveContext().type === 'institution') return
+
   const uid = userId ?? getCurrentUser().id
   const field = `${module}_used`
 

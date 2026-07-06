@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { Quiz } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
 
 interface QuizStats {
   totalPlays: number
@@ -26,6 +27,8 @@ export default function EngageDashboard() {
   const [consensusBonus, setConsensusBonus] = useState(true)
   const [discussionSeconds, setDiscussionSeconds] = useState(30)
   const [starting, setStarting] = useState(false)
+  const [publishingQuiz, setPublishingQuiz] = useState<Quiz | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     async function load() {
@@ -59,7 +62,7 @@ export default function EngageDashboard() {
     }
 
     load()
-  }, [])
+  }, [reloadKey])
 
   const handleLaunch = async () => {
     if (!launching) return
@@ -250,6 +253,21 @@ export default function EngageDashboard() {
                       Edit
                     </button>
                   </Link>
+                  {quiz.is_published && (
+                    <button
+                      onClick={() => setPublishingQuiz(quiz)}
+                      style={{
+                        background: quiz.marketplace_listing_id ? '#DDFAF0' : 'transparent',
+                        boxShadow: quiz.marketplace_listing_id ? 'none' : 'var(--shadow-soft)',
+                        border: quiz.marketplace_listing_id ? '1px solid #1A8966' : 'none',
+                        borderRadius: 7, padding: '7px 14px', fontSize: 13, fontWeight: 500,
+                        color: quiz.marketplace_listing_id ? '#1A8966' : 'var(--near-black)',
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {quiz.marketplace_listing_id ? 'On marketplace' : 'Marketplace'}
+                    </button>
+                  )}
                   <button
                     onClick={() => { setLaunching(quiz); setTimePerQuestion(30); setGameMode('competitive') }}
                     style={{
@@ -418,6 +436,19 @@ export default function EngageDashboard() {
             </button>
           </div>
         </div>
+      )}
+
+      {publishingQuiz && (
+        <PublishToMarketplaceModal
+          open={!!publishingQuiz}
+          onClose={() => setPublishingQuiz(null)}
+          onPublished={() => setReloadKey(k => k + 1)}
+          resourceType="quiz"
+          resourceId={publishingQuiz.id}
+          defaultTitle={publishingQuiz.title}
+          defaultDescription={publishingQuiz.description}
+          defaultSubject={publishingQuiz.subject}
+        />
       )}
     </div>
   )

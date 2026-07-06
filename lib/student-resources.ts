@@ -1,8 +1,17 @@
 import { supabase } from './supabase'
 import { getCurrentUser } from './auth'
+import { getActiveContext } from './context'
 import type { Document, Guide, Note } from './types'
 
 export type StudentResourceType = 'guide' | 'notes' | 'document'
+
+// The institution whose published materials the learner should see:
+// the active institution context if set, otherwise the legacy field.
+function resolveInstitutionId(): string | null {
+  const ctx = getActiveContext()
+  if (ctx.type === 'institution') return ctx.institutionId
+  return getCurrentUser().institution_id || null
+}
 
 export interface StudentResourceItem {
   id: string
@@ -15,10 +24,8 @@ export interface StudentResourceItem {
 }
 
 export async function fetchPublishedResourcesForStudent(): Promise<StudentResourceItem[]> {
-  const user = getCurrentUser()
-  if (!user.institution_id) return []
-
-  const institutionId = user.institution_id
+  const institutionId = resolveInstitutionId()
+  if (!institutionId) return []
   const [guides, notes, documents] = await Promise.all([
     supabase
       .from('guides')
@@ -50,36 +57,36 @@ export async function fetchPublishedResourcesForStudent(): Promise<StudentResour
 }
 
 export async function fetchPublishedGuideForStudent(id: string): Promise<Guide | null> {
-  const user = getCurrentUser()
+  const institutionId = resolveInstitutionId()
   const { data } = await supabase
     .from('guides')
     .select('*')
     .eq('id', id)
-    .eq('institution_id', user.institution_id)
+    .eq('institution_id', institutionId)
     .eq('is_published', true)
     .maybeSingle()
   return (data as Guide | null) ?? null
 }
 
 export async function fetchPublishedNoteForStudent(id: string): Promise<Note | null> {
-  const user = getCurrentUser()
+  const institutionId = resolveInstitutionId()
   const { data } = await supabase
     .from('notes')
     .select('*')
     .eq('id', id)
-    .eq('institution_id', user.institution_id)
+    .eq('institution_id', institutionId)
     .eq('is_published', true)
     .maybeSingle()
   return (data as Note | null) ?? null
 }
 
 export async function fetchPublishedDocumentForStudent(id: string): Promise<Document | null> {
-  const user = getCurrentUser()
+  const institutionId = resolveInstitutionId()
   const { data } = await supabase
     .from('documents')
     .select('*')
     .eq('id', id)
-    .eq('institution_id', user.institution_id)
+    .eq('institution_id', institutionId)
     .eq('is_published', true)
     .maybeSingle()
   return (data as Document | null) ?? null

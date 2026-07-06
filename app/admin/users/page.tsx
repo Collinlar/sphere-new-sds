@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { USER_LIST_WITH_INSTITUTION } from '@/lib/supabase-embeds'
 
 interface User {
   id: string
@@ -33,7 +34,7 @@ export default function UsersPage() {
   useEffect(() => {
     supabase
       .from('users')
-      .select('id, name, email, role, subscription_tier, institution_id, created_at, institutions(name)')
+      .select(USER_LIST_WITH_INSTITUTION)
       .order('created_at', { ascending: false })
       .limit(500)
       .then(({ data }) => {

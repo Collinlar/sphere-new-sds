@@ -675,7 +675,7 @@ export default function EmployeeTrainPage({ params: paramsPromise }: { params: P
             <p style={{ fontSize: 14, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 16 }}>
               You finished {path.title}. {certError}
             </p>
-            <Link href="/employee/train/demo" style={{ fontSize: 13, color: '#1052A3', fontWeight: 600, textDecoration: 'none' }}>
+            <Link href="/student/train/demo" style={{ fontSize: 13, color: '#1052A3', fontWeight: 600, textDecoration: 'none' }}>
               Back to training
             </Link>
           </div>

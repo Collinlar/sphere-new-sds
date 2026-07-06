@@ -10,6 +10,50 @@ import {
 } from './marketplace-bridge'
 import { assertMarketplacePublish } from './plan-privileges'
 import { normalizeSteps } from './train-paths'
+import { getCurrentUser } from './auth'
+import { getActiveContext } from './context'
+
+// Maps a signup-time level_type + user_level onto the institution_types
+// vocabulary used for marketplace targeting (jhs, shs, primary, university,
+// college, training, corporate, professional).
+function levelTypeFromPersonalProfile(levelType: string | null, userLevel: string | null): string | null {
+  if (levelType === 'university_student') return 'university'
+  if (levelType === 'professional') return 'professional'
+  if (levelType === 'educator' || levelType === 'school_student') {
+    const lvl = userLevel ?? ''
+    if (lvl.startsWith('p')) return 'primary'
+    if (lvl.startsWith('jhs') || lvl === 'teach_jhs') return 'jhs'
+    if (lvl.startsWith('shs') || lvl === 'teach_shs') return 'shs'
+    if (lvl === 'teach_primary') return 'primary'
+  }
+  return null
+}
+
+// Which institution_types level the current viewer should be matched against,
+// so the marketplace can prioritise resources built for their level. Returns
+// null when there is nothing to match on — untargeted browsing sees everything.
+export async function getViewerLevelType(): Promise<string | null> {
+  const ctx = getActiveContext()
+
+  if (ctx.type === 'institution') {
+    const { data } = await supabase
+      .from('institutions')
+      .select('institution_type_id')
+      .eq('id', ctx.institutionId)
+      .maybeSingle()
+    return data?.institution_type_id ?? null
+  }
+
+  const user = getCurrentUser()
+  const { data } = await supabase
+    .from('users')
+    .select('level_type, user_level')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (!data) return null
+  return levelTypeFromPersonalProfile(data.level_type ?? null, data.user_level ?? null)
+}
 
 export type MarketplaceResourceType =
   | 'lesson_plan'
@@ -33,6 +77,7 @@ export interface MarketplaceResourceMetadata {
   backing_resource_id?: string
   backing_resource_type?: string
   reviewer_notes?: string
+  target_level_types?: string[]
 }
 
 export interface MarketplaceResource {
@@ -78,6 +123,17 @@ export interface ResourceFilters {
   freeOnly?: boolean
   status?: MarketplaceResourceStatus
   featured?: boolean
+  // Soft filter: when set, resources targeted at other levels are pushed
+  // down (not hidden) so the viewer sees what suits them first. Untargeted
+  // listings (no target_level_types set) always rank as suitable for everyone.
+  viewerLevelType?: string | null
+}
+
+function matchesViewerLevel(resource: MarketplaceResource, viewerLevelType?: string | null): boolean {
+  if (!viewerLevelType) return true
+  const targets = resource.metadata?.target_level_types
+  if (!targets || targets.length === 0) return true
+  return targets.includes(viewerLevelType)
 }
 
 export interface PublishResourceInput {
@@ -241,12 +297,20 @@ async function fetchLegacyResources(filters: ResourceFilters): Promise<Marketpla
 
 export async function fetchResources(filters: ResourceFilters = {}): Promise<MarketplaceResource[]> {
   const [fromListings, fromLegacy] = await Promise.all([fetchListings(filters), fetchLegacyResources(filters)])
-  const merged = [...fromListings, ...fromLegacy].sort(
+  let merged = [...fromListings, ...fromLegacy].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
 
-  if (merged.length) return merged
-  return filterDemoResources(filters)
+  if (!merged.length) merged = filterDemoResources(filters)
+
+  if (filters.viewerLevelType) {
+    // Level-matched resources first, then everything else, each in recency order.
+    const matched = merged.filter((r) => matchesViewerLevel(r, filters.viewerLevelType))
+    const rest = merged.filter((r) => !matchesViewerLevel(r, filters.viewerLevelType))
+    return [...matched, ...rest]
+  }
+
+  return merged
 }
 
 async function fetchListingById(id: string): Promise<MarketplaceResource | null> {

@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { autoClaimBrowserSessions } from '@/lib/guest-sessions'
+import { attachPendingInvites, loadMemberships } from '@/lib/context'
+import { USER_WITH_INSTITUTION_NAME_MODULES } from '@/lib/supabase-embeds'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -27,13 +29,24 @@ export default function LoginPage() {
 
     await autoClaimBrowserSessions(data.user.id)
 
+    // Attach institution invitations sent to this email, then load memberships
+    await attachPendingInvites(data.user.id, data.user.email ?? email)
+    await loadMemberships(data.user.id)
+
     const { data: userRecord, error: userError } = await supabase
       .from('users')
-      .select('*, institutions(name, modules)')
+      .select(USER_WITH_INSTITUTION_NAME_MODULES)
       .eq('id', data.user.id)
-      .single()
+      .maybeSingle()
 
-    if (userError || !userRecord) {
+    if (userError) {
+      console.error('Profile load failed:', userError.message)
+      setError('We could not load your profile. Try again in a moment.')
+      setLoading(false)
+      return
+    }
+
+    if (!userRecord) {
       setError('Your institution setup did not complete. Go to Set up your account below and try again with the same email.')
       setLoading(false)
       return
@@ -44,47 +57,14 @@ export default function LoginPage() {
       localStorage.setItem('sphere_institution', userRecord.institutions.name)
     }
 
-    const modules = userRecord?.institutions?.modules ?? {}
-
-    const moduleRoutes: Record<string, string> = {
-      engage: '/engage',
-      assess: '/assess',
-      learn: '/learn',
-      train: '/train',
-    }
-
-    const roleRoutes: Record<string, string> = {
-      admin: '/platform/analytics',
-      teacher: '/engage',
-      student: '/student/learn',
-      hr: '/train',
-      employee: '/employee/train/demo',
-    }
-
     if (userRecord.is_sphere_staff) {
       router.push('/admin')
       return
     }
 
-    if (userRecord.role === 'employee') {
-      const { data: enrollment } = await supabase
-        .from('path_enrollments')
-        .select('path_id')
-        .eq('employee_id', userRecord.id)
-        .order('enrolled_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      router.push(enrollment?.path_id ? `/employee/train/${enrollment.path_id}` : roleRoutes.employee)
-      return
-    }
-
-    if (['teacher', 'admin'].includes(userRecord?.role)) {
-      const firstActive = (['engage', 'assess', 'learn', 'train'] as const).find(m => modules[m]) ?? 'engage'
-      router.push(moduleRoutes[firstActive])
-    } else {
-      router.push(roleRoutes[userRecord?.role] ?? '/engage')
-    }
+    // Everyone lands on Home: personal workspace, invitations,
+    // and the context switcher take it from there.
+    router.push('/home')
   }
 
   const inputStyle: React.CSSProperties = {

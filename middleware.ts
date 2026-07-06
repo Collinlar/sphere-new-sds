@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PROTECTED = ['/engage', '/assess', '/learn', '/train', '/platform', '/student', '/employee', '/admin']
+const PROTECTED = ['/engage', '/assess', '/learn', '/train', '/platform', '/student', '/admin']
 
 const PUBLIC_PREFIXES = [
   '/student/assess/',

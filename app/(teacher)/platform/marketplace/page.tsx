@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { IconSearch, IconDocument, IconPlay, IconUser } from '@/components/icons'
 import {
   fetchResources,
+  getViewerLevelType,
   FILTER_CHIPS,
   formatPrice,
   isFreeResource,
@@ -173,6 +174,12 @@ export default function MarketplacePage() {
   const [activeChip, setActiveChip] = useState('all')
   const { canSellMarketplace, isSphereStaff } = usePlanContext()
 
+  const [viewerLevelType, setViewerLevelType] = useState<string | null>(null)
+
+  useEffect(() => {
+    getViewerLevelType().then(setViewerLevelType)
+  }, [])
+
   useEffect(() => {
     async function load() {
       setLoading(true)
@@ -181,13 +188,14 @@ export default function MarketplacePage() {
         search,
         type: chip?.type ?? 'all',
         freeOnly: chip?.freeOnly,
+        viewerLevelType,
       })
       setResources(data)
       setLoading(false)
     }
     const timer = setTimeout(load, search ? 200 : 0)
     return () => clearTimeout(timer)
-  }, [search, activeChip])
+  }, [search, activeChip, viewerLevelType])
 
   const featured = useMemo(
     () => resources.filter((r) => r.metadata?.featured).slice(0, 3),

@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { USER_WITH_INSTITUTION_NAME_ID } from '@/lib/supabase-embeds'
 import type { CreationUsage } from '@/lib/types'
 
 interface UserDetail {
@@ -46,7 +47,7 @@ export default function UserDetailPage({ params: paramsPromise }: { params: Prom
     async function load() {
       const { data: u } = await supabase
         .from('users')
-        .select('*, institutions(name, id)')
+        .select(USER_WITH_INSTITUTION_NAME_ID)
         .eq('id', id)
         .maybeSingle()
 

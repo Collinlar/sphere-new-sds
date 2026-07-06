@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { autoClaimBrowserSessions } from '@/lib/guest-sessions'
+import { attachPendingInvites } from '@/lib/context'
 
 // Level categories users can choose from at signup.
 // Drives marketplace personalisation — not a hard role assignment.
@@ -140,7 +141,10 @@ export default function SignupPage() {
       // Auto-claim any guest sessions from this browser
       await autoClaimBrowserSessions(authData.user.id)
 
-      router.push('/student/learn')
+      // Attach any institution invitations sent to this email
+      await attachPendingInvites(authData.user.id, email)
+
+      router.push('/home')
     } catch {
       setError('Something went wrong. Try again in a moment.')
       setLoading(false)

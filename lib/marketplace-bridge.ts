@@ -38,6 +38,7 @@ export interface MarketplaceListingRow {
   is_free: boolean
   subject: string | null
   target_levels: string[] | null
+  target_level_types: string[] | null
   status: string
   thumbnail_color: string | null
   total_purchases: number | null
@@ -87,6 +88,7 @@ export function listingToResource(
       backing_resource_id: listing.resource_id,
       backing_resource_type: listing.resource_type,
       accent: listing.thumbnail_color ?? undefined,
+      target_level_types: listing.target_level_types ?? undefined,
     },
     import_count: extras?.import_count ?? listing.total_purchases ?? 0,
     rating_avg: 0,
