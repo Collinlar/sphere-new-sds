@@ -248,8 +248,8 @@ export default function MarketplacePage() {
               }}>{f}</button>
             ))}
           </div>
-          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--page-bg)' }}>
                   {['Title', 'Creator', 'Type', 'Price', 'Commission', 'Status', 'Actions'].map(h => (
@@ -335,11 +335,11 @@ export default function MarketplacePage() {
             ))}
           </div>
 
-          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
             <div style={{ padding: '14px 18px', borderBottom: '0.5px solid var(--border)' }}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>Recent transactions (last 200)</p>
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--page-bg)' }}>
                   {['Listing', 'Sale amount', 'Sphere commission', 'Date'].map(h => (

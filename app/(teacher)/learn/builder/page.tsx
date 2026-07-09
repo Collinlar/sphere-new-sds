@@ -181,6 +181,7 @@ function CourseBuilderInner() {
   const [newModuleRequired, setNewModuleRequired] = useState(true)
   const [expandedModule, setExpandedModule] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [mobileTab, setMobileTab] = useState<'details' | 'modules'>('details')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
@@ -382,6 +383,16 @@ function CourseBuilderInner() {
     <CreationGate module="learn">
       {({ check }) => (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+      <style>{`
+        .c-mobile-tabs { display: none; }
+        @media (max-width: 768px) {
+          .c-mobile-tabs { display: flex; height: 44px; background: var(--white); border-bottom: 0.5px solid var(--border); }
+          .c-mobile-tab-btn { flex: 1; border: none; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+          .c-layout { flex-direction: column; padding: 16px !important; gap: 16px !important; }
+          .c-left { width: 100% !important; }
+          .c-left.tab-hidden, .c-right.tab-hidden { display: none !important; }
+        }
+      `}</style>
       <AiCourseBuilderModal
         open={aiModalOpen}
         onClose={() => { if (!aiLoading) setAiModalOpen(false) }}
@@ -426,9 +437,18 @@ function CourseBuilderInner() {
 
       {error && <div style={{ background: '#FDECEA', color: '#C23B2A', fontSize: 13, padding: '10px 32px' }}>{error}</div>}
 
-      <div style={{ display: 'flex', gap: 24, padding: '28px 32px', maxWidth: 1100, alignItems: 'flex-start' }}>
+      <div className="c-mobile-tabs">
+        <button className="c-mobile-tab-btn" onClick={() => setMobileTab('details')} style={{ color: mobileTab === 'details' ? '#1A8966' : 'var(--mid-grey)', borderBottom: mobileTab === 'details' ? '2px solid #1A8966' : '2px solid transparent' }}>
+          Course details
+        </button>
+        <button className="c-mobile-tab-btn" onClick={() => setMobileTab('modules')} style={{ color: mobileTab === 'modules' ? '#1A8966' : 'var(--mid-grey)', borderBottom: mobileTab === 'modules' ? '2px solid #1A8966' : '2px solid transparent' }}>
+          Modules
+        </button>
+      </div>
+
+      <div className="c-layout" style={{ display: 'flex', gap: 24, padding: '28px 32px', maxWidth: 1100, alignItems: 'flex-start' }}>
         {/* Left panel — course meta */}
-        <div style={{ width: 300, flexShrink: 0, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'hidden' }}>
+        <div className={`c-left ${mobileTab === 'details' ? '' : 'tab-hidden'}`} style={{ width: 300, flexShrink: 0, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ background: thumbnailColor, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 44, fontWeight: 700, color: 'rgba(255,255,255,0.9)' }}>{title ? title[0].toUpperCase() : '?'}</span>
           </div>
@@ -506,7 +526,7 @@ function CourseBuilderInner() {
         </div>
 
         {/* Right panel — modules */}
-        <div style={{ flex: 1 }}>
+        <div className={`c-right ${mobileTab === 'modules' ? '' : 'tab-hidden'}`} style={{ flex: 1 }}>
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <span style={{ fontSize: 15, fontWeight: 600 }}>

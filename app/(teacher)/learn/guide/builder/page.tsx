@@ -27,6 +27,7 @@ export default function GuideBuilderPage() {
   const [activeStep, setActiveStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [mobileTab, setMobileTab] = useState<'setup' | 'edit'>('setup')
 
   function updateStep(index: number, patch: Partial<GuideStep>) {
     setSteps(prev => prev.map((s, i) => i === index ? { ...s, ...patch } : s))
@@ -35,6 +36,7 @@ export default function GuideBuilderPage() {
   function addStep() {
     setSteps(prev => [...prev, { title: '', body: '', tip: '' }])
     setActiveStep(steps.length)
+    setMobileTab('edit')
   }
 
   function removeStep(index: number) {
@@ -101,6 +103,15 @@ export default function GuideBuilderPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+      <style>{`
+        .g-mobile-tabs { display: none; }
+        @media (max-width: 768px) {
+          .g-mobile-tabs { display: flex; height: 44px; background: var(--white); border-bottom: 0.5px solid var(--border); }
+          .g-mobile-tab-btn { flex: 1; border: none; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+          .g-layout { grid-template-columns: 1fr !important; padding: 16px 16px 60px !important; }
+          .g-left.tab-hidden, .g-right.tab-hidden { display: none !important; }
+        }
+      `}</style>
       <TopBar
         mode="learn"
         title="Guide builder"
@@ -125,10 +136,20 @@ export default function GuideBuilderPage() {
         }
       />
 
-      <div style={{ padding: '28px 32px 60px', maxWidth: 980, display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
+      {/* Mobile tabs */}
+      <div className="g-mobile-tabs">
+        <button className="g-mobile-tab-btn" onClick={() => setMobileTab('setup')} style={{ color: mobileTab === 'setup' ? '#1A8966' : 'var(--mid-grey)', borderBottom: mobileTab === 'setup' ? '2px solid #1A8966' : '2px solid transparent' }}>
+          Setup &amp; steps
+        </button>
+        <button className="g-mobile-tab-btn" onClick={() => setMobileTab('edit')} style={{ color: mobileTab === 'edit' ? '#1A8966' : 'var(--mid-grey)', borderBottom: mobileTab === 'edit' ? '2px solid #1A8966' : '2px solid transparent' }}>
+          Edit step
+        </button>
+      </div>
+
+      <div className="g-layout" style={{ padding: '28px 32px 60px', maxWidth: 980, display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
 
         {/* Left: guide meta + step list */}
-        <div>
+        <div className={`g-left ${mobileTab === 'setup' ? '' : 'tab-hidden'}`}>
           <div className="sphere-card" style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 6 }}>Guide title</label>
             <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What are you teaching?" style={{ ...inputStyle, marginBottom: 12 }} />
@@ -163,7 +184,7 @@ export default function GuideBuilderPage() {
           <div className="sphere-card">
             <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 10 }}>Steps ({steps.length})</p>
             {steps.map((s, i) => (
-              <button key={i} onClick={() => setActiveStep(i)} style={{
+              <button key={i} onClick={() => { setActiveStep(i); setMobileTab('edit') }} style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 8,
                 padding: '8px 10px', borderRadius: 7, border: 'none', marginBottom: 3,
                 background: activeStep === i ? 'var(--bg2)' : 'transparent',
@@ -191,7 +212,7 @@ export default function GuideBuilderPage() {
         </div>
 
         {/* Right: active step editor */}
-        <div className="sphere-card">
+        <div className={`g-right sphere-card ${mobileTab === 'edit' ? '' : 'tab-hidden'}`}>
           {error && (
             <p style={{ fontSize: 13, color: 'var(--coral)', background: '#FDECEA', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>{error}</p>
           )}

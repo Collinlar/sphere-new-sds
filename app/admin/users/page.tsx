@@ -90,8 +90,8 @@ export default function UsersPage() {
       {loading ? (
         <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>Loading users...</p>
       ) : (
-        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--page-bg)' }}>
                 {['Name', 'Email', 'Plan', 'Role', 'Institution', 'Joined'].map(h => (

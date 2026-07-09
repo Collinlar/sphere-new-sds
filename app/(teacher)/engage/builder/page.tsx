@@ -74,6 +74,7 @@ function QuizBuilderInner() {
   const [loadingEdit, setLoadingEdit] = useState(!!editId)
   const [activeQuestion, setActiveQuestion] = useState(0)
   const [showTypeMenu, setShowTypeMenu] = useState(false)
+  const [mobileTab, setMobileTab] = useState<'list' | 'edit'>('list')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
@@ -136,6 +137,7 @@ function QuizBuilderInner() {
     setQuestions(prev => [...prev, emptyQuestion(type)])
     setActiveQuestion(questions.length)
     setShowTypeMenu(false)
+    setMobileTab('edit')
   }
 
   function removeQuestion(index: number) {
@@ -239,6 +241,18 @@ function QuizBuilderInner() {
     <CreationGate module="engage">
       {({ check }) => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--page-bg)' }}>
+      <style>{`
+        .q-mobile-tabs { display: none; }
+        @media (max-width: 768px) {
+          .q-mobile-tabs { display: flex; height: 44px; background: var(--white); border-bottom: 0.5px solid var(--border); }
+          .q-mobile-tab-btn { flex: 1; border: none; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+          .q-layout { flex-direction: column; }
+          .q-sidebar { width: 100% !important; border-right: none !important; border-bottom: 0.5px solid var(--border); }
+          .q-sidebar.tab-hidden { display: none !important; }
+          .q-editor.tab-hidden { display: none !important; }
+          .q-editor { padding: 16px !important; }
+        }
+      `}</style>
       <TopBar
         mode="engage"
         title={editId ? 'Edit quiz' : 'New quiz'}
@@ -279,9 +293,19 @@ function QuizBuilderInner() {
         }
       />
 
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* Mobile tabs */}
+      <div className="q-mobile-tabs">
+        <button className="q-mobile-tab-btn" onClick={() => setMobileTab('list')} style={{ color: mobileTab === 'list' ? '#D97010' : 'var(--mid-grey)', borderBottom: mobileTab === 'list' ? '2px solid #D97010' : '2px solid transparent' }}>
+          Questions
+        </button>
+        <button className="q-mobile-tab-btn" onClick={() => setMobileTab('edit')} style={{ color: mobileTab === 'edit' ? '#D97010' : 'var(--mid-grey)', borderBottom: mobileTab === 'edit' ? '2px solid #D97010' : '2px solid transparent' }}>
+          Edit question
+        </button>
+      </div>
+
+      <div className="q-layout" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left panel */}
-        <div style={{ width: 240, borderRight: '0.5px solid var(--border)', background: 'var(--white)', display: 'flex', flexDirection: 'column', padding: '16px 12px', gap: 12, overflowY: 'auto' }}>
+        <div className={`q-sidebar ${mobileTab === 'list' ? '' : 'tab-hidden'}`} style={{ width: 240, borderRight: '0.5px solid var(--border)', background: 'var(--white)', display: 'flex', flexDirection: 'column', padding: '16px 12px', gap: 12, overflowY: 'auto' }}>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Quiz title" style={{ background: 'var(--bg2)', border: 'none', borderRadius: 8, padding: '10px 12px', fontSize: 14, fontWeight: 600, color: 'var(--near-black)', width: '100%', boxSizing: 'border-box' }} />
           <select value={subject} onChange={e => setSubject(e.target.value)} style={{ background: 'var(--bg2)', border: 'none', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: subject ? 'var(--near-black)' : 'var(--mid-grey)', width: '100%', boxSizing: 'border-box' }}>
             <option value="">Subject</option>
@@ -295,7 +319,7 @@ function QuizBuilderInner() {
           <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: 12 }}>
             <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mid-grey)', marginBottom: 8 }}>Questions</p>
             {questions.map((q, i) => (
-              <div key={q.id} onClick={() => setActiveQuestion(i)} style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', background: activeQuestion === i ? '#FEF0DC' : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div key={q.id} onClick={() => { setActiveQuestion(i); setMobileTab('edit') }} style={{ padding: '8px 10px', borderRadius: 7, cursor: 'pointer', background: activeQuestion === i ? '#FEF0DC' : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 22, height: 22, borderRadius: 5, background: activeQuestion === i ? '#D97010' : 'var(--bg2)', color: activeQuestion === i ? '#fff' : 'var(--mid-grey)', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {i + 1}
                 </span>
@@ -326,7 +350,7 @@ function QuizBuilderInner() {
         </div>
 
         {/* Right panel: question editor */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
+        <div className={`q-editor ${mobileTab === 'edit' ? '' : 'tab-hidden'}`} style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
           <div style={{ maxWidth: 640, margin: '0 auto' }}>
             {/* Header row */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>

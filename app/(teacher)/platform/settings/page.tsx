@@ -227,7 +227,7 @@ export default function PlatformSettingsPage() {
             {isPersonalAccount && (
               <div className="sphere-card" style={{ marginBottom: 20 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Your profile</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div className="r-collapse-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
                     <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 6 }}>Name</label>
                     <input value={displayName} disabled style={{
@@ -251,7 +251,7 @@ export default function PlatformSettingsPage() {
             {!isPersonalAccount && (
               <div className="sphere-card" style={{ marginBottom: 20 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Institution profile</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div className="r-collapse-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
                     <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 6 }}>
                       Institution name
@@ -328,7 +328,7 @@ export default function PlatformSettingsPage() {
                   </span>
                 )}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="r-collapse-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {(['engage', 'assess', 'learn', 'train'] as const).map(key => {
                   const m = MODULE_META[key]
                   const isAccessible = planModules.includes(key)

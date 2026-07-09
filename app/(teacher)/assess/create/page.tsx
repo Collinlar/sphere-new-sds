@@ -382,7 +382,7 @@ export default function ExamCreate() {
 
       <div className="exam-layout" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Left sidebar — fixed metadata top, scrollable questions bottom */}
-        <div className={`exam-sidebar ${mobileTab === 'details' ? 'mobile-show' : ''}`} style={{
+        <div className={`exam-sidebar ${mobileTab === 'details' ? '' : 'tab-hidden'}`} style={{
           width: 260,
           borderRight: '0.5px solid var(--border)',
           background: 'var(--white)',
@@ -670,7 +670,7 @@ export default function ExamCreate() {
         </div>
 
         {/* Right: question editor — show only on desktop or when questions tab active on mobile */}
-        <div className={`exam-editor ${mobileTab === 'questions' ? 'mobile-show' : ''}`} style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
+        <div className={`exam-editor ${mobileTab === 'questions' ? '' : 'tab-hidden'}`} style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
           <div style={{ maxWidth: 640, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
               <span style={{

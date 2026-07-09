@@ -178,8 +178,8 @@ export default function SubscriptionsPage() {
               }}>{t === 'all' ? 'All' : t}</button>
             ))}
           </div>
-          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--page-bg)' }}>
                   {['Name', 'Email', 'Plan', 'Joined'].map(h => (
@@ -212,8 +212,8 @@ export default function SubscriptionsPage() {
 
       {/* ADD-ONS */}
       {!loading && tab === 'addons' && (
-        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--page-bg)' }}>
                 {['User', 'Add-on', 'Status', 'Started', 'Expires'].map(h => (
@@ -260,8 +260,8 @@ export default function SubscriptionsPage() {
 
       {/* INSTITUTION ENQUIRIES */}
       {!loading && tab === 'inquiries' && (
-        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--page-bg)' }}>
                 {['Institution', 'Contact', 'Students', 'Message', 'Status', 'Deposit', 'Received'].map(h => (

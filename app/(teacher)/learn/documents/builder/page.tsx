@@ -160,7 +160,7 @@ export default function DocumentsBuilderPage() {
         }
       />
 
-      <div style={{ padding: '28px 32px 60px', maxWidth: 760 }}>
+      <div className="r-pad" style={{ padding: '28px 32px 60px', maxWidth: 760 }}>
         {error && (
           <p style={{ fontSize: 13, color: 'var(--coral)', background: '#FDECEA', borderRadius: 8, padding: '10px 12px', marginBottom: 16 }}>{error}</p>
         )}

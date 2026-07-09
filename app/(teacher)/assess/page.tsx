@@ -127,7 +127,7 @@ export default function AssessDashboard() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+        <div className="r-collapse-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
           {[
             { label: 'Total exams',        value: loading ? '...' : exams.length },
             { label: 'Active sessions',    value: loading ? '...' : activeSessions,   accent: activeSessions > 0 ? '#1A8966' : undefined },

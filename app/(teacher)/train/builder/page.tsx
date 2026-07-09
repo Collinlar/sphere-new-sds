@@ -74,6 +74,7 @@ function TrainBuilderInner() {
   const [editingStepIdx, setEditingStepIdx] = useState<number | null>(null)
   const [assignedDepts, setAssignedDepts] = useState<string[]>(['All staff'])
   const [saving, setSaving] = useState(false)
+  const [mobileTab, setMobileTab] = useState<'details' | 'steps'>('details')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
@@ -265,6 +266,16 @@ function TrainBuilderInner() {
     <CreationGate module="train">
       {({ check }) => (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+      <style>{`
+        .t-mobile-tabs { display: none; }
+        @media (max-width: 768px) {
+          .t-mobile-tabs { display: flex; height: 44px; background: var(--white); border-bottom: 0.5px solid var(--border); }
+          .t-mobile-tab-btn { flex: 1; border: none; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+          .t-layout { flex-direction: column; padding: 16px !important; gap: 16px !important; }
+          .t-left { width: 100% !important; }
+          .t-left.tab-hidden, .t-right.tab-hidden { display: none !important; }
+        }
+      `}</style>
       <TopBar
         mode="train"
         title={pathId ? 'Edit path' : 'Path builder'}
@@ -305,8 +316,17 @@ function TrainBuilderInner() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 24, padding: '28px 32px', maxWidth: 1100, alignItems: 'flex-start' }}>
-        <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="t-mobile-tabs">
+        <button className="t-mobile-tab-btn" onClick={() => setMobileTab('details')} style={{ color: mobileTab === 'details' ? '#1052A3' : 'var(--mid-grey)', borderBottom: mobileTab === 'details' ? '2px solid #1052A3' : '2px solid transparent' }}>
+          Path details
+        </button>
+        <button className="t-mobile-tab-btn" onClick={() => setMobileTab('steps')} style={{ color: mobileTab === 'steps' ? '#1052A3' : 'var(--mid-grey)', borderBottom: mobileTab === 'steps' ? '2px solid #1052A3' : '2px solid transparent' }}>
+          Steps
+        </button>
+      </div>
+
+      <div className="t-layout" style={{ display: 'flex', gap: 24, padding: '28px 32px', maxWidth: 1100, alignItems: 'flex-start' }}>
+        <div className={`t-left ${mobileTab === 'details' ? '' : 'tab-hidden'}`} style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 20px 24px' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 16 }}>Path details</div>
 
@@ -384,7 +404,7 @@ function TrainBuilderInner() {
           </div>
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div className={`t-right ${mobileTab === 'steps' ? '' : 'tab-hidden'}`} style={{ flex: 1 }}>
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)' }}>

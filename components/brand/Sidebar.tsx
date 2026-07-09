@@ -37,6 +37,7 @@ interface SidebarProps {
   activeMode?: string
   institutionName?: string
   userName?: string
+  drawerOpen?: boolean
 }
 
 const PLAN_LABELS: Record<string, string> = {
@@ -46,7 +47,7 @@ const PLAN_LABELS: Record<string, string> = {
   institution: 'Institution',
 }
 
-export default function Sidebar({ activeMode, institutionName, userName }: SidebarProps) {
+export default function Sidebar({ activeMode, institutionName, userName, drawerOpen = false }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [displayName, setDisplayName] = useState(userName ?? '')
@@ -163,7 +164,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
   ]
 
   return (
-    <aside style={{
+    <aside className={`app-sidebar${drawerOpen ? ' app-sidebar--open' : ''}`} style={{
       position: 'fixed',
       left: 0, top: 0,
       width: 'var(--sidebar-w)',

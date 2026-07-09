@@ -112,8 +112,8 @@ export default function ContentPage() {
       {loading ? (
         <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>Loading...</p>
       ) : (
-        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--page-bg)' }}>
                 {['Title', 'Creator', 'Institution', 'Status', 'Created'].map(h => (

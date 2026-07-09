@@ -130,12 +130,12 @@ export default function InstitutionDetailPage({ params: paramsPromise }: { param
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+      <div className="r-collapse-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
         {/* Edit form */}
         <div style={{ background: 'var(--white)', borderRadius: 12, padding: '20px', boxShadow: 'var(--shadow-soft)', gridColumn: '1 / -1' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 16 }}>Institution settings</p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+          <div className="r-collapse-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 5 }}>Name</label>
               <input value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', height: 38, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 12px', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />

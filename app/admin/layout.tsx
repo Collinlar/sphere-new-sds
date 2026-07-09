@@ -69,6 +69,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     checkStaff()
   }, [router])
 
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setNavOpen(false)
+  }, [pathname])
+
   if (checking) {
     return (
       <div style={{ minHeight: '100vh', background: '#0C1021', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -94,8 +99,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--page-bg)', fontFamily: 'var(--font)' }}>
 
+      {/* Mobile top bar (hidden on desktop via CSS) */}
+      <div className="admin-mobile-bar">
+        <button
+          type="button"
+          aria-label="Open menu"
+          onClick={() => setNavOpen(true)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}
+        >
+          <span style={{ display: 'block', width: 20, height: 1.6, background: 'rgba(255,255,255,0.85)', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 20, height: 1.6, background: 'rgba(255,255,255,0.85)', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 14, height: 1.6, background: 'rgba(255,255,255,0.85)', borderRadius: 2 }} />
+        </button>
+        <div>
+          <span style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>Sphere</span>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#D97010', marginLeft: 8 }}>Admin</span>
+        </div>
+      </div>
+
+      {/* Scrim behind the open drawer (mobile only via CSS) */}
+      <div
+        className={`admin-scrim${navOpen ? ' admin-scrim--open' : ''}`}
+        onClick={() => setNavOpen(false)}
+        aria-hidden="true"
+      />
+
       {/* Sidebar */}
-      <aside style={{
+      <aside className={`admin-sidebar${navOpen ? ' admin-sidebar--open' : ''}`} style={{
         width: 220,
         background: '#0C1021',
         display: 'flex',
@@ -161,7 +191,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+      <main className="admin-main" style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
         {children}
       </main>
     </div>

@@ -239,10 +239,11 @@ export default function TeamPage() {
         {loading ? (
           <div style={{ color: 'var(--mid-grey)', fontSize: 14 }}>Loading members...</div>
         ) : (
-          <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 12, overflow: 'hidden' }}>
+          <div className="r-table-scroll" style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 12 }}>
             <div style={{
               display: 'grid',
               gridTemplateColumns: '1.5fr 110px 130px 110px 90px 140px',
+              minWidth: 720,
               padding: '10px 20px',
               borderBottom: '0.5px solid var(--bg2)',
             }}>
@@ -264,6 +265,7 @@ export default function TeamPage() {
                     style={{
                       display: 'grid',
                       gridTemplateColumns: '1.5fr 110px 130px 110px 90px 140px',
+                      minWidth: 720,
                       padding: '13px 20px',
                       borderBottom: i === filtered.length - 1 ? 'none' : '0.5px solid var(--bg2)',
                       alignItems: 'center',

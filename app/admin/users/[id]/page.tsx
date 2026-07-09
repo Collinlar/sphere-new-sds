@@ -189,7 +189,7 @@ export default function UserDetailPage({ params: paramsPromise }: { params: Prom
               }}>{resetting ? 'Resetting...' : 'Reset usage to 0'}</button>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <div className="r-collapse-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {(['assess', 'engage', 'learn', 'train'] as const).map(mod => {
               const used = usage[`${mod}_used` as keyof CreationUsage] as number
               const quota = usage[`${mod}_quota` as keyof CreationUsage] as number
