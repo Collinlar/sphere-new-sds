@@ -80,7 +80,7 @@ INSERT INTO subscription_plans (
     null, null, null, null, null,
     null, null,
     true, 30, true),
-  ('institution', 'Institution', null, 'monthly',
+  ('institution', 'Institution', 1000, 'quarterly',
     null, null, null, null, null,
     null, 100,
     true, 15, true)

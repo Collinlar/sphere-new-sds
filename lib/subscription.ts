@@ -250,13 +250,42 @@ export async function canCreate(module: Module): Promise<{ allowed: boolean; rea
 export async function incrementUsed(module: Module, userId?: string): Promise<void> {
   if (getActiveContext().type === 'institution') return
 
-  const planId = await getEffectivePlanId(userId)
+  const uid = userId ?? (await resolveAuthUserId()) ?? getCachedUserId() ?? getCurrentUser().id
+  if (!uid || uid === '00000000-0000-0000-0000-000000000002') return
+
+  const planId = await getEffectivePlanId(uid)
   if (planId === 'membership' && module === 'engage') return
 
-  const uid = userId ?? (await resolveAuthUserId()) ?? getCurrentUser().id
-  const field = `${module}_used`
+  // RPC only updates existing rows — seed quotas first without resetting used counts.
+  await upsertCreationUsageForPlan(supabase, uid, planId, { resetUsed: false })
 
-  await supabase.rpc('increment_creation_used', { p_user_id: uid, p_field: field })
+  const field = `${module}_used` as
+    | 'assess_used'
+    | 'engage_used'
+    | 'learn_used'
+    | 'train_used'
+
+  const { error: rpcError } = await supabase.rpc('increment_creation_used', {
+    p_user_id: uid,
+    p_field: field,
+  })
+
+  if (!rpcError) return
+
+  // Fallback if RPC is unavailable: read-modify-write the usage row.
+  const { data: row } = await supabase
+    .from('creation_usage')
+    .select(field)
+    .eq('user_id', uid)
+    .maybeSingle()
+
+  const current = Number((row as Record<string, number> | null)?.[field] ?? 0)
+  await supabase
+    .from('creation_usage')
+    .upsert(
+      { user_id: uid, [field]: current + 1, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    )
 }
 
 export async function incrementEngageSessionLaunched(userId?: string): Promise<void> {

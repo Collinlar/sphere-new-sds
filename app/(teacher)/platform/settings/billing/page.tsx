@@ -49,12 +49,12 @@ const PLANS = [
   {
     id: 'institution',
     name: 'Institution',
-    price: 'Custom',
-    period: '/month',
+    price: 'GHS 1000',
+    period: '/quarter',
     description: 'For schools, universities, and corporate teams.',
     highlights: ['Unlimited creations', '100 enrolled students base', 'Per-head pricing beyond 100', 'Certificates, custom templates'],
     accent: '#1A8966',
-    cta: 'Contact us',
+    cta: 'Get Institution plan',
   },
 ]
 

@@ -155,7 +155,7 @@ function InstitutionInquiryInner() {
         ) : (
           <>
             <p style={{ fontSize: 14, color: 'var(--mid-grey)', lineHeight: 1.65, marginBottom: 24 }}>
-              Institution pricing is based on enrolled students, modules, and support level. Tell us about your school or organisation and we will send a tailored quote in GHS.
+              Institution plan is GHS 1,000 per quarter. That covers unlimited creations, certificates, and marketplace access for up to 100 enrolled students. Per-head pricing applies beyond 100. Tell us about your school or organisation and we will confirm your setup.
             </p>
 
             {isAdmin && (
@@ -206,7 +206,7 @@ function InstitutionInquiryInner() {
             </form>
 
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 20, lineHeight: 1.6 }}>
-              Base Institution plan includes 100 enrolled students, unlimited creations, certificates, and marketplace access. Per-head pricing applies beyond 100.
+              GHS 1,000 per quarter. Includes 100 enrolled students, unlimited creations, certificates, and marketplace access. Per-head pricing applies beyond 100.
             </p>
           </>
         )}

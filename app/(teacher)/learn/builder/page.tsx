@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
@@ -186,6 +186,8 @@ function CourseBuilderInner() {
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
   const [loading, setLoading] = useState(!!editId)
   const [error, setError] = useState('')
+  const savingLock = useRef(false)
+  const [savedId, setSavedId] = useState<string | null>(editId)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [rosterId, setRosterId] = useState<string>('')
   const [audienceGroups, setAudienceGroups] = useState<string[]>([])
@@ -324,12 +326,16 @@ function CourseBuilderInner() {
   }
 
   async function save(publish: boolean, gateCheck?: () => Promise<boolean>) {
+    if (savingLock.current) return
     if (!title.trim()) { setError('Give your course a title first.'); return }
-    if (!editId && gateCheck) {
+    const existingId = savedId ?? editId
+    if (!existingId && gateCheck) {
       const allowed = await gateCheck()
       if (!allowed) return
     }
-    setSaving(true); setError('')
+    savingLock.current = true
+    setSaving(true)
+    setError('')
 
     const payload = {
       institution_id: getContentInstitutionId(),
@@ -343,17 +349,30 @@ function CourseBuilderInner() {
       updated_at: new Date().toISOString(),
     }
 
-    let dbError
-    if (editId) {
-      const res = await supabase.from('courses').update(payload).eq('id', editId)
+    let dbError: { message: string } | null = null
+    let createdNew = false
+    if (existingId) {
+      const res = await supabase.from('courses').update(payload).eq('id', existingId)
       dbError = res.error
     } else {
-      const res = await supabase.from('courses').insert({ ...payload, created_at: new Date().toISOString() })
+      const res = await supabase
+        .from('courses')
+        .insert({ ...payload, created_at: new Date().toISOString() })
+        .select('id')
+        .single()
       dbError = res.error
+      if (!res.error && res.data?.id) {
+        setSavedId(res.data.id)
+        createdNew = true
+      }
     }
-    setSaving(false)
-    if (dbError) { setError(`Could not save: ${dbError.message}`); return }
-    if (!editId) await incrementUsed('learn')
+    if (dbError) {
+      savingLock.current = false
+      setSaving(false)
+      setError(`Could not save: ${dbError.message}`)
+      return
+    }
+    if (createdNew) await incrementUsed('learn', getCurrentUser().id)
     router.push('/learn')
   }
 

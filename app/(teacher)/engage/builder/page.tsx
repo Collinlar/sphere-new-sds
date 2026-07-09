@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
@@ -77,6 +77,8 @@ function QuizBuilderInner() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
+  const savingLock = useRef(false)
+  const [savedId, setSavedId] = useState<string | null>(editId)
 
   useEffect(() => {
     if (!editId) return
@@ -143,11 +145,14 @@ function QuizBuilderInner() {
   }
 
   async function save(publish: boolean, gateCheck?: () => Promise<boolean>) {
+    if (savingLock.current) return
     if (!title.trim()) { alert('Give your quiz a title first.'); return }
-    if (!editId && gateCheck) {
+    const existingId = savedId ?? editId
+    if (!existingId && gateCheck) {
       const allowed = await gateCheck()
       if (!allowed) return
     }
+    savingLock.current = true
     setSaving(true)
     const payload = {
       institution_id: getContentInstitutionId(),
@@ -161,20 +166,26 @@ function QuizBuilderInner() {
       updated_at: new Date().toISOString(),
     }
     let error: unknown
-    if (editId) {
-      const res = await supabase.from('quizzes').update(payload).eq('id', editId).select('id').single()
+    let createdNew = false
+    if (existingId) {
+      const res = await supabase.from('quizzes').update(payload).eq('id', existingId).select('id').single()
       error = res.error
     } else {
       const res = await supabase.from('quizzes').insert({ ...payload, created_at: new Date().toISOString() }).select('id').single()
       error = res.error
+      if (!res.error && res.data?.id) {
+        setSavedId(res.data.id)
+        createdNew = true
+      }
     }
-    setSaving(false)
     if (error) {
+      savingLock.current = false
+      setSaving(false)
       const msg = (error as { message?: string })?.message ?? JSON.stringify(error)
       alert(`Save failed: ${msg}`)
       return
     }
-    if (!editId) await incrementUsed('engage')
+    if (createdNew) await incrementUsed('engage', getCurrentUser().id)
     router.push('/engage')
   }
 

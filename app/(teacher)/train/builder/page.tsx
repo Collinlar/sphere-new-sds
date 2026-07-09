@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, Suspense } from 'react'
+import { useState, useCallback, useEffect, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { PathStep } from '@/lib/types'
@@ -79,6 +79,8 @@ function TrainBuilderInner() {
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState('')
+  const savingLock = useRef(false)
+  const [savedPathId, setSavedPathId] = useState<string | null>(pathId)
 
   useEffect(() => {
     if (!pathId) return
@@ -151,9 +153,11 @@ function TrainBuilderInner() {
   }
 
   async function savePath(publish: boolean, gateCheck?: () => Promise<boolean>) {
+    if (savingLock.current) return
     if (!title.trim()) { setError('Give your training path a title first.'); return }
     if (steps.length === 0) { setError('Add at least one step with content before saving.'); return }
-    if (!pathId && gateCheck) {
+    const existingId = savedPathId ?? pathId
+    if (!existingId && gateCheck) {
       const allowed = await gateCheck()
       if (!allowed) return
     }
@@ -164,6 +168,7 @@ function TrainBuilderInner() {
       return
     }
 
+    savingLock.current = true
     const setter = publish ? setPublishing : setSaving
     setter(true)
     setError('')
@@ -181,11 +186,13 @@ function TrainBuilderInner() {
       updated_at: new Date().toISOString(),
     }
 
-    let savedId = pathId
+    let resolvedId = existingId
+    let createdNew = false
 
-    if (pathId) {
-      const { error: dbError } = await supabase.from('learning_paths').update(payload).eq('id', pathId)
+    if (existingId) {
+      const { error: dbError } = await supabase.from('learning_paths').update(payload).eq('id', existingId)
       if (dbError) {
+        savingLock.current = false
         setter(false)
         setError('Could not save right now. Check your connection and try again.')
         return
@@ -193,22 +200,24 @@ function TrainBuilderInner() {
     } else {
       const { data, error: dbError } = await supabase.from('learning_paths').insert([payload]).select('id').single()
       if (dbError || !data) {
+        savingLock.current = false
         setter(false)
         setError('Could not save right now. Check your connection and try again.')
         return
       }
-      savedId = data.id as string
+      resolvedId = data.id as string
+      setSavedPathId(resolvedId)
+      createdNew = true
     }
 
-    if (publish && savedId) {
+    if (publish && resolvedId) {
       const institutionId = getContentInstitutionId()
       if (institutionId) {
-        await syncPathEnrollments(savedId, institutionId, assignedDepts)
+        await syncPathEnrollments(resolvedId, institutionId, assignedDepts)
       }
     }
 
-    setter(false)
-    if (!pathId) await incrementUsed('train')
+    if (createdNew) await incrementUsed('train', getCurrentUser().id)
     router.push('/train')
   }
 

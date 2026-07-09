@@ -249,7 +249,7 @@ export default function ExamCreate() {
       return
     }
 
-    await incrementUsed('assess')
+    await incrementUsed('assess', getCurrentUser().id)
     router.push('/assess')
   }
 
