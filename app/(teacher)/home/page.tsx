@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { getCreationUsage, getEffectivePlanId } from '@/lib/subscription'
+import { fetchScopedContent } from '@/lib/library-scope'
+import { isAcquiredRow, getAcquisitionUseHref, getAcquisitionTakeLabel, fetchAcquiredContentIds } from '@/lib/acquisition-access'
 import {
   type ActiveContext,
   type Membership,
@@ -28,11 +31,23 @@ interface QuotaRow {
   train_used: number
 }
 
-interface CreationRow {
+interface AcquisitionRow {
   id: string
   title: string
-  kind: 'exam' | 'quiz'
+  kind: 'quiz' | 'exam' | 'course' | 'path'
+  module: 'engage' | 'assess' | 'learn' | 'train'
+  readyToUse: boolean
+  href: string
+  takeLabel: string
+  progressLabel: string | null
   created_at: string
+}
+
+const KIND_LABEL: Record<AcquisitionRow['kind'], string> = {
+  quiz: 'Quiz',
+  exam: 'Exam',
+  course: 'Course',
+  path: 'Training path',
 }
 
 const MODULE_COLOR: Record<string, string> = { assess: '#C23B2A', engage: '#D97010', learn: '#1A8966', train: '#1052A3' }
@@ -44,7 +59,7 @@ export default function HomePage() {
   const [context, setContext] = useState<ActiveContext>({ type: 'personal' })
   const [invites, setInvites] = useState<Membership[]>([])
   const [quota, setQuota] = useState<QuotaRow | null>(null)
-  const [creations, setCreations] = useState<CreationRow[]>([])
+  const [acquisitions, setAcquisitions] = useState<AcquisitionRow[]>([])
   const [joinCode, setJoinCode] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -67,23 +82,96 @@ export default function HomePage() {
       setInvites(all.filter(m => m.status === 'invited'))
 
       // Personal creation quota
-      const { data: usage } = await supabase
-        .from('creation_usage')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle()
+      const usage = await getCreationUsage(user.id)
       setQuota(usage as QuotaRow | null)
 
-      // Recent personal creations
-      const [{ data: exams }, { data: quizzes }] = await Promise.all([
-        supabase.from('exams').select('id, title, created_at').eq('creator_id', user.id).order('created_at', { ascending: false }).limit(5),
-        supabase.from('quizzes').select('id, title, created_at').eq('creator_id', user.id).order('created_at', { ascending: false }).limit(5),
+      // Personal acquisitions (scoped shelf)
+      const personalScope = {
+        institutionId: null as string | null,
+        creatorId: user.id,
+        label: 'Personal library',
+      }
+      const [quizzes, exams, courses, paths, acquiredIds] = await Promise.all([
+        fetchScopedContent<{ id: string; title: string; created_at: string; marketplace_listing_id?: string; settings?: Record<string, unknown> }>('quizzes', personalScope),
+        fetchScopedContent<{ id: string; title: string; created_at: string; marketplace_listing_id?: string; settings?: Record<string, unknown> }>('exams', personalScope),
+        fetchScopedContent<{ id: string; title: string; created_at: string; marketplace_listing_id?: string; settings?: Record<string, unknown> }>('courses', personalScope),
+        fetchScopedContent<{ id: string; title: string; created_at: string; marketplace_listing_id?: string; settings?: Record<string, unknown> }>('learning_paths', personalScope),
+        fetchAcquiredContentIds(personalScope),
       ])
-      const merged: CreationRow[] = [
-        ...(exams ?? []).map(e => ({ ...e, kind: 'exam' as const })),
-        ...(quizzes ?? []).map(q => ({ ...q, kind: 'quiz' as const })),
-      ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 6)
-      setCreations(merged)
+
+      const courseIds = courses.map((c) => c.id)
+      const pathIds = paths.map((p) => p.id)
+      const examIds = exams.map((e) => e.id)
+
+      const [enrollRows, pathEnrollRows, examSubRows] = await Promise.all([
+        courseIds.length
+          ? supabase.from('enrollments').select('course_id, progress_percentage').eq('student_id', user.id).in('course_id', courseIds)
+          : Promise.resolve({ data: [] }),
+        pathIds.length
+          ? supabase.from('path_enrollments').select('path_id, progress_percentage').eq('employee_id', user.id).in('path_id', pathIds)
+          : Promise.resolve({ data: [] }),
+        examIds.length
+          ? supabase.from('exam_submissions').select('id, grade, percentage, exam_sessions(exam_id, settings)').eq('student_id', user.id).not('submitted_at', 'is', null)
+          : Promise.resolve({ data: [] }),
+      ])
+
+      const courseProgress = new Map((enrollRows.data ?? []).map((r) => [r.course_id as string, r.progress_percentage as number]))
+      const pathProgress = new Map((pathEnrollRows.data ?? []).map((r) => [r.path_id as string, r.progress_percentage as number]))
+      const examGrades = new Map<string, string>()
+      for (const sub of examSubRows.data ?? []) {
+        const session = sub.exam_sessions as { exam_id?: string; settings?: Record<string, unknown> } | null
+        if (session?.settings?.self_serve && session.exam_id && sub.grade) {
+          examGrades.set(session.exam_id, sub.grade as string)
+        }
+      }
+
+      function progressFor(kind: AcquisitionRow['kind'], id: string, acquired: boolean): string | null {
+        if (!acquired) return null
+        if (kind === 'course') {
+          const pct = courseProgress.get(id)
+          return pct != null ? `${pct}% complete` : 'Not started'
+        }
+        if (kind === 'path') {
+          const pct = pathProgress.get(id)
+          return pct != null ? `${pct}% complete` : 'Not started'
+        }
+        if (kind === 'exam') {
+          const grade = examGrades.get(id)
+          return grade ? `Last grade: ${grade}` : 'Not taken yet'
+        }
+        return null
+      }
+
+      function buildRow(
+        row: { id: string; title: string; created_at: string; marketplace_listing_id?: string; settings?: Record<string, unknown> },
+        kind: AcquisitionRow['kind'],
+        module: AcquisitionRow['module']
+      ): AcquisitionRow {
+        const acquired = acquiredIds.has(row.id) || isAcquiredRow(row as Record<string, unknown>)
+        return {
+          id: row.id,
+          title: row.title,
+          kind,
+          module,
+          readyToUse: acquired,
+          href: acquired
+            ? getAcquisitionUseHref(kind, row.id)
+            : module === 'engage'
+              ? `/engage/builder?id=${row.id}`
+              : `/platform/settings/billing?locked=${module}`,
+          takeLabel: getAcquisitionTakeLabel(kind),
+          progressLabel: progressFor(kind, row.id, acquired),
+          created_at: row.created_at,
+        }
+      }
+
+      const rows: AcquisitionRow[] = [
+        ...quizzes.map((q) => buildRow(q, 'quiz', 'engage')),
+        ...exams.map((e) => buildRow(e, 'exam', 'assess')),
+        ...courses.map((c) => buildRow(c, 'course', 'learn')),
+        ...paths.map((p) => buildRow(p, 'path', 'train')),
+      ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8)
+      setAcquisitions(rows)
 
       setLoading(false)
     }
@@ -116,8 +204,13 @@ export default function HomePage() {
 
   const firstName = userName.split(' ')[0] || 'there'
   const quotaModules = quota
-    ? (['assess', 'engage', 'learn', 'train'] as const).filter(m => (quota[`${m}_quota`] ?? 0) > 0)
+    ? tier === 'membership'
+      ? (quota.engage_quota > 0 ? (['engage'] as const) : [])
+      : (['assess', 'engage', 'learn', 'train'] as const).filter(m => (quota[`${m}_quota`] ?? 0) > 0)
     : []
+
+  const quotaLabel = (mod: string) =>
+    tier === 'membership' && mod === 'engage' ? 'Engage sessions' : mod
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
@@ -200,6 +293,30 @@ export default function HomePage() {
           </p>
         </div>
 
+        {/* Marketplace + library (personal) */}
+        {context.type === 'personal' && (
+          <div className="sphere-card" style={{ marginBottom: 20, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Link href="/platform/marketplace" style={{
+              flex: '1 1 200px', padding: '16px 18px', borderRadius: 10,
+              background: 'var(--teal-light)', textDecoration: 'none',
+            }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--teal)', marginBottom: 4 }}>Browse marketplace</p>
+              <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.5 }}>
+                Import free resources or buy with MoMo
+              </p>
+            </Link>
+            <Link href="/platform/library" style={{
+              flex: '1 1 200px', padding: '16px 18px', borderRadius: 10,
+              background: '#EEEDF8', textDecoration: 'none',
+            }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#2E2886', marginBottom: 4 }}>Open my library</p>
+              <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.5 }}>
+                Everything you have saved from the marketplace
+              </p>
+            </Link>
+          </div>
+        )}
+
         {/* Creation quota (personal) */}
         {context.type === 'personal' && quota && (
           <div className="sphere-card" style={{ marginBottom: 20 }}>
@@ -207,7 +324,7 @@ export default function HomePage() {
               <div>
                 <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 3 }}>My creations</h2>
                 <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>
-                  {tier === 'membership' ? 'Free Membership quota' : 'Your creation pool this period'}
+                  {tier === 'membership' ? 'Free Membership · Engage sessions' : 'Your creation pool this period'}
                 </p>
               </div>
               {tier === 'membership' && (
@@ -227,7 +344,7 @@ export default function HomePage() {
                 return (
                   <div key={mod}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: MODULE_COLOR[mod], textTransform: 'capitalize' }}>{mod}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: MODULE_COLOR[mod], textTransform: 'capitalize' }}>{quotaLabel(mod)}</span>
                       <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{used} / {q}</span>
                     </div>
                     <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3 }}>
@@ -240,35 +357,59 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Recent creations */}
+        {/* My acquisitions */}
         <div className="sphere-card">
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Recent work</h2>
-          {creations.length === 0 ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600 }}>
+              {context.type === 'personal' ? 'My acquisitions' : 'Recent work'}
+            </h2>
+            {context.type === 'personal' && acquisitions.length > 0 && (
+              <Link href="/platform/library" style={{ fontSize: 12, fontWeight: 600, color: '#2E2886', textDecoration: 'none' }}>
+                View all →
+              </Link>
+            )}
+          </div>
+          {acquisitions.length === 0 ? (
             <div style={{ padding: '18px 0' }}>
               <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginBottom: 12 }}>
-                Nothing here yet. Create your first exam or engagement session.
+                {context.type === 'personal'
+                  ? 'Nothing saved yet. Browse the marketplace and import free resources to your personal library.'
+                  : 'Nothing here yet. Build a quiz and start your first Engage session.'}
               </p>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <Link href="/assess" style={{
-                  fontSize: 13, fontWeight: 600, color: '#C23B2A', textDecoration: 'none',
-                  border: '1px solid #C23B2A', padding: '8px 16px', borderRadius: 8,
-                }}>
-                  Create an exam
-                </Link>
-                <Link href="/engage" style={{
-                  fontSize: 13, fontWeight: 600, color: '#D97010', textDecoration: 'none',
-                  border: '1px solid #D97010', padding: '8px 16px', borderRadius: 8,
-                }}>
-                  Start an Engage session
-                </Link>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {context.type === 'personal' ? (
+                  <Link href="/platform/marketplace" style={{
+                    fontSize: 13, fontWeight: 600, color: 'var(--teal)', textDecoration: 'none',
+                    border: '1px solid var(--teal)', padding: '8px 16px', borderRadius: 8,
+                  }}>
+                    Browse marketplace
+                  </Link>
+                ) : (
+                  <>
+                    {tier !== 'membership' && (
+                      <Link href="/assess" style={{
+                        fontSize: 13, fontWeight: 600, color: '#C23B2A', textDecoration: 'none',
+                        border: '1px solid #C23B2A', padding: '8px 16px', borderRadius: 8,
+                      }}>
+                        Create an exam
+                      </Link>
+                    )}
+                    <Link href="/engage" style={{
+                      fontSize: 13, fontWeight: 600, color: '#D97010', textDecoration: 'none',
+                      border: '1px solid #D97010', padding: '8px 16px', borderRadius: 8,
+                    }}>
+                      Start an Engage session
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           ) : (
             <div>
-              {creations.map((c, i) => (
+              {acquisitions.map((c, i) => (
                 <Link
-                  key={c.id}
-                  href={c.kind === 'exam' ? `/assess/exam/${c.id}` : `/engage`}
+                  key={`${c.kind}-${c.id}`}
+                  href={c.href}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12,
                     padding: '11px 4px', textDecoration: 'none',
@@ -277,10 +418,25 @@ export default function HomePage() {
                 >
                   <span style={{
                     width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: c.kind === 'exam' ? '#C23B2A' : '#D97010',
+                    background: MODULE_COLOR[c.module],
                   }} />
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{c.title}</span>
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'capitalize' }}>{c.kind}</span>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>
+                    {c.title}
+                    {c.progressLabel && (
+                      <span style={{ display: 'block', fontSize: 11, color: 'var(--mid-grey)', marginTop: 2, fontWeight: 400 }}>
+                        {c.progressLabel}
+                      </span>
+                    )}
+                  </span>
+                  {c.readyToUse && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, color: '#1A8966',
+                      background: '#DDFAF0', padding: '2px 8px', borderRadius: 20,
+                    }}>
+                      Ready to take
+                    </span>
+                  )}
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{KIND_LABEL[c.kind]}</span>
                   <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                     {new Date(c.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                   </span>

@@ -1,142 +1,50 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import TopBar from '@/components/brand/TopBar'
-import { IconInfo } from '@/components/icons'
-import { getCurrentUser } from '@/lib/auth'
+import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
 import { usePlanContext } from '@/lib/use-plan-context'
 import {
-  publishResource,
-  saveResourceDraft,
-  RESOURCE_TYPES,
-  SUBJECTS,
-  LEVELS,
-  type MarketplaceResourceType,
-} from '@/lib/marketplace'
+  fetchPublishableResources,
+  MODE_META,
+  type PublishableMode,
+  type PublishableResourceRow,
+} from '@/lib/publishable-resources'
+
+const MODE_FILTERS: { key: 'all' | PublishableMode; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'engage', label: 'Engage' },
+  { key: 'assess', label: 'Assess' },
+  { key: 'learn', label: 'Learn' },
+  { key: 'train', label: 'Train' },
+]
 
 export default function PublishMarketplacePage() {
-  const router = useRouter()
-  const user = getCurrentUser()
   const { canSellMarketplace, loading: planLoading, planId } = usePlanContext()
-  const initials = user.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<PublishableResourceRow[]>([])
+  const [filter, setFilter] = useState<'all' | PublishableMode>('all')
+  const [selected, setSelected] = useState<PublishableResourceRow | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
-  const [title, setTitle] = useState('')
-  const [resourceType, setResourceType] = useState<MarketplaceResourceType>('lesson_plan')
-  const [subject, setSubject] = useState('Biology')
-  const [level, setLevel] = useState('JHS 2')
-  const [pricing, setPricing] = useState<'free' | 'paid'>('free')
-  const [priceGhs, setPriceGhs] = useState('')
-  const [description, setDescription] = useState('')
-  const [attachments, setAttachments] = useState<string[]>([])
-  const [attachmentInput, setAttachmentInput] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const payload = () => ({
-    title,
-    resource_type: resourceType,
-    subject,
-    level,
-    description,
-    price_ghs: pricing === 'free' ? null : parseFloat(priceGhs) || 0,
-    creator_id: user.id,
-    institution_id: user.institution_id,
-    metadata: {
-      creator_name: user.name,
-      creator_initials: initials,
-      attachments,
-    },
-  })
-
-  async function handleDraft() {
-    if (!title.trim()) {
-      setError('Give your resource a title first.')
+  useEffect(() => {
+    if (!canSellMarketplace) {
+      setLoading(false)
       return
     }
-    setSaving(true)
-    setError(null)
-    const result = await saveResourceDraft(payload())
-    setSaving(false)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    router.push('/platform/marketplace')
-  }
+    setLoading(true)
+    fetchPublishableResources()
+      .then(setItems)
+      .finally(() => setLoading(false))
+  }, [canSellMarketplace, reloadKey])
 
-  async function handleSubmit() {
-    if (!title.trim()) {
-      setError('Give your resource a title first.')
-      return
-    }
-    if (!description.trim()) {
-      setError('Add a short description so reviewers know what you are publishing.')
-      return
-    }
-    if (pricing === 'paid' && (!priceGhs || parseFloat(priceGhs) <= 0)) {
-      setError('Set a price in GH₵ for paid resources.')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    const result = await publishResource({ ...payload(), status: 'pending_review' })
-    setSaving(false)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    router.push('/platform/marketplace/review')
-  }
+  const filtered = useMemo(
+    () => (filter === 'all' ? items : items.filter(i => i.mode === filter)),
+    [items, filter]
+  )
 
-  function addAttachment() {
-    const name = attachmentInput.trim()
-    if (!name || attachments.includes(name)) return
-    setAttachments((prev) => [...prev, name])
-    setAttachmentInput('')
-  }
-
-  function removeAttachment(name: string) {
-    setAttachments((prev) => prev.filter((a) => a !== name))
-  }
-
-  const fieldStyle: React.CSSProperties = {
-    background: 'var(--white)',
-    borderRadius: 10,
-    padding: '14px 16px',
-    boxShadow: 'var(--shadow-soft)',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: 12,
-    fontWeight: 600,
-    color: 'var(--text-tertiary)',
-    marginBottom: 6,
-  }
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    background: 'transparent',
-    border: 'none',
-    outline: 'none',
-    fontSize: 15,
-    fontWeight: 500,
-    color: 'var(--near-black)',
-    fontFamily: 'var(--font)',
-  }
-
-  const selectStyle: React.CSSProperties = {
-    width: '100%',
-    background: 'transparent',
-    border: 'none',
-    outline: 'none',
-    fontSize: 13,
-    color: 'var(--near-black)',
-    fontFamily: 'var(--font)',
-    cursor: 'pointer',
-  }
+  const readyCount = items.filter(i => i.isReady && !i.isListed).length
 
   if (planLoading) {
     return (
@@ -152,12 +60,7 @@ export default function PublishMarketplacePage() {
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
         <TopBar mode="platform" title="Publish to marketplace" />
         <div style={{ maxWidth: 480, margin: '48px auto', padding: '0 20px', textAlign: 'center' }}>
-          <div style={{
-            background: 'var(--white)',
-            borderRadius: 12,
-            padding: '32px 28px',
-            boxShadow: 'var(--shadow-soft)',
-          }}>
+          <div style={{ background: 'var(--white)', borderRadius: 12, padding: '32px 28px', boxShadow: 'var(--shadow-soft)' }}>
             <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--near-black)', marginBottom: 8 }}>
               Publishing needs a Creator plan
             </p>
@@ -168,25 +71,12 @@ export default function PublishMarketplacePage() {
             <Link
               href="/platform/settings/billing"
               style={{
-                display: 'inline-flex',
-                height: 44,
-                alignItems: 'center',
-                padding: '0 20px',
-                borderRadius: 8,
-                background: '#2E2886',
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: 600,
-                textDecoration: 'none',
+                display: 'inline-flex', height: 44, alignItems: 'center', padding: '0 20px',
+                borderRadius: 8, background: '#2E2886', color: '#fff', fontSize: 14, fontWeight: 600, textDecoration: 'none',
               }}
             >
-              See upgrade options
+              See Creator plans
             </Link>
-            <p style={{ marginTop: 16 }}>
-              <Link href="/platform/marketplace" style={{ fontSize: 13, color: 'var(--mid-grey)', textDecoration: 'none' }}>
-                Back to marketplace
-              </Link>
-            </p>
           </div>
         </div>
       </div>
@@ -198,248 +88,159 @@ export default function PublishMarketplacePage() {
       <TopBar
         mode="platform"
         title="Publish to marketplace"
-        right={
-          <div style={{ display: 'flex', gap: 7 }}>
-            <button
-              onClick={handleDraft}
-              disabled={saving}
-              style={{
-                height: 34,
-                background: 'var(--bg2)',
-                border: 'none',
-                borderRadius: 7,
-                padding: '0 14px',
-                fontSize: 13,
-                fontWeight: 500,
-                color: 'var(--near-black)',
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-              }}
-            >
-              Save draft
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              style={{
-                height: 34,
-                background: 'var(--amber)',
-                border: 'none',
-                borderRadius: 7,
-                padding: '0 14px',
-                fontSize: 13,
-                fontWeight: 600,
-                color: '#fff',
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-              }}
-            >
-              Submit for review
-            </button>
-          </div>
+        left={
+          <Link href="/platform/marketplace" style={{ fontSize: 13, color: 'var(--mid-grey)', textDecoration: 'none' }}>
+            ← Marketplace
+          </Link>
         }
       />
 
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '18px 20px 32px' }}>
-        {error && (
-          <p style={{ fontSize: 13, color: 'var(--coral)', marginBottom: 12 }}>{error}</p>
-        )}
+      <div style={{ padding: '28px 32px 60px', maxWidth: 820 }}>
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--near-black)', marginBottom: 8 }}>
+            List something you already built
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--mid-grey)', lineHeight: 1.65, maxWidth: 620 }}>
+            Marketplace listings point at your Engage quizzes, Assess exams, Learn courses and resources, and Train paths.
+            Build in the mode first, publish it there, then pick it below to set price and submit for review.
+          </p>
+        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Resource title</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Cell division — complete unit plan"
-              style={inputStyle}
-            />
-          </div>
+        <div style={{
+          background: '#FFF8ED', border: '0.5px solid #D97010', borderRadius: 10,
+          padding: '14px 16px', marginBottom: 24, fontSize: 13, color: '#7A4A00', lineHeight: 1.6,
+        }}>
+          <strong style={{ fontWeight: 600 }}>How it works:</strong> Create in Engage, Assess, Learn, or Train → publish inside that mode → return here to list it for sale. Buyers import the live resource, not attached files.
+        </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ ...fieldStyle, flex: 1 }}>
-              <label style={labelStyle}>Type</label>
-              <select value={resourceType} onChange={(e) => setResourceType(e.target.value as MarketplaceResourceType)} style={selectStyle}>
-                {RESOURCE_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ ...fieldStyle, flex: 1 }}>
-              <label style={labelStyle}>Subject</label>
-              <select value={subject} onChange={(e) => setSubject(e.target.value)} style={selectStyle}>
-                {SUBJECTS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ ...fieldStyle, flex: 1 }}>
-              <label style={labelStyle}>Level</label>
-              <select value={level} onChange={(e) => setLevel(e.target.value)} style={selectStyle}>
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ ...fieldStyle, flex: 1 }}>
-              <label style={labelStyle}>Pricing</label>
-              <div style={{ display: 'flex', gap: 6, marginBottom: pricing === 'paid' ? 8 : 0 }}>
-                <button
-                  type="button"
-                  onClick={() => setPricing('free')}
-                  style={{
-                    flex: 1,
-                    height: 30,
-                    background: pricing === 'free' ? 'var(--near-black)' : 'var(--bg2)',
-                    border: 'none',
-                    borderRadius: 6,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: pricing === 'free' ? '#fff' : 'var(--mid-grey)',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font)',
-                  }}
-                >
-                  Free
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPricing('paid')}
-                  style={{
-                    flex: 1,
-                    height: 30,
-                    background: pricing === 'paid' ? 'var(--near-black)' : 'var(--bg2)',
-                    border: 'none',
-                    borderRadius: 6,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: pricing === 'paid' ? '#fff' : 'var(--mid-grey)',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font)',
-                  }}
-                >
-                  Paid
-                </button>
-              </div>
-              {pricing === 'paid' && (
-                <input
-                  value={priceGhs}
-                  onChange={(e) => setPriceGhs(e.target.value)}
-                  placeholder="GH₵ amount"
-                  type="number"
-                  min="1"
-                  style={{ ...inputStyle, fontSize: 13 }}
-                />
-              )}
-            </div>
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what teachers get when they import this resource."
-              rows={4}
-              style={{
-                ...inputStyle,
-                fontSize: 13,
-                fontWeight: 400,
-                lineHeight: 1.65,
-                resize: 'vertical',
-              }}
-            />
-          </div>
-
-          <div style={fieldStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>Attachments</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {MODE_FILTERS.map(chip => {
+            const active = filter === chip.key
+            const accent = chip.key === 'all' ? 'var(--near-black)' : MODE_META[chip.key as PublishableMode]?.color ?? 'var(--near-black)'
+            return (
               <button
-                type="button"
-                onClick={addAttachment}
+                key={chip.key}
+                onClick={() => setFilter(chip.key)}
                 style={{
-                  height: 28,
-                  background: 'var(--blue-light)',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '0 10px',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: 'var(--blue)',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font)',
+                  height: 34, padding: '0 14px', borderRadius: 20, border: 'none',
+                  background: active ? accent : 'var(--white)',
+                  color: active ? '#fff' : 'var(--mid-grey)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                  boxShadow: active ? 'none' : 'var(--shadow-soft)',
                 }}
               >
-                + Add files
+                {chip.label}
               </button>
-            </div>
-            <input
-              value={attachmentInput}
-              onChange={(e) => setAttachmentInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addAttachment())}
-              placeholder="Filename or label, then tap Add files"
-              style={{ ...inputStyle, fontSize: 12, marginBottom: attachments.length ? 8 : 0 }}
-            />
-            {attachments.map((name) => (
-              <div key={name} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 9,
-                padding: '8px 10px',
-                background: 'var(--page-bg)',
-                borderRadius: 7,
-                marginTop: 6,
-              }}>
-                <span style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 5,
-                  background: 'var(--teal-light)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 8,
-                  fontWeight: 700,
-                  color: 'var(--teal)',
-                  flexShrink: 0,
-                }}>
-                  {name.split('.').pop()?.slice(0, 3).toUpperCase() ?? 'F'}
-                </span>
-                <span style={{ fontSize: 12, color: 'var(--near-black)', flex: 1 }}>{name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(name)}
-                  style={{ background: 'none', border: 'none', fontSize: 14, color: 'var(--text-tertiary)', cursor: 'pointer' }}
-                  aria-label={`Remove ${name}`}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div style={{
-            background: 'var(--amber-light)',
-            borderRadius: 10,
-            padding: '12px 14px',
-            display: 'flex',
-            gap: 9,
-            alignItems: 'flex-start',
-          }}>
-            <IconInfo size={13} style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 1 }} />
-            <p style={{ fontSize: 12, color: '#9A5800', lineHeight: 1.5 }}>
-              Your resource will be reviewed by the SphereSDS team before going live. Usually within 48 hours.
-            </p>
-          </div>
-
-          <Link href="/platform/marketplace" style={{ fontSize: 13, color: 'var(--mid-grey)', textDecoration: 'none', textAlign: 'center' }}>
-            Back to marketplace
-          </Link>
+            )
+          })}
+          {!loading && readyCount > 0 && (
+            <span style={{ fontSize: 12, color: 'var(--teal)', alignSelf: 'center', marginLeft: 4 }}>
+              {readyCount} ready to list
+            </span>
+          )}
         </div>
+
+        {loading ? (
+          <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>Loading your resources...</p>
+        ) : filtered.length === 0 ? (
+          <div className="sphere-card" style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--near-black)', marginBottom: 8 }}>
+              Nothing to list yet
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 20, lineHeight: 1.6 }}>
+              Create a quiz, exam, course, or training path in one of the modes, publish it there, then come back to list it.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link href="/engage/builder" style={{ fontSize: 13, fontWeight: 600, color: '#D97010', textDecoration: 'none' }}>Build in Engage</Link>
+              <Link href="/assess/create" style={{ fontSize: 13, fontWeight: 600, color: '#C23B2A', textDecoration: 'none' }}>Build in Assess</Link>
+              <Link href="/learn/builder" style={{ fontSize: 13, fontWeight: 600, color: '#1A8966', textDecoration: 'none' }}>Build in Learn</Link>
+              <Link href="/train/builder" style={{ fontSize: 13, fontWeight: 600, color: '#1052A3', textDecoration: 'none' }}>Build in Train</Link>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filtered.map(item => {
+              const accent = MODE_META[item.mode].color
+              return (
+                <div
+                  key={`${item.resourceType}-${item.id}`}
+                  style={{
+                    background: 'var(--white)', borderRadius: 10, padding: '16px 18px',
+                    boxShadow: 'var(--shadow-soft)', display: 'flex', alignItems: 'center',
+                    gap: 14, flexWrap: 'wrap',
+                    opacity: item.isReady ? 1 : 0.72,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                        color: accent, background: `${accent}18`, padding: '2px 8px', borderRadius: 4,
+                      }}>
+                        {item.modeLabel}
+                      </span>
+                      {item.isListed && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#1A8966', background: '#DDFAF0', padding: '2px 8px', borderRadius: 4 }}>
+                          On marketplace
+                        </span>
+                      )}
+                      {!item.isReady && (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--mid-grey)' }}>Not ready</span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', marginBottom: 2 }}>{item.title}</p>
+                    <p style={{ fontSize: 12, color: 'var(--mid-grey)' }}>
+                      {item.subject ?? 'No subject'} · {new Date(item.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </p>
+                    {!item.isReady && item.readyHint && (
+                      <p style={{ fontSize: 12, color: '#9A5800', marginTop: 6 }}>{item.readyHint}</p>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <Link href={item.editHref} style={{
+                      height: 36, padding: '0 14px', borderRadius: 7, border: '1px solid var(--border)',
+                      background: 'var(--white)', fontSize: 12, fontWeight: 500, color: 'var(--mid-grey)',
+                      textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
+                    }}>
+                      Open in {item.modeLabel}
+                    </Link>
+                    <button
+                      onClick={() => setSelected(item)}
+                      disabled={!item.isReady}
+                      style={{
+                        height: 36, padding: '0 16px', borderRadius: 7, border: 'none',
+                        background: item.isReady ? accent : 'var(--bg2)',
+                        color: item.isReady ? '#fff' : 'var(--mid-grey)',
+                        fontSize: 12, fontWeight: 600, cursor: item.isReady ? 'pointer' : 'not-allowed',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {item.isListed ? 'Manage listing' : 'List on marketplace'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
+
+      {selected && (
+        <PublishToMarketplaceModal
+          open={!!selected}
+          onClose={() => setSelected(null)}
+          onPublished={() => {
+            setSelected(null)
+            setReloadKey(k => k + 1)
+          }}
+          resourceType={selected.resourceType}
+          resourceId={selected.id}
+          defaultTitle={selected.title}
+          defaultDescription={selected.description}
+          defaultSubject={selected.subject}
+          defaultColor={selected.color}
+        />
+      )}
     </div>
   )
 }

@@ -118,6 +118,8 @@ export interface Exam {
   settings: Record<string, unknown>
   is_published: boolean
   marketplace_listing_id?: string
+  issues_certificate?: boolean
+  certificate_pass_mark?: number
   created_at: string
   audience: ExamAudience
   roster_id?: string
@@ -132,6 +134,7 @@ export interface ExamSession {
   status: 'scheduled' | 'active' | 'grading' | 'completed'
   join_code?: string
   invigilator_id?: string
+  settings?: Record<string, unknown>
   created_at: string
 }
 
@@ -350,7 +353,7 @@ export interface MarketplacePurchase {
 // AI ADD-ONS
 // =====================
 
-export type AddOnId = 'ai_course_builder' | 'ai_assessment_builder' | 'ai_hints' | 'ai_explanations' | 'ai_training_builder'
+export type AddOnId = 'ai_course_builder' | 'ai_assessment_builder' | 'ai_engagement_builder' | 'ai_hints' | 'ai_explanations' | 'ai_training_builder'
 
 export interface AddOn {
   id: AddOnId

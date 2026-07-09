@@ -4,13 +4,17 @@ import { useEffect, useState, use, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
+import ImportDestinationPicker, { useImportDestination } from '@/components/brand/ImportDestinationPicker'
 import { IconCheck } from '@/components/icons'
 import { getCurrentUser } from '@/lib/auth'
+import { destinationInstitutionId, destinationKey, destinationLabel } from '@/lib/library-scope'
+import type { ImportDestination } from '@/lib/library-scope'
 import {
   fetchResourceById,
   fetchResourceReviews,
   importResource,
   hasImported,
+  findImportedDestinations,
   formatPrice,
   isFreeResource,
   getResourceTypeLabel,
@@ -46,6 +50,8 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
   const [buying, setBuying] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [importDestination, setImportDestination] = useImportDestination()
+  const [otherShelfImports, setOtherShelfImports] = useState<ImportDestination[]>([])
 
   useEffect(() => {
     const reference = searchParams.get('reference')
@@ -63,21 +69,40 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
   }, [searchParams, params.id])
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
       setLoading(true)
-      const user = getCurrentUser()
-      const [res, rev, done] = await Promise.all([
+      const [res, rev] = await Promise.all([
         fetchResourceById(params.id),
         fetchResourceReviews(params.id),
-        hasImported(params.id, user.institution_id),
       ])
+      if (cancelled) return
       setResource(res)
       setReviews(rev)
-      setImported(done)
       setLoading(false)
     }
     load()
+    return () => { cancelled = true }
   }, [params.id])
+
+  useEffect(() => {
+    let cancelled = false
+    async function checkImported() {
+      const user = getCurrentUser()
+      const [done, shelves] = await Promise.all([
+        hasImported(params.id, importDestination, user.id),
+        findImportedDestinations(params.id, user.id),
+      ])
+      if (cancelled) return
+      setImported(done)
+      const currentKey = destinationKey(importDestination)
+      setOtherShelfImports(
+        shelves.filter((s) => destinationKey(s) !== currentKey)
+      )
+    }
+    checkImported()
+    return () => { cancelled = true }
+  }, [params.id, destinationKey(importDestination)])
 
   async function handleImport() {
     if (!resource) return
@@ -85,13 +110,14 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
     setError(null)
     setMessage(null)
     const user = getCurrentUser()
-    const result = await importResource(resource.id, user.id, user.institution_id)
+    const result = await importResource(resource.id, user.id, importDestination)
     setImporting(false)
     if (!result.ok) {
       setError(result.error)
       return
     }
     setImported(true)
+    setOtherShelfImports([])
     setMessage(`Copied to your library as a ${result.targetType.replace('_', ' ')}.`)
   }
 
@@ -101,9 +127,14 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
     setError(null)
     setMessage(null)
     const user = getCurrentUser()
+    const institutionId = destinationInstitutionId(importDestination)
     const result = await startCheckout({
       intentType: 'marketplace',
-      payload: { listingId: resource.id, institutionId: user.institution_id },
+      payload: {
+        listingId: resource.id,
+        institutionId: institutionId ?? undefined,
+        importDestinationKind: importDestination.kind,
+      },
       callbackPath: `/platform/marketplace/${resource.id}`,
     })
     setBuying(false)
@@ -345,6 +376,21 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
           )}
           {message && (
             <p style={{ fontSize: 13, color: 'var(--teal)', marginBottom: 12 }}>{message}</p>
+          )}
+
+          {!imported && otherShelfImports.length > 0 && (
+            <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginBottom: 12, lineHeight: 1.5 }}>
+              Already in {otherShelfImports.map((s) => destinationLabel(s)).join(' and ')}.
+              Import here too if you want a copy on this shelf.
+            </p>
+          )}
+
+          {!imported && (
+            <ImportDestinationPicker
+              value={importDestination}
+              onChange={setImportDestination}
+              compact
+            />
           )}
 
           {free ? (

@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
+import { refreshUserProfile } from '@/lib/auth'
 import { getCreationUsage, getEffectivePlanId, updateQuotaAllocation } from '@/lib/subscription'
+import { isModuleAllowedForPlan } from '@/lib/plan-privileges'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
 import type { CreationUsage } from '@/lib/types'
 
@@ -20,7 +22,7 @@ const PLANS = [
     price: 'Free',
     period: '',
     description: 'Test the platform. Good for individuals exploring Sphere.',
-    highlights: ['5 Assess creations', '5 Engage creations', 'Up to 5 students per session', 'No marketplace access'],
+    highlights: ['Engage live sessions only', '5 live sessions included', 'Up to 5 students per session', 'Assess, Learn, and Train on Creator plans'],
     accent: '#6B6870',
     cta: 'Current free plan',
   },
@@ -59,9 +61,10 @@ const PLANS = [
 const ADD_ONS = [
   { id: 'ai_course_builder', name: 'AI Course Builder', desc: 'Generate full courses from a topic prompt.', price: 'GHS 150/mo' },
   { id: 'ai_assessment_builder', name: 'AI Assessment Builder', desc: 'Generate exams and question sets from a syllabus.', price: 'GHS 100/mo' },
+  { id: 'ai_engagement_builder', name: 'AI Engage Builder', desc: 'Generate a live quiz game from a topic prompt.', price: 'GHS 100/mo' },
   { id: 'ai_hints', name: 'AI Hints', desc: 'Auto-generate contextual hints for exam questions.', price: 'GHS 50/mo' },
   { id: 'ai_explanations', name: 'AI Explanations', desc: 'Auto-generate answer explanations after submission.', price: 'GHS 50/mo' },
-  { id: 'ai_training_builder', name: 'AI Training Builder', desc: 'Generate structured training paths from a brief.', price: 'Coming soon' },
+  { id: 'ai_training_builder', name: 'AI Training Builder', desc: 'Generate structured training paths from a brief.', price: 'GHS 150/mo' },
 ]
 
 export default function BillingPage() {
@@ -117,13 +120,22 @@ function BillingPageInner() {
     const reference = searchParams.get('reference')
     if (!reference) return
 
-    verifyCheckoutReference(reference).then((result) => {
+    verifyCheckoutReference(reference).then(async (result) => {
       if (result.ok) {
         setCheckoutMsg('Payment confirmed. Your plan is updated.')
         window.history.replaceState({}, '', '/platform/settings/billing')
+        await refreshUserProfile(userId ?? undefined)
         if (userId) {
           getEffectivePlanId(userId).then(setCurrentTier)
-          getCreationUsage(userId).then(setUsage)
+          getCreationUsage(userId).then((u) => {
+            setUsage(u)
+            if (u) {
+              setPoolAssess(u.assess_quota)
+              setPoolEngage(u.engage_quota)
+              setPoolLearn(u.learn_quota)
+              setPoolTrain(u.train_quota)
+            }
+          })
           supabase.from('user_add_ons').select('add_on_id').eq('user_id', userId).eq('status', 'active').then(({ data }) => {
             setActiveAddOns((data ?? []).map((r: { add_on_id: string }) => r.add_on_id))
           })
@@ -158,6 +170,10 @@ function BillingPageInner() {
     if (result.switched) {
       setCheckoutMsg('Your plan was updated.')
       setCurrentTier(planId)
+      await refreshUserProfile()
+      if (userId) {
+        getCreationUsage(userId).then(setUsage)
+      }
     }
   }
 
@@ -190,10 +206,22 @@ function BillingPageInner() {
       return
     }
     setAllocMsg('Allocation saved.')
+    const refreshed = await getCreationUsage(userId)
+    setUsage(refreshed)
+    if (refreshed) {
+      setPoolAssess(refreshed.assess_quota)
+      setPoolEngage(refreshed.engage_quota)
+      setPoolLearn(refreshed.learn_quota)
+      setPoolTrain(refreshed.train_quota)
+    }
     setTimeout(() => setAllocMsg(''), 3000)
   }
 
   const currentPlan = PLANS.find(p => p.id === currentTier) ?? PLANS[0]
+  const lockedModule = searchParams.get('locked')
+  const lockedLabel = lockedModule ? MODULE_LABEL[lockedModule as Mod] ?? lockedModule : null
+  const lockedModuleOnPlan =
+    lockedModule && isModuleAllowedForPlan(lockedModule as Mod, currentTier)
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
@@ -217,6 +245,21 @@ function BillingPageInner() {
         {checkoutError && (
           <div style={{ background: '#FEE2E2', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
             <p style={{ fontSize: 13, color: '#991B1B' }}>{checkoutError}</p>
+          </div>
+        )}
+        {lockedLabel && (
+          <div style={{ background: '#FFF8ED', border: '0.5px solid #D97010', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: '#7A4A00', lineHeight: 1.6 }}>
+              {lockedModuleOnPlan ? (
+                <>
+                  {lockedLabel} is on your {currentPlan.name} plan. Allocate creations to {lockedLabel} in your pool below, then open {lockedLabel} again from the sidebar.
+                </>
+              ) : (
+                <>
+                  {lockedLabel} is not on your current plan for creating new content. You can still open and use resources you imported or bought from the marketplace. Upgrade to Creator Quarterly or Institution to build your own.
+                </>
+              )}
+            </p>
           </div>
         )}
 
@@ -247,17 +290,20 @@ function BillingPageInner() {
         {/* Usage bars */}
         {usage && currentTier !== 'institution' && currentTier !== 'creator_marketplace' && (
           <div className="sphere-card" style={{ marginBottom: 24 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 16 }}>Creation usage this period</p>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 16 }}>
+              {currentTier === 'membership' ? 'Engage session usage' : 'Creation usage this period'}
+            </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
               {(['assess', 'engage', 'learn', 'train'] as Mod[]).map(mod => {
                 const quota = usage[`${mod}_quota` as keyof CreationUsage] as number
                 const used = usage[`${mod}_used` as keyof CreationUsage] as number
-                if (quota === 0) return null
+                if (quota === 0 && currentTier !== 'creator_quarterly') return null
                 const pct = Math.min((used / Math.max(quota, 1)) * 100, 100)
+                const label = currentTier === 'membership' && mod === 'engage' ? 'Engage sessions' : MODULE_LABEL[mod]
                 return (
                   <div key={mod}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: MODULE_COLOR[mod] }}>{MODULE_LABEL[mod]}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: MODULE_COLOR[mod] }}>{label}</span>
                       <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{used} / {quota}</span>
                     </div>
                     <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3 }}>

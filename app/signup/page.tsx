@@ -119,7 +119,7 @@ export default function SignupPage() {
       // Initialise membership creation quota
       await supabase.from('creation_usage').insert({
         user_id: authData.user.id,
-        assess_quota: 5,
+        assess_quota: 0,
         engage_quota: 5,
         learn_quota: 0,
         train_quota: 0,
@@ -144,7 +144,10 @@ export default function SignupPage() {
       // Attach any institution invitations sent to this email
       await attachPendingInvites(authData.user.id, email)
 
-      router.push('/home')
+      // Honour a ?next= return path (e.g. a public marketplace listing the
+      // user was buying), falling back to Home.
+      const next = new URLSearchParams(window.location.search).get('next')
+      router.push(next && next.startsWith('/') ? next : '/home')
     } catch {
       setError('Something went wrong. Try again in a moment.')
       setLoading(false)

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
-import { getCurrentUser } from '@/lib/auth'
+import { getContentInstitutionId } from '@/lib/context'
 import { normalizeSteps, syncPathEnrollments, parseAssignedDepartments } from '@/lib/train-paths'
 
 interface Employee {
@@ -106,8 +106,10 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
   }, [stepsTotal])
 
   async function handleAssignTeam() {
+    const institutionId = getContentInstitutionId()
+    if (!institutionId) return
     setAssigning(true)
-    await syncPathEnrollments(params.id, getCurrentUser().institution_id, assignedDepartments)
+    await syncPathEnrollments(params.id, institutionId, assignedDepartments)
     setAssigning(false)
     await loadData()
   }

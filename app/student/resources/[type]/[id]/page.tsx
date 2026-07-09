@@ -85,7 +85,7 @@ export default function StudentResourceViewerPage({
       </div>
 
       {guide && <GuideViewer guide={guide} accent={accent} />}
-      {note && <NoteViewer blocks={note.blocks ?? []} />}
+      {note && <NoteViewer blocks={note.blocks ?? []} title={note.title} downloadable={note.is_downloadable} />}
       {document && <DocumentViewer document={document} />}
     </div>
   )

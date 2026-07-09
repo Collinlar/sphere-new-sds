@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { ExamSession, ExamSubmission, Exam } from '@/lib/types'
 import { gradeFromPercentage } from '@/lib/utils'
+import { computeAutoScore } from '@/lib/exam-scoring'
 import { IconFlag, IconCheck } from '@/components/icons'
 
 const GRADE_COLORS: Record<string, string> = {
@@ -70,19 +71,12 @@ function GradingViewInner() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  function computeAutoScore(sub: ExamSubmission): number {
-    if (!exam) return 0
-    return exam.questions.reduce((total, q) => {
-      if (q.type === 'mcq' || q.type === 'true_false') {
-        const ans = sub.answers?.[q.id]
-        if (ans === q.correct) return total + q.marks
-      }
-      return total
-    }, 0)
+  function computeAutoScoreLocal(sub: ExamSubmission): number {
+    return computeAutoScore(sub, exam)
   }
 
   function computeTotalScore(sub: ExamSubmission): number {
-    const auto = computeAutoScore(sub)
+    const auto = computeAutoScoreLocal(sub)
     const manual = Object.values(manualMarks[sub.id] ?? {}).reduce((sum, v) => sum + v, 0)
     return auto + manual
   }
@@ -306,7 +300,7 @@ function GradingViewInner() {
                   <div>
                     <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--near-black)' }}>{activeSub.student_name}</h2>
                     <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginTop: 2 }}>
-                      Auto score: {computeAutoScore(activeSub)}/{maxMarks} pts · {exam.questions.length} questions
+                      Auto score: {computeAutoScoreLocal(activeSub)}/{maxMarks} pts · {exam.questions.length} questions
                     </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>

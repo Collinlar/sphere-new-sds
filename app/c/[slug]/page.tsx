@@ -180,7 +180,7 @@ export default function CreatorStorefront() {
               Free resource
             </p>
             <Link
-              href={`/platform/marketplace/${freeEntry.id}`}
+              href={`/m/${freeEntry.id}`}
               style={{ textDecoration: 'none' }}
             >
               <div style={{
@@ -265,7 +265,7 @@ export default function CreatorStorefront() {
                 const color = TYPE_COLOR[listing.resource_type] ?? 'var(--teal)'
                 const typeLabel = TYPE_LABEL[listing.resource_type] ?? listing.resource_type
                 return (
-                  <Link key={listing.id} href={`/platform/marketplace/${listing.id}`} style={{ textDecoration: 'none' }}>
+                  <Link key={listing.id} href={`/m/${listing.id}`} style={{ textDecoration: 'none' }}>
                     <div style={{
                       background: 'var(--white)',
                       borderRadius: 12,

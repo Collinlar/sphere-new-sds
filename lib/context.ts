@@ -191,6 +191,23 @@ export function canManagePlatform(ctx: ActiveContext): boolean {
   return ctx.type === 'institution' && (ctx.memberRole === 'owner' || ctx.memberRole === 'admin')
 }
 
+/** Library and marketplace are available in personal context and for all institution staff. */
+export function canAccessLibrary(ctx: ActiveContext): boolean {
+  if (ctx.type === 'personal') return true
+  return ctx.memberRole !== 'student'
+}
+
+export function canAccessMarketplace(ctx: ActiveContext): boolean {
+  return canAccessLibrary(ctx)
+}
+
+/** Routes that require institution owner/admin when switching to personal context. */
+export const ADMIN_ONLY_PLATFORM_PREFIXES = ['/platform/team', '/platform/analytics']
+
+export function isAdminOnlyPlatformRoute(pathname: string): boolean {
+  return ADMIN_ONLY_PLATFORM_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+}
+
 export function canCreateContent(ctx: ActiveContext): boolean {
   // Personal context: everyone can create (quota-gated, not role-gated).
   // Institution context: owners, admins and teachers create; students do not.

@@ -4,12 +4,15 @@ export const ALL_MODULE_KEYS: ModuleKey[] = ['engage', 'assess', 'learn', 'train
 
 /** Modules included in each subscription plan (before institution.modules filter). */
 export const PLAN_INCLUDED_MODULES: Record<string, ModuleKey[]> = {
-  membership: ['engage', 'assess'],
-  trial: ['engage', 'assess'],
+  membership: ['engage'],
+  trial: ['engage'],
   creator_quarterly: ALL_MODULE_KEYS,
   creator_marketplace: ALL_MODULE_KEYS,
   institution: ALL_MODULE_KEYS,
 }
+
+/** Live Engage sessions included on the free membership plan. */
+export const MEMBERSHIP_ENGAGE_SESSION_QUOTA = 5
 
 const MODULE_SET = new Set<string>(ALL_MODULE_KEYS)
 
@@ -63,7 +66,7 @@ export function getPlanModuleDescription(planId: string): string {
   switch (planId) {
     case 'membership':
     case 'trial':
-      return 'Free plan · 5 Assess · 5 Engage creations'
+      return 'Free plan · Engage only · 5 live sessions · 5 students per session'
     case 'creator_quarterly':
       return '40 creations across all modules · redistribute anytime'
     case 'creator_marketplace':

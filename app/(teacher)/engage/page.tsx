@@ -6,6 +6,9 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { Quiz } from '@/lib/types'
 import { getCurrentUser } from '@/lib/auth'
+import { fetchScopedContent, resolveLibraryScope } from '@/lib/library-scope'
+import { onContextChange } from '@/lib/context'
+import { canLaunchEngageSession, incrementEngageSessionLaunched, getCreationUsage, getEffectivePlanId } from '@/lib/subscription'
 import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
 
 interface QuizStats {
@@ -29,23 +32,16 @@ export default function EngageDashboard() {
   const [starting, setStarting] = useState(false)
   const [publishingQuiz, setPublishingQuiz] = useState<Quiz | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [sessionQuota, setSessionQuota] = useState<{ used: number; quota: number } | null>(null)
+  const [launchError, setLaunchError] = useState('')
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('quizzes')
-        .select('*')
-        .eq('institution_id', getCurrentUser().institution_id)
-        .order('created_at', { ascending: false })
+      const scope = resolveLibraryScope()
+      const data = await fetchScopedContent<Quiz>('quizzes', scope)
 
-      if (error) {
-        setError('Could not load your quizzes right now. Try refreshing.')
-        setLoading(false)
-        return
-      }
-
-      setQuizzes(data ?? [])
+      setQuizzes(data)
 
       const { data: sessions } = await supabase
         .from('engage_sessions')
@@ -62,11 +58,32 @@ export default function EngageDashboard() {
     }
 
     load()
+
+    getEffectivePlanId().then(async (planId) => {
+      if (planId !== 'membership') return
+      const usage = await getCreationUsage()
+      if (usage) {
+        setSessionQuota({ used: usage.engage_used, quota: usage.engage_quota })
+      }
+    })
+
+    return onContextChange(() => {
+      setReloadKey((k) => k + 1)
+    })
   }, [reloadKey])
 
   const handleLaunch = async () => {
     if (!launching) return
     setStarting(true)
+    setLaunchError('')
+
+    const gate = await canLaunchEngageSession()
+    if (!gate.allowed) {
+      setLaunchError(gate.reason ?? 'You cannot start another session on your current plan.')
+      setStarting(false)
+      return
+    }
+
     const { generateJoinCode } = await import('@/lib/utils')
     const code = generateJoinCode(6)
 
@@ -96,6 +113,7 @@ export default function EngageDashboard() {
       return
     }
 
+    await incrementEngageSessionLaunched()
     window.location.href = `/engage/session/${data.id}`
   }
 
@@ -124,10 +142,13 @@ export default function EngageDashboard() {
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
         {/* Stats row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
           {[
             { label: 'Quizzes created', value: loading ? '...' : quizzes.length },
             { label: 'Active sessions', value: loading ? '...' : stats.activeSessions },
+            ...(sessionQuota
+              ? [{ label: 'Live sessions used', value: `${sessionQuota.used} / ${sessionQuota.quota}` }]
+              : []),
           ].map((s) => (
             <div key={s.label} style={{
               background: 'var(--white)',
@@ -415,6 +436,10 @@ export default function EngageDashboard() {
                 )}
               </div>
             </div>
+
+            {launchError && (
+              <p style={{ fontSize: 13, color: 'var(--coral)', marginBottom: 12, lineHeight: 1.5 }}>{launchError}</p>
+            )}
 
             <button
               onClick={handleLaunch}

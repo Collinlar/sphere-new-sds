@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { resolveCatalogPayload } from './marketplace-catalog'
 import { normalizeSteps } from './train-paths'
 import type {
   MarketplaceResource,
@@ -14,6 +15,9 @@ export const TEACHER_TO_LISTING_TYPE: Record<MarketplaceResourceType, string> = 
   question_bank: 'exam',
   engage_game: 'quiz',
   train_track: 'training_path',
+  // Reading materials are published in place via publishExistingResource,
+  // never re-created from a form, so this maps to the generic document type.
+  reading_material: 'document',
 }
 
 /** Schema v2 listing resource_type → teacher platform types */
@@ -22,9 +26,9 @@ export const LISTING_TO_TEACHER_TYPE: Record<string, MarketplaceResourceType> = 
   exam: 'question_bank',
   quiz: 'engage_game',
   training_path: 'train_track',
-  guide: 'lesson_plan',
-  notes: 'lesson_plan',
-  document: 'lesson_plan',
+  guide: 'reading_material',
+  notes: 'reading_material',
+  document: 'reading_material',
 }
 
 export interface MarketplaceListingRow {
@@ -43,6 +47,7 @@ export interface MarketplaceListingRow {
   thumbnail_color: string | null
   total_purchases: number | null
   admin_notes: string | null
+  is_featured: boolean | null
   created_at: string
   updated_at: string
 }
@@ -89,6 +94,7 @@ export function listingToResource(
       backing_resource_type: listing.resource_type,
       accent: listing.thumbnail_color ?? undefined,
       target_level_types: listing.target_level_types ?? undefined,
+      featured: listing.is_featured ?? false,
     },
     import_count: extras?.import_count ?? listing.total_purchases ?? 0,
     rating_avg: 0,
@@ -233,19 +239,40 @@ export async function insertListing(
 export async function importFromListing(
   listing: MarketplaceListingRow,
   userId: string,
-  institutionId: string
+  institutionIdRaw: string | null
 ): Promise<{ ok: true; targetType: string; targetId: string } | { ok: false; error: string }> {
   const now = new Date().toISOString()
   const resourceId = listing.resource_id
   const listingType = listing.resource_type
+  // Personal buyers have no institution; the copy lands in their own library
+  // (found by creator_id). Coerce empty string to null so the FK stays valid.
+  const institutionId = institutionIdRaw || null
 
   if (listingType === 'quiz') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source } = await supabase
       .from('quizzes')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
-    if (fetchErr || !source) return { ok: false, error: 'Could not load this quiz for import.' }
+
+    let questions: unknown[] = []
+    let description = listing.description
+    let subject = listing.subject
+    let gradeLevel = listing.target_levels?.[0] ?? null
+
+    if (source) {
+      questions = (source.questions as unknown[]) ?? []
+      description = listing.description ?? source.description
+      subject = listing.subject ?? source.subject
+      gradeLevel = listing.target_levels?.[0] ?? source.grade_level
+    } else {
+      const catalog = await resolveCatalogPayload(resourceId)
+      if (!catalog) return { ok: false, error: 'Could not load this quiz for import.' }
+      questions = (catalog.content.questions as unknown[]) ?? []
+      description = listing.description ?? catalog.description
+      subject = listing.subject ?? catalog.subject
+      gradeLevel = listing.target_levels?.[0] ?? catalog.level
+    }
 
     const { data, error } = await supabase
       .from('quizzes')
@@ -253,11 +280,12 @@ export async function importFromListing(
         institution_id: institutionId,
         creator_id: userId,
         title: listing.title,
-        description: listing.description ?? source.description,
-        subject: listing.subject ?? source.subject,
-        grade_level: listing.target_levels?.[0] ?? source.grade_level,
-        questions: source.questions ?? [],
+        description,
+        subject,
+        grade_level: gradeLevel,
+        questions,
         settings: { imported_from_listing: listing.id },
+        marketplace_listing_id: listing.id,
         is_published: false,
         created_at: now,
         updated_at: now,
@@ -269,12 +297,33 @@ export async function importFromListing(
   }
 
   if (listingType === 'course') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source } = await supabase
       .from('courses')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
-    if (fetchErr || !source) return { ok: false, error: 'Could not load this course for import.' }
+
+    let modules: unknown[] = []
+    let description = listing.description
+    let subject = listing.subject
+    let gradeLevel = listing.target_levels?.[0] ?? null
+    let thumbnailColor = '#1A8966'
+
+    if (source) {
+      modules = (source.modules as unknown[]) ?? []
+      description = listing.description ?? source.description
+      subject = listing.subject ?? source.subject
+      gradeLevel = listing.target_levels?.[0] ?? source.grade_level
+      thumbnailColor = (source.thumbnail_color as string) ?? '#1A8966'
+    } else {
+      const catalog = await resolveCatalogPayload(resourceId)
+      if (!catalog) return { ok: false, error: 'Could not load this course for import.' }
+      modules = (catalog.content.modules as unknown[]) ?? []
+      description = listing.description ?? catalog.description
+      subject = listing.subject ?? catalog.subject
+      gradeLevel = listing.target_levels?.[0] ?? catalog.level
+      thumbnailColor = (catalog.content.thumbnail_color as string) ?? '#1A8966'
+    }
 
     const { data, error } = await supabase
       .from('courses')
@@ -282,12 +331,13 @@ export async function importFromListing(
         institution_id: institutionId,
         creator_id: userId,
         title: listing.title,
-        description: listing.description ?? source.description,
-        subject: listing.subject ?? source.subject,
-        grade_level: listing.target_levels?.[0] ?? source.grade_level,
-        modules: source.modules ?? [],
-        thumbnail_color: source.thumbnail_color ?? '#1A8966',
+        description,
+        subject,
+        grade_level: gradeLevel,
+        modules,
+        thumbnail_color: thumbnailColor,
         is_published: false,
+        marketplace_listing_id: listing.id,
         created_at: now,
         updated_at: now,
       })
@@ -298,12 +348,27 @@ export async function importFromListing(
   }
 
   if (listingType === 'training_path') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source } = await supabase
       .from('learning_paths')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
-    if (fetchErr || !source) return { ok: false, error: 'Could not load this training path for import.' }
+
+    let steps: ReturnType<typeof normalizeSteps> = []
+    let description = listing.description
+    let category = listing.subject
+
+    if (source) {
+      steps = normalizeSteps(source.steps ?? [])
+      description = listing.description ?? source.description
+      category = source.category ?? listing.subject
+    } else {
+      const catalog = await resolveCatalogPayload(resourceId)
+      if (!catalog) return { ok: false, error: 'Could not load this training path for import.' }
+      steps = normalizeSteps((catalog.content.steps as unknown[]) ?? [])
+      description = listing.description ?? catalog.description
+      category = (catalog.content.category as string) ?? catalog.subject ?? listing.subject
+    }
 
     const { data, error } = await supabase
       .from('learning_paths')
@@ -311,10 +376,11 @@ export async function importFromListing(
         institution_id: institutionId,
         creator_id: userId,
         title: listing.title,
-        description: listing.description ?? source.description,
-        category: source.category ?? listing.subject,
-        steps: normalizeSteps(source.steps ?? []),
+        description,
+        category,
+        steps,
         is_mandatory: false,
+        marketplace_listing_id: listing.id,
         created_at: now,
       })
       .select('id')
@@ -324,12 +390,33 @@ export async function importFromListing(
   }
 
   if (listingType === 'exam') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source } = await supabase
       .from('exams')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
-    if (fetchErr || !source) return { ok: false, error: 'Could not load this exam for import.' }
+
+    let questions: unknown[] = []
+    let instructions = listing.description
+    let subject = listing.subject
+    let gradeLevel = listing.target_levels?.[0] ?? null
+    let durationMinutes = 60
+
+    if (source) {
+      questions = (source.questions as unknown[]) ?? []
+      instructions = source.instructions ?? listing.description
+      subject = listing.subject ?? source.subject
+      gradeLevel = listing.target_levels?.[0] ?? source.grade_level
+      durationMinutes = source.duration_minutes ?? 60
+    } else {
+      const catalog = await resolveCatalogPayload(resourceId)
+      if (!catalog) return { ok: false, error: 'Could not load this exam for import.' }
+      questions = (catalog.content.questions as unknown[]) ?? []
+      instructions = (catalog.content.instructions as string) ?? listing.description
+      subject = listing.subject ?? catalog.subject
+      gradeLevel = listing.target_levels?.[0] ?? catalog.level
+      durationMinutes = (catalog.content.duration_minutes as number) ?? 60
+    }
 
     const { data, error } = await supabase
       .from('exams')
@@ -337,12 +424,13 @@ export async function importFromListing(
         institution_id: institutionId,
         creator_id: userId,
         title: listing.title,
-        subject: listing.subject ?? source.subject,
-        grade_level: listing.target_levels?.[0] ?? source.grade_level,
-        duration_minutes: source.duration_minutes ?? 60,
-        questions: source.questions ?? [],
-        instructions: source.instructions ?? listing.description,
+        subject,
+        grade_level: gradeLevel,
+        duration_minutes: durationMinutes,
+        questions,
+        instructions,
         settings: { imported_from_listing: listing.id },
+        marketplace_listing_id: listing.id,
         is_published: false,
         created_at: now,
         updated_at: now,
@@ -351,6 +439,98 @@ export async function importFromListing(
       .single()
     if (error || !data) return { ok: false, error: 'Could not copy this exam into your library.' }
     return { ok: true, targetType: 'exam', targetId: data.id as string }
+  }
+
+  if (listingType === 'guide') {
+    const { data: source, error: fetchErr } = await supabase
+      .from('guides')
+      .select('*')
+      .eq('id', resourceId)
+      .maybeSingle()
+    if (fetchErr || !source) return { ok: false, error: 'Could not load this guide for import.' }
+
+    const { data, error } = await supabase
+      .from('guides')
+      .insert({
+        institution_id: institutionId,
+        creator_id: userId,
+        title: listing.title,
+        description: listing.description ?? source.description,
+        cover_color: source.cover_color ?? '#1052A3',
+        steps: source.steps ?? [],
+        estimated_minutes: source.estimated_minutes,
+        subject: listing.subject ?? source.subject,
+        grade_level: listing.target_levels?.[0] ?? source.grade_level,
+        is_published: true,
+        created_at: now,
+        updated_at: now,
+      })
+      .select('id')
+      .single()
+    if (error || !data) return { ok: false, error: 'Could not copy this guide into your library.' }
+    return { ok: true, targetType: 'guide', targetId: data.id as string }
+  }
+
+  if (listingType === 'notes') {
+    const { data: source, error: fetchErr } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('id', resourceId)
+      .maybeSingle()
+    if (fetchErr || !source) return { ok: false, error: 'Could not load these notes for import.' }
+
+    const { data, error } = await supabase
+      .from('notes')
+      .insert({
+        institution_id: institutionId,
+        creator_id: userId,
+        title: listing.title,
+        cover_color: source.cover_color ?? '#2E2886',
+        blocks: source.blocks ?? [],
+        is_published: true,
+        is_downloadable: source.is_downloadable ?? true,
+        subject: listing.subject ?? source.subject,
+        grade_level: listing.target_levels?.[0] ?? source.grade_level,
+        created_at: now,
+        updated_at: now,
+      })
+      .select('id')
+      .single()
+    if (error || !data) return { ok: false, error: 'Could not copy these notes into your library.' }
+    return { ok: true, targetType: 'notes', targetId: data.id as string }
+  }
+
+  if (listingType === 'document') {
+    const { data: source, error: fetchErr } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', resourceId)
+      .maybeSingle()
+    if (fetchErr || !source) return { ok: false, error: 'Could not load this document for import.' }
+
+    const { data, error } = await supabase
+      .from('documents')
+      .insert({
+        institution_id: institutionId,
+        creator_id: userId,
+        title: listing.title,
+        cover_color: source.cover_color ?? '#D97010',
+        content_type: source.content_type ?? 'editor',
+        content: source.content ?? null,
+        file_url: source.file_url ?? null,
+        file_name: source.file_name ?? null,
+        file_size_bytes: source.file_size_bytes ?? null,
+        mime_type: source.mime_type ?? null,
+        is_published: true,
+        subject: listing.subject ?? source.subject,
+        grade_level: listing.target_levels?.[0] ?? source.grade_level,
+        created_at: now,
+        updated_at: now,
+      })
+      .select('id')
+      .single()
+    if (error || !data) return { ok: false, error: 'Could not copy this document into your library.' }
+    return { ok: true, targetType: 'document', targetId: data.id as string }
   }
 
   return { ok: false, error: 'This listing type cannot be imported yet.' }

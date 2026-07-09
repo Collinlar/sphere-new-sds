@@ -4,7 +4,8 @@ import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { USER_WITH_INSTITUTION_NAME_ID } from '@/lib/supabase-embeds'
-import type { CreationUsage } from '@/lib/types'
+import { applyPlanUpgrade } from '@/lib/plan-upgrade'
+import type { CreationUsage, SubscriptionTier } from '@/lib/types'
 
 interface UserDetail {
   id: string
@@ -68,8 +69,17 @@ export default function UserDetailPage({ params: paramsPromise }: { params: Prom
 
   async function saveTier() {
     setSavingTier(true)
-    await supabase.from('users').update({ subscription_tier: selectedTier }).eq('id', id)
+    const tier = selectedTier as SubscriptionTier
+    const result = await applyPlanUpgrade(id, tier, { resetUsed: false, client: supabase })
     setSavingTier(false)
+    if (!result.ok) {
+      setTierMsg(result.error)
+      setTimeout(() => setTierMsg(''), 4000)
+      return
+    }
+    setUser(prev => prev ? { ...prev, subscription_tier: tier } : prev)
+    const { data: usageRow } = await supabase.from('creation_usage').select('*').eq('user_id', id).maybeSingle()
+    setUsage(usageRow as CreationUsage | null)
     setTierMsg('Plan updated.')
     setTimeout(() => setTierMsg(''), 3000)
   }

@@ -3,11 +3,12 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, SPHERE_PLAN_CHANGE_EVENT } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import {
   type ModuleKey,
   getEffectiveModules,
+  getPlanIncludedModules,
   parseInstitutionModules,
 } from '@/lib/institution-modules'
 import {
@@ -19,6 +20,8 @@ import {
   loadMemberships,
   onContextChange,
   canManagePlatform,
+  canAccessLibrary,
+  isAdminOnlyPlatformRoute,
   memberLabels,
   clearContextState,
 } from '@/lib/context'
@@ -36,14 +39,33 @@ interface SidebarProps {
   userName?: string
 }
 
+const PLAN_LABELS: Record<string, string> = {
+  membership: 'Membership',
+  creator_quarterly: 'Creator Quarterly',
+  creator_marketplace: 'Creator Marketplace',
+  institution: 'Institution',
+}
+
 export default function Sidebar({ activeMode, institutionName, userName }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [displayName, setDisplayName] = useState(userName ?? '')
-  const [enabledModules, setEnabledModules] = useState<ModuleKey[]>(['engage', 'assess'])
+  const [enabledModules, setEnabledModules] = useState<ModuleKey[]>(['engage'])
   const [context, setContext] = useState<ActiveContext>({ type: 'personal' })
   const [memberships, setMemberships] = useState<Membership[]>([])
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [planTier, setPlanTier] = useState('membership')
+
+  function loadPersonalPlanTier(userId: string) {
+    supabase
+      .from('users')
+      .select('subscription_tier')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setPlanTier(data?.subscription_tier ?? 'membership')
+      })
+  }
 
   useEffect(() => {
     const user = getCurrentUser()
@@ -53,6 +75,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
 
     // Refresh memberships from DB
     if (user.id) {
+      loadPersonalPlanTier(user.id)
       loadMemberships(user.id).then(fresh => {
         setMemberships(fresh.filter(m => m.status === 'active'))
         setContext(getActiveContext()) // may have been reset if membership was revoked
@@ -60,6 +83,16 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
     }
 
     return onContextChange(ctx => setContext(ctx))
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onPlanChange = () => {
+      const user = getCurrentUser()
+      if (user.id) loadPersonalPlanTier(user.id)
+    }
+    window.addEventListener(SPHERE_PLAN_CHANGE_EVENT, onPlanChange)
+    return () => window.removeEventListener(SPHERE_PLAN_CHANGE_EVENT, onPlanChange)
   }, [])
 
   // Module availability follows the active context
@@ -78,8 +111,6 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
           }
         })
     } else {
-      // Personal context: membership tier gives engage + assess.
-      // Creator tiers unlock all four (checked from users table).
       const user = getCurrentUser()
       supabase
         .from('users')
@@ -88,7 +119,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
         .maybeSingle()
         .then(({ data }) => {
           const tier = data?.subscription_tier ?? 'membership'
-          setEnabledModules(tier === 'membership' ? ['engage', 'assess'] : ['engage', 'assess', 'learn', 'train'])
+          setEnabledModules(getPlanIncludedModules(tier))
         })
     }
   }, [context])
@@ -104,8 +135,7 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
   function switchContext(ctx: ActiveContext) {
     setActiveContext(ctx)
     setSwitcherOpen(false)
-    // Land somewhere valid for the new context
-    if (ctx.type === 'personal' && pathname.startsWith('/platform')) {
+    if (ctx.type === 'personal' && isAdminOnlyPlatformRoute(pathname)) {
       router.push('/home')
     } else {
       router.refresh()
@@ -113,19 +143,23 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
   }
 
   const currentAccent = getAccentForPath(pathname, activeMode)
-  const showPlatform = canManagePlatform(context)
+  const showLibrary = canAccessLibrary(context)
+  const showAdminPlatform = canManagePlatform(context)
   const contextLabel = context.type === 'personal' ? 'Personal' : context.institutionName
   const activeInstitutionType = context.type === 'institution'
     ? memberships.find(m => m.institution_id === context.institutionId)?.institution_type_id ?? null
     : null
   const labels = memberLabels(activeInstitutionType)
 
-  const PLATFORM = [
-    { key: 'team', label: labels.teachers, href: '/platform/team' },
-    { key: 'library', label: 'Content library', href: '/platform/library' },
+  const SHARED_PLATFORM = [
+    { key: 'library', label: 'My library', href: '/platform/library' },
     { key: 'marketplace', label: 'Marketplace', href: '/platform/marketplace' },
-    { key: 'analytics', label: 'Analytics', href: '/platform/analytics' },
     { key: 'settings', label: 'Settings', href: '/platform/settings' },
+  ]
+
+  const ADMIN_PLATFORM = [
+    { key: 'team', label: labels.teachers, href: '/platform/team' },
+    { key: 'analytics', label: 'Analytics', href: '/platform/analytics' },
   ]
 
   return (
@@ -334,13 +368,35 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
         </>
       )}
 
-      {/* Platform (institution owner/admin only) */}
-      {showPlatform && (
+      {/* Library, marketplace, settings — all staff + personal */}
+      {showLibrary && (
         <>
           <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
-            Platform
+            Resources
           </p>
-          {PLATFORM.map((p) => {
+          {SHARED_PLATFORM.map((p) => {
+            const isActive = pathname.startsWith(p.href)
+            return (
+              <Link key={p.key} href={p.href} style={{
+                display: 'flex', alignItems: 'center',
+                padding: '7px 8px', borderRadius: 7, textDecoration: 'none',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--violet)' : 'var(--mid-grey)' }}>
+                  {p.label}
+                </span>
+              </Link>
+            )
+          })}
+        </>
+      )}
+
+      {/* Institution admin only */}
+      {showAdminPlatform && (
+        <>
+          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
+            Institution
+          </p>
+          {ADMIN_PLATFORM.map((p) => {
             const isActive = pathname.startsWith(p.href)
             return (
               <Link key={p.key} href={p.href} style={{
@@ -374,7 +430,9 @@ export default function Sidebar({ activeMode, institutionName, userName }: Sideb
               {displayName || 'Loading...'}
             </p>
             <p style={{ fontSize: 11, color: 'var(--mid-grey)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {contextLabel}
+              {context.type === 'personal'
+                ? `Personal · ${PLAN_LABELS[planTier] ?? 'Membership'}`
+                : contextLabel}
             </p>
           </div>
         </div>

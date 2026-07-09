@@ -1,57 +1,99 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
-import { getCurrentUser } from '@/lib/auth'
+import { onContextChange } from '@/lib/context'
+import {
+  applyScopeToQuery,
+  fetchScopedContent,
+  resolveLibraryScope,
+  type LibraryScope,
+} from '@/lib/library-scope'
+import { canAccessModule } from '@/lib/subscription'
+import { isAcquiredRow, getAcquisitionUseHref, getAcquisitionTakeLabel, fetchAcquiredContentIds, type AcquisitionKind } from '@/lib/acquisition-access'
 import { decrementUsed } from '@/lib/subscription'
 import {
   createDocument,
   createGuide,
   createNote,
   deleteContentResource,
-  fetchDocuments,
-  fetchGuides,
-  fetchNotes,
   getContentBuilderHref,
 } from '@/lib/content-resources'
 
 export default function ContentLibraryPage() {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'quizzes' | 'exams' | 'courses' | 'paths' | 'guides' | 'notes' | 'documents'>('quizzes')
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const validTabs = ['quizzes', 'exams', 'courses', 'paths', 'guides', 'notes', 'documents'] as const
+  const initialTab = validTabs.includes(tabParam as typeof validTabs[number])
+    ? (tabParam as typeof validTabs[number])
+    : 'quizzes'
+  const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab)
   const [data, setData] = useState<Record<string, unknown[]>>({
     quizzes: [], exams: [], courses: [], paths: [], guides: [], notes: [], documents: [],
   })
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [scopeLabel, setScopeLabel] = useState('Personal library')
+  const [moduleAccess, setModuleAccess] = useState<Record<string, boolean>>({
+    engage: true,
+    assess: false,
+    learn: false,
+    train: false,
+  })
+  const [acquiredIds, setAcquiredIds] = useState<Set<string>>(new Set())
 
-  async function loadLibrary() {
-    const institutionId = getCurrentUser().institution_id
-    const [q, e, c, p, g, n, d] = await Promise.all([
-      supabase.from('quizzes').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
-      supabase.from('exams').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
-      supabase.from('courses').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
-      supabase.from('learning_paths').select('*').eq('institution_id', institutionId).order('created_at', { ascending: false }),
-      fetchGuides(institutionId),
-      fetchNotes(institutionId),
-      fetchDocuments(institutionId),
+  async function loadLibrary(scope?: LibraryScope) {
+    const libraryScope = scope ?? resolveLibraryScope()
+    setScopeLabel(libraryScope.label)
+    setLoading(true)
+
+    const [engage, assess, learn, train] = await Promise.all([
+      canAccessModule('engage'),
+      canAccessModule('assess'),
+      canAccessModule('learn'),
+      canAccessModule('train'),
     ])
+    setModuleAccess({ engage, assess, learn, train })
+
+    let guidesQuery = supabase.from('guides').select('*')
+    guidesQuery = applyScopeToQuery(guidesQuery, libraryScope)
+    let notesQuery = supabase.from('notes').select('*')
+    notesQuery = applyScopeToQuery(notesQuery, libraryScope)
+    let documentsQuery = supabase.from('documents').select('*')
+    documentsQuery = applyScopeToQuery(documentsQuery, libraryScope)
+
+    const [q, e, c, p, g, n, d, acquired] = await Promise.all([
+      fetchScopedContent('quizzes', libraryScope),
+      fetchScopedContent('exams', libraryScope),
+      fetchScopedContent('courses', libraryScope),
+      fetchScopedContent('learning_paths', libraryScope),
+      guidesQuery.order('updated_at', { ascending: false }),
+      notesQuery.order('updated_at', { ascending: false }),
+      documentsQuery.order('updated_at', { ascending: false }),
+      fetchAcquiredContentIds(libraryScope),
+    ])
+
+    setAcquiredIds(acquired)
+
     setData({
-      quizzes: q.data ?? [],
-      exams: e.data ?? [],
-      courses: c.data ?? [],
-      paths: p.data ?? [],
-      guides: g,
-      notes: n,
-      documents: d,
+      quizzes: q,
+      exams: e,
+      courses: c,
+      paths: p,
+      guides: g.data ?? [],
+      notes: n.data ?? [],
+      documents: d.data ?? [],
     })
     setLoading(false)
   }
 
   useEffect(() => {
     loadLibrary()
+    return onContextChange(() => loadLibrary())
   }, [])
 
   const MODULE_FOR_TAB: Partial<Record<string, 'assess' | 'engage' | 'learn' | 'train'>> = {
@@ -69,6 +111,41 @@ export default function ContentLibraryPage() {
     guides: 'guides',
     notes: 'notes',
     documents: 'documents',
+  }
+
+  const TAB_KIND: Partial<Record<string, AcquisitionKind>> = {
+    quizzes: 'quiz',
+    exams: 'exam',
+    courses: 'course',
+    paths: 'path',
+  }
+
+  function getBuilderHref(tab: string, id: string): string | null {
+    if (tab === 'quizzes') return `/engage/builder?id=${id}`
+    if (tab === 'exams') return `/assess/create?id=${id}`
+    if (tab === 'courses') return `/learn/builder?id=${id}`
+    if (tab === 'paths') return `/train/builder?id=${id}`
+    return getContentBuilderHref(tab, id)
+  }
+
+  function getItemHref(tab: string, item: Record<string, unknown>): string {
+    const module = MODULE_FOR_TAB[tab]
+    const acquired = isItemAcquired(item)
+    const kind = TAB_KIND[tab]
+
+    if (acquired && kind && module && !moduleAccess[module]) {
+      return getAcquisitionUseHref(kind, item.id as string)
+    }
+
+    if (module && !moduleAccess[module]) {
+      return `/platform/settings/billing?locked=${module}`
+    }
+
+    return getBuilderHref(tab, item.id as string) ?? '#'
+  }
+
+  function isItemAcquired(item: Record<string, unknown>): boolean {
+    return acquiredIds.has(item.id as string) || isAcquiredRow(item)
   }
 
   async function handleDelete(id: string) {
@@ -101,12 +178,9 @@ export default function ContentLibraryPage() {
     }
   }
 
-  function getEditHref(tab: string, id: string): string | null {
-    if (tab === 'quizzes') return `/engage/builder?id=${id}`
-    if (tab === 'exams') return `/assess/create?id=${id}`
-    if (tab === 'courses') return `/learn/builder?id=${id}`
-    if (tab === 'paths') return `/train/builder?id=${id}`
-    return getContentBuilderHref(tab, id)
+  function isTabLocked(tab: string): boolean {
+    const module = MODULE_FOR_TAB[tab]
+    return module ? !moduleAccess[module] : false
   }
 
   const TABS = [
@@ -126,8 +200,9 @@ export default function ContentLibraryPage() {
       <TopBar mode="platform" title="Content library" />
 
       <div style={{ padding: '28px 32px' }}>
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
+        <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginBottom: 16 }}>{scopeLabel}</p>
+
+        <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 4, width: 'fit-content', flexWrap: 'wrap' }}>
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -159,41 +234,69 @@ export default function ContentLibraryPage() {
               No {activeTab} yet
             </p>
             <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 20 }}>
-              Create your first one to see it here
+              {isTabLocked(activeTab)
+                ? 'Import from the marketplace or upgrade to create your own'
+                : 'Create your first one to see it here'}
             </p>
-            <a href={current.href || '#'} onClick={(e) => { if (!current.href) { e.preventDefault(); handleQuickCreate() } }} style={{
-              display: 'inline-block', padding: '10px 20px', borderRadius: 8,
-              background: current.color, color: '#fff', textDecoration: 'none',
-              fontSize: 14, fontWeight: 500, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
-            }}>
-              Create {current.label.slice(0, -1).toLowerCase()}
-            </a>
+            {isTabLocked(activeTab) ? (
+              <Link href="/platform/marketplace" style={{
+                display: 'inline-block', padding: '10px 20px', borderRadius: 8,
+                background: current.color, color: '#fff', textDecoration: 'none',
+                fontSize: 14, fontWeight: 500,
+              }}>
+                Browse marketplace
+              </Link>
+            ) : (
+              <a href={current.href || '#'} onClick={(e) => { if (!current.href) { e.preventDefault(); handleQuickCreate() } }} style={{
+                display: 'inline-block', padding: '10px 20px', borderRadius: 8,
+                background: current.color, color: '#fff', textDecoration: 'none',
+                fontSize: 14, fontWeight: 500, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
+              }}>
+                Create {current.label.slice(0, -1).toLowerCase()}
+              </a>
+            )}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
             {(data[activeTab] as Record<string, unknown>[]).map((item) => {
-              const editHref = getEditHref(activeTab, item.id as string)
+              const tabLocked = isTabLocked(activeTab)
+              const acquired = isItemAcquired(item)
+              const useOnly = acquired && tabLocked
+              const itemHref = getItemHref(activeTab, item)
+              const editHref = !tabLocked ? getBuilderHref(activeTab, item.id as string) : null
               return (
-              <div key={item.id as string} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 18 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div key={item.id as string} style={{
+                background: 'var(--white)',
+                boxShadow: 'var(--shadow-soft)',
+                borderRadius: 10,
+                padding: 18,
+                opacity: useOnly ? 1 : tabLocked ? 0.92 : 1,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', lineHeight: 1.3 }}>
-                    {editHref ? (
-                      <Link href={editHref} style={{ color: 'inherit', textDecoration: 'none' }}>
-                        {(item.title ?? item.name) as string}
-                      </Link>
-                    ) : (
-                      (item.title ?? item.name) as string
-                    )}
+                    <Link href={itemHref} style={{ color: 'inherit', textDecoration: 'none' }}>
+                      {(item.title ?? item.name) as string}
+                    </Link>
                   </h3>
                   <span style={{
                     fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
-                    padding: '3px 9px', borderRadius: 20,
-                    background: item.is_published ? '#DDFAF0' : 'var(--bg2)',
-                    color: item.is_published ? '#1A8966' : 'var(--mid-grey)',
+                    padding: '3px 9px', borderRadius: 20, flexShrink: 0,
+                    background: useOnly ? '#DDFAF0' : tabLocked ? '#FEF0DC' : item.is_published ? '#DDFAF0' : 'var(--bg2)',
+                    color: useOnly ? '#1A8966' : tabLocked ? '#9A5800' : item.is_published ? '#1A8966' : 'var(--mid-grey)',
                   }}>
-                    {item.is_published ? 'Published' : 'Draft'}
+                    {useOnly ? 'Ready to take' : tabLocked ? 'Saved' : item.is_published ? 'Published' : 'Draft'}
                   </span>
                 </div>
+                {useOnly && (
+                  <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 8, lineHeight: 1.5 }}>
+                    Take this on your own. Upgrade to host it for a class or edit it.
+                  </p>
+                )}
+                {tabLocked && !acquired && (
+                  <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 8, lineHeight: 1.5 }}>
+                    Upgrade to open and edit
+                  </p>
+                )}
                 {(item.subject as string | undefined) && (
                   <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 6 }}>
                     {item.subject as string} {item.grade_level ? `· ${item.grade_level as string}` : ''}
@@ -202,7 +305,31 @@ export default function ContentLibraryPage() {
                 <p style={{ fontSize: 11, color: 'var(--mid-grey)' }}>
                   Created {new Date(item.created_at as string).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </p>
-                {TABLE_FOR_TAB[activeTab] && (
+                {useOnly && (
+                  <Link href={itemHref} style={{
+                    display: 'inline-block', marginTop: 10, fontSize: 12, fontWeight: 600,
+                    color: 'var(--teal)', textDecoration: 'none',
+                  }}>
+                    {TAB_KIND[activeTab] ? getAcquisitionTakeLabel(TAB_KIND[activeTab]!) : 'Open'}
+                  </Link>
+                )}
+                {tabLocked && !acquired && (
+                  <Link href={itemHref} style={{
+                    display: 'inline-block', marginTop: 10, fontSize: 12, fontWeight: 600,
+                    color: 'var(--amber)', textDecoration: 'none',
+                  }}>
+                    See upgrade options
+                  </Link>
+                )}
+                {editHref && (
+                  <Link href={editHref} style={{
+                    display: 'inline-block', marginTop: 10, marginRight: 12, fontSize: 12, fontWeight: 600,
+                    color: 'var(--mid-grey)', textDecoration: 'none',
+                  }}>
+                    Edit
+                  </Link>
+                )}
+                {TABLE_FOR_TAB[activeTab] && (!tabLocked || acquired) && (
                   <button
                     onClick={() => handleDelete(item.id as string)}
                     disabled={deletingId === item.id}

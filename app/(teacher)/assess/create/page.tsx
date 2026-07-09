@@ -12,6 +12,13 @@ import CreationGate from '@/components/brand/CreationGate'
 import AddOnGate from '@/components/brand/AddOnGate'
 import { useInstitutionLevels } from '@/lib/use-institution-levels'
 import { generateWithAi } from '@/lib/checkout-client'
+import AiAssessmentBuilderModal from '@/components/brand/AiAssessmentBuilderModal'
+import {
+  configToApiContext,
+  loadingMessageForConfig,
+  normalizeGeneratedQuestions,
+  type AssessmentAiConfig,
+} from '@/lib/ai-assessment-generation'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
 const QUESTION_TYPES: { value: ExamQuestion['type']; label: string }[] = [
@@ -49,12 +56,16 @@ export default function ExamCreate() {
   const [activeQ, setActiveQ] = useState(0)
   const [saving, setSaving] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [aiLoadingMessage, setAiLoadingMessage] = useState('')
   const [hintLoading, setHintLoading] = useState(false)
   const [explanationLoading, setExplanationLoading] = useState(false)
   const [bulkExplanationLoading, setBulkExplanationLoading] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [integrityAction, setIntegrityAction] = useState<'record' | 'warn' | 'auto_disqualify'>('warn')
   const [integrityThreshold, setIntegrityThreshold] = useState(3)
+  const [issuesCertificate, setIssuesCertificate] = useState(false)
+  const [certificatePassMark, setCertificatePassMark] = useState(50)
   const [mobileTab, setMobileTab] = useState<'details' | 'questions'>('details')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [audience, setAudience] = useState<ExamAudience>('open')
@@ -64,12 +75,12 @@ export default function ExamCreate() {
   const [rosterGroups, setRosterGroups] = useState<string[]>([])
 
   useEffect(() => {
-    supabase
-      .from('rosters')
-      .select('*')
-      .eq('institution_id', getCurrentUser().institution_id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setRosters(data ?? []))
+    const institutionId = getContentInstitutionId()
+    let query = supabase.from('rosters').select('*')
+    query = institutionId
+      ? query.eq('institution_id', institutionId)
+      : query.is('institution_id', null)
+    query.order('created_at', { ascending: false }).then(({ data }) => setRosters(data ?? []))
   }, [])
 
   useEffect(() => {
@@ -86,6 +97,51 @@ export default function ExamCreate() {
 
   const q = questions[activeQ]
   const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
+
+  async function handleAiGenerate(config: AssessmentAiConfig) {
+    setAiLoading(true)
+    setAiLoadingMessage(loadingMessageForConfig(config))
+
+    const result = await generateWithAi({
+      addOnId: 'ai_assessment_builder',
+      task: 'assessment_questions',
+      prompt: config.topic.trim(),
+      context: configToApiContext(config),
+    })
+
+    setAiLoading(false)
+    setAiLoadingMessage('')
+
+    if (!result.ok) {
+      window.alert(result.error)
+      return
+    }
+
+    const generated = normalizeGeneratedQuestions(
+      (result.data.questions as ExamQuestion[] | undefined) ?? [],
+      config.typeMix
+    )
+
+    if (generated.length === 0) {
+      window.alert('No questions came back. Try a more specific topic or adjust your mix.')
+      return
+    }
+
+    if (config.subject && config.subject !== subject) setSubject(config.subject)
+    if (config.gradeLevel && config.gradeLevel !== gradeLevel) setGradeLevel(config.gradeLevel)
+
+    if (config.replaceMode === 'append') {
+      setQuestions(prev => {
+        setActiveQ(prev.length)
+        return [...prev, ...generated]
+      })
+    } else {
+      setQuestions(generated)
+      setActiveQ(0)
+    }
+
+    setAiModalOpen(false)
+  }
 
   async function generateAllExplanations(checkAddOn: () => Promise<boolean>) {
     if (!(await checkAddOn())) return
@@ -171,10 +227,13 @@ export default function ExamCreate() {
       duration_minutes: duration,
       instructions: instructions || null,
       questions,
+      total_marks: totalMarks,
       settings: {
         integrity_action: integrityAction,
         integrity_threshold: integrityThreshold,
       },
+      issues_certificate: issuesCertificate,
+      certificate_pass_mark: certificatePassMark,
       audience,
       roster_id: audience === 'open' ? null : (rosterId || null),
       audience_groups: audience === 'open' ? null : audienceGroups,
@@ -185,7 +244,8 @@ export default function ExamCreate() {
     setSaving(false)
 
     if (error) {
-      alert('Could not save your exam. Check your connection and try again.')
+      const msg = (error as { message?: string })?.message ?? 'Unknown error'
+      alert(`Could not save your exam. ${msg}`)
       return
     }
 
@@ -238,32 +298,7 @@ export default function ExamCreate() {
                   type="button"
                   onClick={async () => {
                     if (!(await checkAddOn())) return
-                    const topic = window.prompt('What topic or syllabus should these questions cover?')
-                    if (!topic?.trim()) return
-                    setAiLoading(true)
-                    const result = await generateWithAi({
-                      addOnId: 'ai_assessment_builder',
-                      task: 'assessment_questions',
-                      prompt: topic.trim(),
-                      context: { subject, gradeLevel, count: 5 },
-                    })
-                    setAiLoading(false)
-                    if (!result.ok) {
-                      window.alert(result.error)
-                      return
-                    }
-                    const generated = (result.data.questions as ExamQuestion[] | undefined) ?? []
-                    if (generated.length === 0) {
-                      window.alert('No questions came back. Try a more specific topic.')
-                      return
-                    }
-                    setQuestions(
-                      generated.map((q) => ({
-                        ...emptyQuestion(),
-                        ...q,
-                        id: q.id || crypto.randomUUID(),
-                      }))
-                    )
+                    setAiModalOpen(true)
                   }}
                   disabled={aiLoading}
                   style={{
@@ -282,6 +317,17 @@ export default function ExamCreate() {
                 </button>
               )}
             </AddOnGate>
+            <AiAssessmentBuilderModal
+              open={aiModalOpen}
+              onClose={() => !aiLoading && setAiModalOpen(false)}
+              onSubmit={handleAiGenerate}
+              loading={aiLoading}
+              loadingMessage={aiLoadingMessage}
+              subject={subject}
+              gradeLevel={gradeLevel}
+              gradeLevels={gradeLevels}
+              hasExistingQuestions={questions.some(q => q.text.trim())}
+            />
             <AddOnGate addOnId="ai_explanations">
               {({ check: checkExplanationAddOn }) => (
                 <button
@@ -439,6 +485,26 @@ export default function ExamCreate() {
                   </span>
                 )}
               </p>
+            </div>
+
+            {/* Certificate */}
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--mid-grey)', marginBottom: 6 }}>Certificate</p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={issuesCertificate} onChange={(e) => setIssuesCertificate(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Issue a certificate when a student passes</span>
+              </label>
+              {issuesCertificate && (
+                <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Pass mark
+                  <input
+                    type="number" min={0} max={100} value={certificatePassMark}
+                    onChange={(e) => setCertificatePassMark(Number(e.target.value))}
+                    style={{ width: 44, padding: '2px 4px', fontSize: 11, boxShadow: 'var(--shadow-soft)', borderRadius: 4, textAlign: 'center', fontFamily: 'inherit', background: 'var(--white)' }}
+                  />
+                  percent.
+                </p>
+              )}
             </div>
 
             {/* Audience — who can take this exam, compact pill row matching Integrity above */}

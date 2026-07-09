@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, use, Suspense } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { assertCanTakeAcquired, ensureCourseEnrollment } from '@/lib/self-take'
+import { isAcquiredRow } from '@/lib/acquisition-access'
 import { Course, CourseModule } from '@/lib/types'
 
 const MODULE_ICONS: Record<string, string> = {
@@ -199,13 +203,24 @@ function AssignmentModule({ content, moduleId, enrollmentId, onSubmit }: { conte
   )
 }
 
-export default function StudentCoursePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+export default function StudentCoursePage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--mid-grey)', fontSize: 14 }}>Loading your course...</div>}>
+      <StudentCoursePageInner params={params} />
+    </Suspense>
+  )
+}
+
+function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = use(paramsPromise)
+  const searchParams = useSearchParams()
+  const fromLibrary = searchParams.get('from') === 'library'
   const [course, setCourse] = useState<Course | null>(null)
   const [enrollmentId, setEnrollmentId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [completed, setCompleted] = useState<Set<string>>(new Set())
+  const [isAcquired, setIsAcquired] = useState(false)
 
   const userId = getCurrentUser()?.id
 
@@ -215,10 +230,25 @@ export default function StudentCoursePage({ params: paramsPromise }: { params: P
         supabase.from('courses').select('*').eq('id', params.id).single(),
         userId ? supabase.from('enrollments').select('id, completed_modules').eq('course_id', params.id).eq('student_id', userId).single() : Promise.resolve({ data: null, error: null }),
       ])
-      if (courseRes.data) setCourse(courseRes.data)
+      if (courseRes.data) {
+        setCourse(courseRes.data)
+        setIsAcquired(isAcquiredRow(courseRes.data as Record<string, unknown>))
+      }
+
       if (enrollRes.data) {
         setEnrollmentId(enrollRes.data.id)
         setCompleted(new Set(enrollRes.data.completed_modules ?? []))
+      } else if (userId && courseRes.data) {
+        const acquired = isAcquiredRow(courseRes.data as Record<string, unknown>)
+        if (acquired) {
+          const gate = await assertCanTakeAcquired('courses', params.id)
+          if (gate.ok) {
+            const enrolled = await ensureCourseEnrollment(params.id, userId)
+            if (enrolled.ok) {
+              setEnrollmentId(enrolled.enrollmentId)
+            }
+          }
+        }
       }
       setLoading(false)
     }
@@ -250,6 +280,16 @@ export default function StudentCoursePage({ params: paramsPromise }: { params: P
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: 'var(--page-bg)' }}>
+      {(fromLibrary || isAcquired) && (
+        <div style={{ padding: '12px 16px 0' }}>
+          <Link
+            href="/platform/library"
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', textDecoration: 'none' }}
+          >
+            Back to library
+          </Link>
+        </div>
+      )}
       {/* Header */}
       <div style={{ background: course.thumbnail_color, padding: '28px 20px 20px' }}>
         <div style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.75)', marginBottom: 6, letterSpacing: '0.06em' }}>

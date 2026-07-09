@@ -9,7 +9,16 @@ import { getCurrentUser } from '@/lib/auth'
 import { getContentInstitutionId } from '@/lib/context'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
+import AddOnGate from '@/components/brand/AddOnGate'
+import { generateWithAi } from '@/lib/checkout-client'
 import { useInstitutionLevels } from '@/lib/use-institution-levels'
+import AiEngageBuilderModal from '@/components/brand/AiEngageBuilderModal'
+import {
+  configToEngageApiContext,
+  loadingMessageForEngageConfig,
+  normalizeGeneratedEngageQuestions,
+  type EngageAiConfig,
+} from '@/lib/ai-engage-generation'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
 const TIME_OPTIONS = [10, 20, 30, 60]
@@ -65,6 +74,9 @@ function QuizBuilderInner() {
   const [loadingEdit, setLoadingEdit] = useState(!!editId)
   const [activeQuestion, setActiveQuestion] = useState(0)
   const [showTypeMenu, setShowTypeMenu] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [aiLoadingMessage, setAiLoadingMessage] = useState('')
 
   useEffect(() => {
     if (!editId) return
@@ -174,6 +186,44 @@ function QuizBuilderInner() {
     </div>
   )
 
+
+  async function handleAiGenerate(config: EngageAiConfig) {
+    setAiLoading(true)
+    setAiLoadingMessage(loadingMessageForEngageConfig(config))
+    try {
+      const result = await generateWithAi({
+        addOnId: 'ai_engagement_builder',
+        task: 'engage_questions',
+        prompt: config.topic.trim(),
+        context: configToEngageApiContext(config),
+      })
+      if (!result.ok) throw new Error(result.error)
+      const generated = normalizeGeneratedEngageQuestions(
+        (result.data.questions as QuizQuestion[] | undefined) ?? [],
+        config.pace
+      )
+      if (generated.length === 0) {
+        throw new Error('No questions came back. Try a more specific topic or adjust your mix.')
+      }
+      if (config.subject && config.subject !== subject) setSubject(config.subject)
+      if (config.gradeLevel && config.gradeLevel !== gradeLevel) setGradeLevel(config.gradeLevel)
+      if (!title.trim()) setTitle(config.topic.trim())
+      if (config.replaceMode === 'append') {
+        setQuestions(prev => {
+          setActiveQuestion(prev.length)
+          return [...prev, ...generated]
+        })
+      } else {
+        setQuestions(generated)
+        setActiveQuestion(0)
+      }
+      setAiModalOpen(false)
+    } finally {
+      setAiLoading(false)
+      setAiLoadingMessage('')
+    }
+  }
+
   return (
     <CreationGate module="engage">
       {({ check }) => (
@@ -183,6 +233,31 @@ function QuizBuilderInner() {
         title={editId ? 'Edit quiz' : 'New quiz'}
         right={
           <div style={{ display: 'flex', gap: 8 }}>
+            <AddOnGate addOnId="ai_engagement_builder">
+              {({ check: checkAddOn }) => (
+                <button
+                  disabled={aiLoading}
+                  onClick={async () => {
+                    if (!(await checkAddOn())) return
+                    setAiModalOpen(true)
+                  }}
+                  style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: aiLoading ? 'wait' : 'pointer', color: 'var(--near-black)' }}
+                >
+                  {aiLoading ? 'Drafting quiz...' : 'Generate with AI'}
+                </button>
+              )}
+            </AddOnGate>
+            <AiEngageBuilderModal
+              open={aiModalOpen}
+              onClose={() => { if (!aiLoading) setAiModalOpen(false) }}
+              onSubmit={handleAiGenerate}
+              loading={aiLoading}
+              loadingMessage={aiLoadingMessage}
+              subject={subject}
+              gradeLevel={gradeLevel}
+              gradeLevels={gradeLevels}
+              hasExistingQuestions={questions.some(q => q.text.trim())}
+            />
             <button onClick={() => save(false, check)} disabled={saving} style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--near-black)' }}>
               {saving ? 'Saving...' : 'Save draft'}
             </button>

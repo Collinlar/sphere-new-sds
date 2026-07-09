@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { MARKETPLACE_DEMO_RESOURCES } from './marketplace-seed'
+import { enrichMetadataWithCatalog, resolveCatalogPayload } from './marketplace-catalog'
 import {
   createBackingResource,
   importFromListing,
@@ -12,6 +13,14 @@ import { assertMarketplacePublish } from './plan-privileges'
 import { normalizeSteps } from './train-paths'
 import { getCurrentUser } from './auth'
 import { getActiveContext } from './context'
+import {
+  destinationInstitutionId,
+  type ImportDestination,
+  moduleForListingType,
+  moduleForResourceType,
+  getImportDestinations,
+} from './library-scope'
+import type { ModuleKey } from './institution-modules'
 
 // Maps a signup-time level_type + user_level onto the institution_types
 // vocabulary used for marketplace targeting (jhs, shs, primary, university,
@@ -60,6 +69,7 @@ export type MarketplaceResourceType =
   | 'question_bank'
   | 'engage_game'
   | 'train_track'
+  | 'reading_material'
 
 export type MarketplaceResourceStatus = 'draft' | 'pending_review' | 'published' | 'rejected'
 
@@ -145,7 +155,7 @@ export interface PublishResourceInput {
   price_ghs: number | null
   metadata?: MarketplaceResourceMetadata
   creator_id: string
-  institution_id: string
+  institution_id: string | null
   status?: 'draft' | 'pending_review'
 }
 
@@ -154,6 +164,7 @@ const TYPE_LABELS: Record<MarketplaceResourceType, string> = {
   question_bank: 'Question bank',
   engage_game: 'Engage game',
   train_track: 'Train track',
+  reading_material: 'Reading material',
 }
 
 export function getResourceTypeLabel(type: MarketplaceResourceType): string {
@@ -324,7 +335,13 @@ export async function fetchResourceById(id: string): Promise<MarketplaceResource
   if (listing) return listing
 
   const { data, error } = await supabase.from('marketplace_resources').select('*').eq('id', id).maybeSingle()
-  if (!error && data) return data as MarketplaceResource
+  if (!error && data) {
+    const row = data as MarketplaceResource
+    return {
+      ...row,
+      metadata: enrichMetadataWithCatalog(id, row.metadata as Record<string, unknown>) as MarketplaceResourceMetadata,
+    }
+  }
 
   const demo = demoAsResources().find((r) => r.id === id)
   return demo ?? null
@@ -356,30 +373,201 @@ export async function fetchResourceReviews(resourceId: string): Promise<Marketpl
   return []
 }
 
-export async function hasImported(resourceId: string, institutionId: string): Promise<boolean> {
-  const { data: byListing } = await supabase
+function importScopeQuery(
+  destination: ImportDestination,
+  userId: string
+) {
+  const institutionId = destinationInstitutionId(destination)
+  if (institutionId) {
+    return { institutionId, importedBy: null as string | null }
+  }
+  return { institutionId: null, importedBy: userId }
+}
+
+export async function hasImported(
+  resourceId: string,
+  destination: ImportDestination,
+  userId?: string
+): Promise<boolean> {
+  const uid = userId ?? getCurrentUser().id
+  const { institutionId, importedBy } = importScopeQuery(destination, uid)
+
+  let listingQuery = supabase
     .from('marketplace_imports')
     .select('id')
     .eq('listing_id', resourceId)
-    .eq('institution_id', institutionId)
-    .maybeSingle()
+
+  listingQuery = institutionId
+    ? listingQuery.eq('institution_id', institutionId)
+    : listingQuery.is('institution_id', null).eq('imported_by', importedBy!)
+
+  const { data: byListing } = await listingQuery.maybeSingle()
   if (byListing) return true
 
-  const { data } = await supabase
+  let resourceQuery = supabase
     .from('marketplace_imports')
     .select('id')
     .eq('resource_id', resourceId)
-    .eq('institution_id', institutionId)
-    .maybeSingle()
 
+  resourceQuery = institutionId
+    ? resourceQuery.eq('institution_id', institutionId)
+    : resourceQuery.is('institution_id', null).eq('imported_by', importedBy!)
+
+  const { data } = await resourceQuery.maybeSingle()
   return Boolean(data)
+}
+
+export async function fetchImportedListingIds(
+  destination: ImportDestination,
+  userId?: string
+): Promise<Set<string>> {
+  const uid = userId ?? getCurrentUser().id
+  const { institutionId, importedBy } = importScopeQuery(destination, uid)
+
+  let query = supabase
+    .from('marketplace_imports')
+    .select('listing_id, resource_id')
+
+  query = institutionId
+    ? query.eq('institution_id', institutionId)
+    : query.is('institution_id', null).eq('imported_by', importedBy!)
+
+  const { data } = await query
+  const ids = new Set<string>()
+  for (const row of data ?? []) {
+    if (row.listing_id) ids.add(row.listing_id as string)
+    if (row.resource_id) ids.add(row.resource_id as string)
+  }
+  return ids
+}
+
+export async function fetchAllImportedResourceIds(userId?: string): Promise<Set<string>> {
+  const uid = userId ?? getCurrentUser().id
+  const destinations = getImportDestinations()
+  const allIds = new Set<string>()
+  for (const dest of destinations) {
+    const ids = await fetchImportedListingIds(dest, uid)
+    ids.forEach((id) => allIds.add(id))
+  }
+  return allIds
+}
+
+export async function hasImportedAnywhere(resourceId: string, userId?: string): Promise<boolean> {
+  const uid = userId ?? getCurrentUser().id
+  const destinations = getImportDestinations()
+  for (const dest of destinations) {
+    if (await hasImported(resourceId, dest, uid)) return true
+  }
+  return false
+}
+
+export async function findImportedDestinations(
+  resourceId: string,
+  userId?: string
+): Promise<ImportDestination[]> {
+  const uid = userId ?? getCurrentUser().id
+  const destinations = getImportDestinations()
+  const found: ImportDestination[] = []
+  for (const dest of destinations) {
+    if (await hasImported(resourceId, dest, uid)) found.push(dest)
+  }
+  return found
+}
+
+const TARGET_TABLE: Record<string, string> = {
+  quiz: 'quizzes',
+  course: 'courses',
+  learning_path: 'learning_paths',
+  exam: 'exams',
+}
+
+const LISTING_COPY_TABLE: Record<string, string> = {
+  quiz: 'quizzes',
+  course: 'courses',
+  training_path: 'learning_paths',
+  exam: 'exams',
+}
+
+async function importCopyExists(
+  listing: MarketplaceListingRow,
+  institutionId: string | null,
+  userId: string
+): Promise<boolean> {
+  const table = LISTING_COPY_TABLE[listing.resource_type]
+  if (!table) return false
+
+  let query = supabase.from(table).select('id').eq('marketplace_listing_id', listing.id)
+  if (institutionId) {
+    query = query.eq('institution_id', institutionId)
+  } else {
+    query = query.is('institution_id', null).eq('creator_id', userId)
+  }
+
+  const { data } = await query.maybeSingle()
+  return Boolean(data)
+}
+
+async function clearOrphanImportRecord(
+  resourceId: string,
+  destination: ImportDestination,
+  userId: string
+): Promise<void> {
+  const { institutionId, importedBy } = importScopeQuery(destination, userId)
+
+  let query = supabase.from('marketplace_imports').delete().or(`listing_id.eq.${resourceId},resource_id.eq.${resourceId}`)
+  query = institutionId
+    ? query.eq('institution_id', institutionId)
+    : query.is('institution_id', null).eq('imported_by', importedBy!)
+
+  await query
+}
+
+async function recordMarketplaceImport(params: {
+  listingId?: string
+  resourceId?: string
+  institutionId: string | null
+  userId: string
+  targetType?: string
+  targetId?: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const row: Record<string, unknown> = {
+    institution_id: params.institutionId,
+    imported_by: params.userId,
+  }
+  if (params.listingId) row.listing_id = params.listingId
+  if (params.resourceId) row.resource_id = params.resourceId
+
+  const { error } = await supabase.from('marketplace_imports').insert(row)
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('marketplace_imports insert failed:', error.code, error.message)
+    }
+    if (params.targetType && params.targetId) {
+      const table = TARGET_TABLE[params.targetType]
+      if (table) await supabase.from(table).delete().eq('id', params.targetId)
+    }
+    if (error.code === '23505') {
+      return { ok: false, error: 'This resource is already in that library.' }
+    }
+    return { ok: false, error: 'We could not register this in your library. Try again in a moment.' }
+  }
+  return { ok: true }
+}
+
+export function moduleForMarketplaceResource(resource: Pick<MarketplaceResource, 'resource_type'>): ModuleKey {
+  return moduleForResourceType(resource.resource_type)
+}
+
+export function moduleForMarketplaceListingType(listingType: string): ModuleKey {
+  return moduleForListingType(listingType)
 }
 
 export async function importResource(
   resourceId: string,
   userId: string,
-  institutionId: string
+  destination: ImportDestination
 ): Promise<{ ok: true; targetType: string; targetId: string } | { ok: false; error: string }> {
+  const institutionId = destinationInstitutionId(destination)
   const { data: listingRow } = await supabase
     .from('marketplace_listings')
     .select('*')
@@ -389,22 +577,30 @@ export async function importResource(
   if (listingRow) {
     const listing = listingRow as MarketplaceListingRow
     if (!listing.is_free && (listing.price_ghs ?? 0) > 0) {
-      return { ok: false, error: 'Paid checkout coming soon. Free resources can be imported now.' }
+      return { ok: false, error: 'This is a paid resource. Use Buy with MoMo to add it to your library.' }
     }
 
-    const already = await hasImported(resourceId, institutionId)
-    if (already) return { ok: false, error: 'Your institution already imported this resource.' }
+    const already = await hasImported(resourceId, destination, userId)
+    if (already) {
+      const hasCopy = await importCopyExists(listing, institutionId, userId)
+      if (hasCopy) return { ok: false, error: 'This resource is already in that library.' }
+      await clearOrphanImportRecord(resourceId, destination, userId)
+    }
 
     const copied = await importFromListing(listing, userId, institutionId)
     if (!copied.ok) return copied
 
-    const now = new Date().toISOString()
-    await supabase.from('marketplace_imports').insert({
-      listing_id: listing.id,
-      institution_id: institutionId,
-      imported_by: userId,
+    const recorded = await recordMarketplaceImport({
+      listingId: listing.id,
+      resourceId: listing.resource_id,
+      institutionId,
+      userId,
+      targetType: copied.targetType,
+      targetId: copied.targetId,
     })
+    if (!recorded.ok) return recorded
 
+    const now = new Date().toISOString()
     await supabase
       .from('marketplace_listings')
       .update({
@@ -420,13 +616,19 @@ export async function importResource(
   if (!resource) return { ok: false, error: 'That resource is no longer available.' }
 
   if (!isFreeResource(resource)) {
-    return { ok: false, error: 'Paid checkout coming soon. Free resources can be imported now.' }
+    return { ok: false, error: 'This is a paid resource. Use Buy with MoMo to add it to your library.' }
   }
 
-  const already = await hasImported(resourceId, institutionId)
-  if (already) return { ok: false, error: 'Your institution already imported this resource.' }
+  const already = await hasImported(resourceId, destination, userId)
+  if (already) return { ok: false, error: 'This resource is already in that library.' }
 
-  const content = (resource.metadata?.content ?? {}) as Record<string, unknown>
+  const backingResourceId =
+    (resource.metadata?.backing_resource_id as string | undefined) ?? resourceId
+  let content = (resource.metadata?.content ?? {}) as Record<string, unknown>
+  if (Object.keys(content).length === 0) {
+    const catalog = await resolveCatalogPayload(backingResourceId)
+    if (catalog) content = catalog.content
+  }
   const now = new Date().toISOString()
 
   let targetType = ''
@@ -455,6 +657,12 @@ export async function importResource(
     targetType = 'quiz'
     targetId = data.id as string
   } else if (resource.resource_type === 'lesson_plan') {
+    const { data: linkedListing } = await supabase
+      .from('marketplace_listings')
+      .select('id')
+      .eq('resource_id', resourceId)
+      .maybeSingle()
+
     const { data, error } = await supabase
       .from('courses')
       .insert({
@@ -467,6 +675,7 @@ export async function importResource(
         modules: (content.modules as unknown[]) ?? [],
         thumbnail_color: (content.thumbnail_color as string) ?? '#1A8966',
         is_published: false,
+        marketplace_listing_id: linkedListing?.id ?? null,
         created_at: now,
         updated_at: now,
       })
@@ -523,11 +732,14 @@ export async function importResource(
     return { ok: false, error: 'This resource type cannot be imported yet.' }
   }
 
-  await supabase.from('marketplace_imports').insert({
-    resource_id: resourceId,
-    institution_id: institutionId,
-    imported_by: userId,
+  const recorded = await recordMarketplaceImport({
+    resourceId,
+    institutionId,
+    userId,
+    targetType,
+    targetId,
   })
+  if (!recorded.ok) return recorded
 
   await supabase
     .from('marketplace_resources')

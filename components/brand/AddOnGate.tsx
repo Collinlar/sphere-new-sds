@@ -8,6 +8,7 @@ import type { AddOnId } from '@/lib/types'
 const ADDON_LABELS: Record<AddOnId, string> = {
   ai_course_builder: 'AI Course Builder',
   ai_assessment_builder: 'AI Assessment Builder',
+  ai_engagement_builder: 'AI Engage Builder',
   ai_hints: 'AI Hints',
   ai_explanations: 'AI Explanations',
   ai_training_builder: 'AI Training Builder',

@@ -137,11 +137,12 @@ export default function OnboardingPage() {
 
   function handleTypeSelect(type: InstitutionTypeOption) {
     setSelectedType(type)
-    setSelectedModules(type.defaultModules)
+    setSelectedModules(['engage'])
     setStep(2)
   }
 
   function toggleModule(mod: ModuleKey) {
+    if (mod !== 'engage') return
     setSelectedModules(prev =>
       prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]
     )
@@ -212,7 +213,7 @@ export default function OnboardingPage() {
 
       await supabase.from('creation_usage').insert({
         user_id: authData.user.id,
-        assess_quota: 5,
+        assess_quota: 0,
         engage_quota: 5,
         learn_quota: 0,
         train_quota: 0,
@@ -530,17 +531,19 @@ export default function OnboardingPage() {
             Choose your modules
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24 }}>
-            Pre-selected for your institution type. Add or remove as needed.
+            Free membership includes Engage only. Assess, Learn, and Train unlock when you upgrade to Creator or Institution.
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
             {(['engage', 'assess', 'learn', 'train'] as ModuleKey[]).map(mod => {
               const active = selectedModules.includes(mod)
+              const locked = mod !== 'engage'
               const color = MODULE_COLORS[mod]
               return (
                 <button
                   key={mod}
                   onClick={() => toggleModule(mod)}
+                  disabled={locked}
                   style={{
                     background: 'var(--white)',
                     border: 'none',
@@ -550,11 +553,12 @@ export default function OnboardingPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    cursor: 'pointer',
+                    cursor: locked ? 'default' : 'pointer',
                     fontFamily: 'inherit',
                     textAlign: 'left',
                     boxShadow: active ? `0 0 0 1.5px ${color}` : 'var(--shadow-soft)',
                     transition: 'box-shadow 0.15s',
+                    opacity: locked ? 0.55 : 1,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -575,12 +579,12 @@ export default function OnboardingPage() {
                         {mod}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2 }}>
-                        {MODULE_DESCRIPTIONS[mod]}
+                        {locked ? 'Creator or Institution plan' : MODULE_DESCRIPTIONS[mod]}
                       </div>
                     </div>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: active ? color : 'var(--text-tertiary)', flexShrink: 0, marginLeft: 12 }}>
-                    GHS {MODULE_PRICES[mod]}/mo
+                  <div style={{ fontSize: 13, fontWeight: 600, color: locked ? 'var(--text-tertiary)' : active ? color : 'var(--text-tertiary)', flexShrink: 0, marginLeft: 12 }}>
+                    {locked ? 'Upgrade' : `GHS ${MODULE_PRICES[mod]}/mo`}
                   </div>
                 </button>
               )

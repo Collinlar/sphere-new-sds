@@ -26,9 +26,11 @@ interface Listing {
   is_free: boolean
   status: string
   commission_rate?: number
+  is_featured?: boolean
   created_at: string
   rejection_note?: string
-  creator_profiles?: { slug: string; users?: { name: string } }
+  creator_id?: string | null
+  users?: { name: string; email?: string } | null
 }
 
 interface Purchase {
@@ -36,13 +38,26 @@ interface Purchase {
   price_ghs: number
   commission_ghs: number
   purchased_at: string
-  marketplace_listings?: { title: string }
+  marketplace_listings?: { title: string } | null
   buyer_id?: string
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  course: 'Course', exam: 'Exam', quiz: 'Engage', guide: 'Guide',
-  notes: 'Notes', document: 'Document', training_path: 'Training path',
+  course: 'Course',
+  exam: 'Exam',
+  quiz: 'Engage',
+  guide: 'Guide',
+  notes: 'Notes',
+  document: 'Document',
+  training_path: 'Training path',
+}
+
+function isPendingListing(status: string) {
+  return status === 'pending_review' || status === 'pending'
+}
+
+function creatorName(listing: Listing) {
+  return listing.users?.name?.trim() || 'Unknown creator'
 }
 
 export default function MarketplacePage() {
@@ -51,16 +66,40 @@ export default function MarketplacePage() {
   const [listings, setListings] = useState<Listing[]>([])
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [actionMsg, setActionMsg] = useState('')
   const [listingFilter, setListingFilter] = useState('all')
 
   useEffect(() => {
     async function load() {
-      const [{ data: creatorData }, { data: listingData }, { data: purchaseData }] = await Promise.all([
+      setLoadError('')
+      const [
+        { data: creatorData, error: creatorError },
+        { data: listingData, error: listingError },
+        { data: purchaseData, error: purchaseError },
+      ] = await Promise.all([
         supabase.from('creator_profiles').select('*, users(name, email)').order('created_at', { ascending: false }),
-        supabase.from('marketplace_listings').select('*, creator_profiles(slug, users(name))').order('created_at', { ascending: false }),
-        supabase.from('marketplace_purchases').select('*, marketplace_listings(title)').order('created_at', { ascending: false }).limit(200),
+        // creator_id references users, not creator_profiles
+        supabase
+          .from('marketplace_listings')
+          .select('*, users!marketplace_listings_creator_id_fkey(name, email)')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('marketplace_purchases')
+          .select('*, marketplace_listings(title)')
+          .order('purchased_at', { ascending: false })
+          .limit(200),
       ])
+
+      if (creatorError || listingError || purchaseError) {
+        setLoadError(
+          listingError?.message
+          || creatorError?.message
+          || purchaseError?.message
+          || 'Could not load marketplace approvals.'
+        )
+      }
+
       setCreators((creatorData ?? []) as CreatorProfile[])
       setListings((listingData ?? []) as Listing[])
       setPurchases((purchaseData ?? []) as Purchase[])
@@ -99,15 +138,28 @@ export default function MarketplacePage() {
     flash('Listing delisted.')
   }
 
+  async function toggleFeatured(listingId: string, next: boolean) {
+    await supabase
+      .from('marketplace_listings')
+      .update({ is_featured: next, featured_at: next ? new Date().toISOString() : null })
+      .eq('id', listingId)
+    setListings(prev => prev.map(l => l.id === listingId ? { ...l, is_featured: next } : l))
+    flash(next ? 'Listing featured.' : 'Removed from featured.')
+  }
+
   function flash(msg: string) {
     setActionMsg(msg)
     setTimeout(() => setActionMsg(''), 3000)
   }
 
   const pendingCreators = creators.filter(c => !c.is_approved && !c.rejected_at)
-  const pendingListings = listings.filter(l => l.status === 'pending_review')
+  const pendingListings = listings.filter(l => isPendingListing(l.status))
 
-  const filteredListings = listingFilter === 'all' ? listings : listings.filter(l => l.status === listingFilter)
+  const filteredListings = listingFilter === 'all'
+    ? listings
+    : listingFilter === 'pending'
+      ? listings.filter(l => isPendingListing(l.status))
+      : listings.filter(l => l.status === listingFilter)
 
   const totalRevenue = purchases.reduce((s, p) => s + (p.commission_ghs ?? 0), 0)
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
@@ -123,7 +175,6 @@ export default function MarketplacePage() {
         {actionMsg && <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', background: 'var(--teal-light)', padding: '7px 14px', borderRadius: 20 }}>{actionMsg}</p>}
       </div>
 
-      {/* Tab bar */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
         {([
           { key: 'pending', label: `Pending (${pendingCreators.length + pendingListings.length})` },
@@ -140,12 +191,15 @@ export default function MarketplacePage() {
         ))}
       </div>
 
-      {loading && <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>Loading...</p>}
+      {loading && <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>Loading marketplace approvals...</p>}
+      {!loading && loadError && (
+        <div style={{ background: '#FDECEA', border: '0.5px solid #C23B2A', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: '#C23B2A', fontWeight: 500 }}>{loadError}</p>
+        </div>
+      )}
 
-      {/* PENDING TAB */}
       {!loading && tab === 'pending' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {/* Creator profiles */}
           {pendingCreators.length > 0 && (
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>
@@ -159,7 +213,6 @@ export default function MarketplacePage() {
             </div>
           )}
 
-          {/* Pending listings */}
           {pendingListings.length > 0 && (
             <div>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>
@@ -167,7 +220,7 @@ export default function MarketplacePage() {
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {pendingListings.map(listing => (
-                  <ListingCard key={listing.id} listing={listing} onApprove={() => approveListing(listing.id)} onReject={(note) => rejectListing(listing.id, note)} onDelist={() => delistListing(listing.id)} />
+                  <ListingCard key={listing.id} listing={listing} onApprove={() => approveListing(listing.id)} onReject={(note) => rejectListing(listing.id, note)} />
                 ))}
               </div>
             </div>
@@ -182,7 +235,6 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* ALL LISTINGS TAB */}
       {!loading && tab === 'listings' && (
         <div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -207,7 +259,15 @@ export default function MarketplacePage() {
               </thead>
               <tbody>
                 {filteredListings.map((listing, i) => {
-                  const statusColor: Record<string, string> = { approved: '#1A8966', pending: '#D97010', rejected: '#C23B2A', delisted: '#A09DA8' }
+                  const statusColor: Record<string, string> = {
+                    approved: '#1A8966',
+                    pending: '#D97010',
+                    pending_review: '#D97010',
+                    rejected: '#C23B2A',
+                    delisted: '#A09DA8',
+                    suspended: '#A09DA8',
+                    draft: '#A09DA8',
+                  }
                   const sc = statusColor[listing.status] ?? '#A09DA8'
                   return (
                     <tr key={listing.id} style={{ borderTop: i > 0 ? '0.5px solid var(--border)' : 'none' }}>
@@ -215,7 +275,7 @@ export default function MarketplacePage() {
                         <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{listing.title}</span>
                       </td>
                       <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--mid-grey)' }}>
-                        {(listing as { creator_profiles?: { slug: string; users?: { name: string } } }).creator_profiles?.users?.name ?? '—'}
+                        {creatorName(listing)}
                       </td>
                       <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--text-tertiary)' }}>{TYPE_LABEL[listing.resource_type] ?? listing.resource_type}</td>
                       <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 600, color: listing.is_free ? 'var(--teal)' : 'var(--near-black)' }}>
@@ -223,15 +283,28 @@ export default function MarketplacePage() {
                       </td>
                       <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--mid-grey)' }}>{listing.commission_rate ?? 15}%</td>
                       <td style={{ padding: '11px 14px' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: sc, background: `${sc}15`, padding: '3px 8px', borderRadius: 20 }}>{listing.status}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: sc, background: `${sc}15`, padding: '3px 8px', borderRadius: 20 }}>
+                          {isPendingListing(listing.status) ? 'pending review' : listing.status}
+                        </span>
                       </td>
                       <td style={{ padding: '11px 14px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          {listing.status === 'pending' && (
-                            <button onClick={() => approveListing(listing.id)} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--teal)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Approve</button>
+                          {isPendingListing(listing.status) && (
+                            <>
+                              <button onClick={() => approveListing(listing.id)} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--teal)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Approve</button>
+                              <button onClick={() => {
+                                const note = window.prompt('Rejection reason (optional)') ?? ''
+                                rejectListing(listing.id, note)
+                              }} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--coral-light)', color: 'var(--coral)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Reject</button>
+                            </>
                           )}
                           {listing.status === 'approved' && (
-                            <button onClick={() => delistListing(listing.id)} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--coral-light)', color: 'var(--coral)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Delist</button>
+                            <>
+                              <button onClick={() => toggleFeatured(listing.id, !listing.is_featured)} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: listing.is_featured ? '#E8A020' : 'var(--bg2)', color: listing.is_featured ? '#fff' : 'var(--mid-grey)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                {listing.is_featured ? '★ Featured' : 'Feature'}
+                              </button>
+                              <button onClick={() => delistListing(listing.id)} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--coral-light)', color: 'var(--coral)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Delist</button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -247,7 +320,6 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* REVENUE TAB */}
       {!loading && tab === 'revenue' && (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
@@ -279,7 +351,7 @@ export default function MarketplacePage() {
                 {purchases.map((p, i) => (
                   <tr key={p.id} style={{ borderTop: i > 0 ? '0.5px solid var(--border)' : 'none' }}>
                     <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--near-black)' }}>
-                      {(p as { marketplace_listings?: { title: string } }).marketplace_listings?.title ?? '—'}
+                      {p.marketplace_listings?.title ?? '—'}
                     </td>
                     <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>GH₵ {p.price_ghs}</td>
                     <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: 'var(--teal)' }}>GH₵ {p.commission_ghs}</td>
@@ -332,7 +404,7 @@ function CreatorApprovalCard({ creator, onApprove, onReject }: { creator: Creato
       {rejecting && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--border)' }}>
           <input
-            placeholder="Rejection reason (optional)..."
+            placeholder="Why are you rejecting this profile?"
             value={note}
             onChange={e => setNote(e.target.value)}
             style={{ width: '100%', height: 36, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 12px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }}
@@ -347,7 +419,7 @@ function CreatorApprovalCard({ creator, onApprove, onReject }: { creator: Creato
   )
 }
 
-function ListingCard({ listing, onApprove, onReject, onDelist }: { listing: Listing; onApprove: () => void; onReject: (note: string) => void; onDelist: () => void }) {
+function ListingCard({ listing, onApprove, onReject }: { listing: Listing; onApprove: () => void; onReject: (note: string) => void }) {
   const [rejecting, setRejecting] = useState(false)
   const [note, setNote] = useState('')
 
@@ -361,7 +433,7 @@ function ListingCard({ listing, onApprove, onReject, onDelist }: { listing: List
             {' · '}
             {listing.is_free ? 'Free' : `GH₵ ${listing.price_ghs}`}
             {' · '}
-            {(listing as { creator_profiles?: { slug: string } }).creator_profiles?.slug ?? 'unknown creator'}
+            {creatorName(listing)}
           </p>
           <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
             {new Date(listing.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
@@ -377,7 +449,7 @@ function ListingCard({ listing, onApprove, onReject, onDelist }: { listing: List
       {rejecting && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '0.5px solid var(--border)' }}>
           <input
-            placeholder="Rejection reason..."
+            placeholder="Why are you rejecting this listing?"
             value={note}
             onChange={e => setNote(e.target.value)}
             style={{ width: '100%', height: 34, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 12px', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }}

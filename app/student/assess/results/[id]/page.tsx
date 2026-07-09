@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState, use } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { ExamSubmission, Exam, ExamSession } from '@/lib/types'
 import { IconCheck, IconXCircle, IconInfo } from '@/components/icons'
 import { shouldOfferAccountSetup } from '@/lib/assess-account'
 import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
+import { issueCertificate } from '@/lib/certificates'
 
 const GRADE_COLORS: Record<string, { text: string; bg: string }> = {
   A: { text: 'var(--teal)', bg: 'var(--teal-light)' },
@@ -36,6 +38,7 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
   const [showAccountSetup, setShowAccountSetup] = useState(false)
   const [claimSending, setClaimSending] = useState(false)
   const [claimSent, setClaimSent] = useState(false)
+  const [certCode, setCertCode] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -65,6 +68,24 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
 
       const { data: authData } = await supabase.auth.getSession()
       setShowAccountSetup(shouldOfferAccountSetup(submissionData, examData, email, authData.session?.user?.id))
+
+      // Certificate: issued once, when this exam is configured to award one,
+      // the result is graded and passing, and the student has an account.
+      if (
+        examData?.issues_certificate &&
+        data.score != null &&
+        data.student_id &&
+        (submissionData.percentage ?? 0) >= (examData.certificate_pass_mark ?? 50)
+      ) {
+        const result = await issueCertificate({
+          recipientId: data.student_id,
+          issuerId: examData.creator_id ?? null,
+          resourceType: 'exam',
+          resourceId: examData.id,
+          resourceTitle: examData.title,
+        })
+        if (result.ok) setCertCode(result.verificationCode)
+      }
 
       setLoading(false)
     }
@@ -191,9 +212,18 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
   const gradeStyle = GRADE_COLORS[submission.grade ?? 'F'] ?? GRADE_COLORS.F
   const totalMarks = exam.questions.reduce((s, q) => s + q.marks, 0)
   const answeredCount = Object.keys(submission.answers ?? {}).filter((k) => (submission.answers[k] ?? '').trim() !== '').length
+  const isSelfServe = Boolean((session?.settings as Record<string, unknown> | undefined)?.self_serve)
+  const hasSubjective = exam.questions.some((q) => q.type === 'short' || q.type === 'essay')
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', maxWidth: 520, margin: '0 auto', paddingBottom: 48 }}>
+      {isSelfServe && (
+        <div style={{ padding: '12px 20px 0' }}>
+          <Link href="/platform/library" style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', textDecoration: 'none' }}>
+            Back to library
+          </Link>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ background: 'var(--navy)', padding: '22px 22px 20px' }}>
@@ -252,6 +282,31 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
                 </div>
               </div>
             </div>
+
+            {isSelfServe && hasSubjective && (
+              <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 14 }}>
+                Your score covers multiple choice and true or false questions only. Review written answers against the marking guide in the resource.
+              </p>
+            )}
+
+            {certCode && (
+              <div style={{ background: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)', borderRadius: 14, padding: '18px 20px', marginBottom: 14, color: '#fff' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.7)', marginBottom: 6 }}>
+                  Certificate earned
+                </p>
+                <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 10, lineHeight: 1.4 }}>
+                  You passed {exam?.title}. Your certificate is verifiable at any time.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, background: 'rgba(255,255,255,0.15)', padding: '4px 10px', borderRadius: 6, letterSpacing: '0.05em' }}>
+                    {certCode}
+                  </span>
+                  <a href={`/verify/${certCode}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'underline' }}>
+                    View and verify
+                  </a>
+                </div>
+              </div>
+            )}
 
             {submission.feedback && (
               <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 12, padding: '18px 20px', marginBottom: 14 }}>

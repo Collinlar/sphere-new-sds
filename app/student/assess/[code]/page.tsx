@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { scoreObjectiveQuestions } from '@/lib/exam-scoring'
 import type { Exam, ExamSession, ExamQuestion } from '@/lib/types'
 import { IconFlag, IconInfo, IconCheck } from '@/components/icons'
 
@@ -13,11 +14,22 @@ type FlagType = 'tab_switch' | 'window_blur' | 'copy_detected' | 'right_click'
 interface IntegrityFlag { type: FlagType; at: string; count: number }
 
 export default function StudentExam() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--mid-grey)', fontSize: 14 }}>Loading your exam...</div>}>
+      <StudentExamInner />
+    </Suspense>
+  )
+}
+
+function StudentExamInner() {
   const { code } = useParams<{ code: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isSelfTake = searchParams.get('self') === '1'
+  const resumeSubmissionId = searchParams.get('resume')
   const [phase, setPhase] = useState<ExamPhase>('join')
   const [name, setName] = useState('')
-  const [, setSession] = useState<ExamSession | null>(null)
+  const [session, setSession] = useState<ExamSession | null>(null)
   const [exam, setExam] = useState<Exam | null>(null)
   const [submissionId, setSubmissionId] = useState<string | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
@@ -32,6 +44,7 @@ export default function StudentExam() {
   const submissionIdRef = useRef<string | null>(null)
   const phaseRef = useRef<ExamPhase>('join')
   const flagCountRef = useRef(0)
+  const selfServeRef = useRef(false)
 
   interface TicketInfo { id: string; user_id: string; exam_session_id: string; redeemed_at: string | null; name: string }
   const [ticket, setTicket] = useState<TicketInfo | null>(null)
@@ -64,6 +77,100 @@ export default function StudentExam() {
     checkTicket()
   }, [code])
 
+  useEffect(() => {
+    if (!isSelfTake || checkingTicket || ticket) return
+
+    let cancelled = false
+
+    async function autoJoinSelfTake() {
+      setJoining(true)
+      setError(null)
+      const user = getCurrentUser()
+
+      const { data: sessionData } = await supabase
+        .from('exam_sessions')
+        .select('*, exams(*)')
+        .eq('join_code', code.toUpperCase())
+        .eq('status', 'active')
+        .maybeSingle()
+
+      if (!sessionData) {
+        if (!cancelled) {
+          setError('This assessment is not active right now.')
+          setJoining(false)
+        }
+        return
+      }
+
+      const settings = (sessionData.settings ?? {}) as Record<string, unknown>
+      if (!settings.self_serve || settings.owner_id !== user.id) {
+        if (!cancelled) {
+          setError('This self-take link is not valid for your account.')
+          setJoining(false)
+        }
+        return
+      }
+
+      selfServeRef.current = true
+      const examData = (sessionData as { exams: Exam }).exams
+      setSession(sessionData as ExamSession)
+      setExam(examData)
+      setName(user.name)
+
+      if (resumeSubmissionId) {
+        const { data: existingSub } = await supabase
+          .from('exam_submissions')
+          .select('id, answers')
+          .eq('id', resumeSubmissionId)
+          .eq('student_id', user.id)
+          .is('submitted_at', null)
+          .maybeSingle()
+
+        if (existingSub) {
+          setSubmissionId(existingSub.id as string)
+          setAnswers((existingSub.answers as Record<string, string>) ?? {})
+          setTimeLeft(examData.duration_minutes * 60)
+          setJoining(false)
+          setPhase('instructions')
+          return
+        }
+      }
+
+      const { data: sub, error: subErr } = await supabase
+        .from('exam_submissions')
+        .insert({
+          exam_session_id: sessionData.id,
+          student_name: user.name,
+          student_id: user.id,
+          answers: {},
+          integrity_flags: [],
+          started_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (subErr || !sub) {
+        if (!cancelled) {
+          setError('Could not start the assessment. Try again in a moment.')
+          setJoining(false)
+        }
+        return
+      }
+
+      if (!cancelled) {
+        setSubmissionId(sub.id as string)
+        setTimeLeft(examData.duration_minutes * 60)
+        setJoining(false)
+        setPhase('instructions')
+      }
+    }
+
+    autoJoinSelfTake()
+    return () => {
+      cancelled = true
+    }
+  }, [isSelfTake, checkingTicket, ticket, code, resumeSubmissionId])
+
   // Poll for teacher force-submit: if submitted_at appears externally, transition to done
   useEffect(() => {
     if (phase !== 'exam' || !submissionId) return
@@ -83,7 +190,7 @@ export default function StudentExam() {
   }, [phase, submissionId, router])
 
   const recordFlag = useCallback(async (type: FlagType) => {
-    if (phaseRef.current !== 'exam') return
+    if (phaseRef.current !== 'exam' || selfServeRef.current) return
     const sid = submissionIdRef.current
     if (!sid || !exam) return
 
@@ -156,15 +263,31 @@ export default function StudentExam() {
   const handleSubmit = useCallback(async () => {
     if (submitting || !submissionId) return
     setSubmitting(true)
-    await supabase.from('exam_submissions').update({
-      answers,
-      submitted_at: new Date().toISOString(),
-    }).eq('id', submissionId)
+    const submittedAt = new Date().toISOString()
+
+    if (selfServeRef.current && exam) {
+      const scored = scoreObjectiveQuestions(exam, answers)
+      await supabase.from('exam_submissions').update({
+        answers,
+        submitted_at: submittedAt,
+        score: scored.score,
+        percentage: scored.percentage,
+        grade: scored.grade,
+      }).eq('id', submissionId)
+      if (session?.id) {
+        await supabase.from('exam_sessions').update({ status: 'completed' }).eq('id', session.id)
+      }
+    } else {
+      await supabase.from('exam_submissions').update({
+        answers,
+        submitted_at: submittedAt,
+      }).eq('id', submissionId)
+    }
+
     setSubmitting(false)
     setPhase('done')
-    // Navigate to results page after a short delay so student sees confirmation first
     setTimeout(() => router.push(`/student/assess/results/${submissionId}`), 2500)
-  }, [submitting, submissionId, answers])
+  }, [submitting, submissionId, answers, exam, session, router])
 
   async function handleJoin() {
     setJoining(true)
@@ -354,6 +477,18 @@ export default function StudentExam() {
         </div>
       )}
 
+      {phase === 'join' && !checkingTicket && isSelfTake && joining && (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <p style={{ fontSize: 14, color: '#6B6870' }}>Starting your assessment...</p>
+        </div>
+      )}
+
+      {phase === 'join' && !checkingTicket && isSelfTake && error && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12, textAlign: 'center' }}>
+          <p style={{ fontSize: 14, color: '#C23B2A', lineHeight: 1.5 }}>{error}</p>
+        </div>
+      )}
+
       {phase === 'join' && !checkingTicket && ticketUsed && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12, textAlign: 'center' }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#18171A' }}>This ticket has already been used</h1>
@@ -361,7 +496,7 @@ export default function StudentExam() {
         </div>
       )}
 
-      {phase === 'join' && !checkingTicket && !ticketUsed && (
+      {phase === 'join' && !checkingTicket && !ticketUsed && !isSelfTake && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
           <p style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#6B6870' }}>
             Exam code: {code?.toUpperCase()}

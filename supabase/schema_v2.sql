@@ -69,7 +69,7 @@ INSERT INTO subscription_plans (
   can_sell_marketplace, marketplace_commission_rate, can_issue_certificates
 ) VALUES
   ('membership', 'Membership', 0, null,
-    5, 5, 0, 0, null,
+    0, 5, 0, 0, null,
     5, null,
     false, 0, false),
   ('creator_quarterly', 'Creator — Quarterly', 300, 'quarterly',
@@ -240,9 +240,10 @@ CREATE TABLE IF NOT EXISTS add_ons (
 INSERT INTO add_ons (id, name, description, price_ghs, eligible_plans) VALUES
   ('ai_course_builder',    'AI Course Builder',    'Generate a full course outline, modules, and content from a topic prompt.', 150, ARRAY['creator_quarterly','creator_marketplace','institution']),
   ('ai_assessment_builder','AI Assessment Builder','Generate exams and question sets from a topic, syllabus, or document.',     100, ARRAY['creator_quarterly','creator_marketplace','institution']),
+  ('ai_engagement_builder','AI Engagement Builder','Generate a full live quiz game from a topic prompt.',                       100, ARRAY['creator_quarterly','creator_marketplace','institution']),
   ('ai_hints',             'AI Hints',             'Auto-generate contextual hints for exam and quiz questions.',                 50,  ARRAY['creator_quarterly','creator_marketplace','institution']),
   ('ai_explanations',      'AI Explanations',      'Auto-generate answer explanations shown to students after submission.',      50,  ARRAY['creator_quarterly','creator_marketplace','institution']),
-  ('ai_training_builder',  'AI Training Builder',  'Generate structured training paths and step content from a brief.',         null, ARRAY['creator_quarterly','creator_marketplace','institution'])
+  ('ai_training_builder',  'AI Training Builder',  'Generate structured training paths and step content from a brief.',         150, ARRAY['creator_quarterly','creator_marketplace','institution'])
 ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS user_add_ons (

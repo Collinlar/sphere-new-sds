@@ -5,7 +5,7 @@ import Link from 'next/link'
 import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import type { Exam, ExamSession } from '@/lib/types'
-import { getCurrentUser } from '@/lib/auth'
+import { getContentInstitutionId } from '@/lib/context'
 import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -38,11 +38,14 @@ export default function AssessDashboard() {
 
   useEffect(() => {
     async function load() {
-      const { data, error } = await supabase
+      const institutionId = getContentInstitutionId()
+      let query = supabase
         .from('exams')
         .select('*, exam_sessions(*, exam_submissions(count))')
-        .eq('institution_id', getCurrentUser().institution_id)
-        .order('created_at', { ascending: false })
+      query = institutionId
+        ? query.eq('institution_id', institutionId)
+        : query.is('institution_id', null)
+      const { data, error } = await query.order('created_at', { ascending: false })
 
       if (error) {
         setError('Could not reach your exam records. Try refreshing the page.')

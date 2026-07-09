@@ -12,6 +12,7 @@ export interface CheckoutPayload {
   addOnId?: string
   listingId?: string
   institutionId?: string
+  importDestinationKind?: 'personal' | 'institution'
   inquiryId?: string
 }
 
@@ -63,6 +64,7 @@ export async function generateWithAi(params: {
   task:
     | 'assessment_questions'
     | 'course_modules'
+    | 'engage_questions'
     | 'training_steps'
     | 'question_hint'
     | 'question_explanation'

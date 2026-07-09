@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
+import { getContentInstitutionId } from '@/lib/context'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
 import AddOnGate from '@/components/brand/AddOnGate'
@@ -13,6 +14,14 @@ import { useInstitutionLevels } from '@/lib/use-institution-levels'
 import { generateWithAi } from '@/lib/checkout-client'
 import { Suspense } from 'react'
 import type { Roster } from '@/lib/types'
+import AiCourseBuilderModal from '@/components/brand/AiCourseBuilderModal'
+import {
+  configToCourseApiContext,
+  loadingMessageForCourseConfig,
+  normalizeGeneratedModules,
+  type CourseAiConfig,
+  type GeneratedCourseModule,
+} from '@/lib/ai-course-generation'
 
 const THUMBNAIL_COLORS = ['#1A8966', '#2E2886', '#D97010', '#C23B2A', '#1052A3', '#18171A']
 const MODULE_TYPES = [
@@ -173,6 +182,8 @@ function CourseBuilderInner() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [aiLoadingMessage, setAiLoadingMessage] = useState('')
   const [loading, setLoading] = useState(!!editId)
   const [error, setError] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -182,12 +193,12 @@ function CourseBuilderInner() {
   const [rosterGroups, setRosterGroups] = useState<string[]>([])
 
   useEffect(() => {
-    supabase
-      .from('rosters')
-      .select('*')
-      .eq('institution_id', getCurrentUser().institution_id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setRosters(data ?? []))
+    const institutionId = getContentInstitutionId()
+    let query = supabase.from('rosters').select('*')
+    query = institutionId
+      ? query.eq('institution_id', institutionId)
+      : query.is('institution_id', null)
+    query.order('created_at', { ascending: false }).then(({ data }) => setRosters(data ?? []))
   }, [])
 
   useEffect(() => {
@@ -255,6 +266,49 @@ function CourseBuilderInner() {
     setModules(prev => { const n = [...prev]; const [m] = n.splice(from, 1); n.splice(to, 0, m); return n })
   }
 
+  async function handleAiGenerate(config: CourseAiConfig) {
+    setAiLoading(true)
+    setAiLoadingMessage(loadingMessageForCourseConfig(config))
+
+    try {
+      const result = await generateWithAi({
+        addOnId: 'ai_course_builder',
+        task: 'course_modules',
+        prompt: config.topic.trim(),
+        context: configToCourseApiContext(config),
+      })
+
+      if (!result.ok) {
+        throw new Error(result.error)
+      }
+
+      const generated = normalizeGeneratedModules(
+        (result.data.modules as GeneratedCourseModule[] | undefined) ?? [],
+        config.typeMix
+      )
+
+      if (generated.length === 0) {
+        throw new Error('No modules came back. Try a more specific topic or adjust your mix.')
+      }
+
+      if (config.subject && config.subject !== subject) setSubject(config.subject)
+      if (config.gradeLevel && config.gradeLevel !== grade) setGrade(config.gradeLevel)
+      if (!title.trim()) setTitle(config.topic.trim())
+
+      if (config.replaceMode === 'append') {
+        setModules(prev => [...prev, ...(generated as Module[])])
+      } else {
+        setModules(generated as Module[])
+      }
+
+      if (generated[0]?.id) setExpandedModule(generated[0].id)
+      setAiModalOpen(false)
+    } finally {
+      setAiLoading(false)
+      setAiLoadingMessage('')
+    }
+  }
+
   function openPreview() {
     const previewData = {
       id: editId ?? 'preview',
@@ -278,7 +332,7 @@ function CourseBuilderInner() {
     setSaving(true); setError('')
 
     const payload = {
-      institution_id: getCurrentUser().institution_id,
+      institution_id: getContentInstitutionId(),
       creator_id: getCurrentUser().id,
       title, subject, grade_level: grade, description,
       thumbnail_color: thumbnailColor,
@@ -309,6 +363,17 @@ function CourseBuilderInner() {
     <CreationGate module="learn">
       {({ check }) => (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)' }}>
+      <AiCourseBuilderModal
+        open={aiModalOpen}
+        onClose={() => { if (!aiLoading) setAiModalOpen(false) }}
+        onSubmit={handleAiGenerate}
+        loading={aiLoading}
+        loadingMessage={aiLoadingMessage}
+        subject={subject}
+        gradeLevel={grade}
+        gradeLevels={gradeLevels}
+        hasExistingModules={modules.length > 0}
+      />
       <TopBar
         mode="learn"
         title={editId ? 'Edit course' : 'Course builder'}
@@ -316,39 +381,15 @@ function CourseBuilderInner() {
           <div style={{ display: 'flex', gap: 8 }}>
             <AddOnGate addOnId="ai_course_builder">
               {({ check: checkAddOn }) => (
-                <Button variant="secondary" size="sm" disabled={aiLoading} onClick={async () => {
-                  if (!(await checkAddOn())) return
-                  const topic = window.prompt('What should this course cover?')
-                  if (!topic?.trim()) return
-                  setAiLoading(true)
-                  const result = await generateWithAi({
-                    addOnId: 'ai_course_builder',
-                    task: 'course_modules',
-                    prompt: topic.trim(),
-                    context: { subject, gradeLevel: grade, count: 4 },
-                  })
-                  setAiLoading(false)
-                  if (!result.ok) {
-                    window.alert(result.error)
-                    return
-                  }
-                  const generated = (result.data.modules as Module[] | undefined) ?? []
-                  if (generated.length === 0) {
-                    window.alert('No modules came back. Try a clearer topic.')
-                    return
-                  }
-                  setModules(
-                    generated.map((m, index) => ({
-                      ...emptyModule(),
-                      ...m,
-                      id: m.id || `m-${Date.now()}-${index}`,
-                      type: (m.type ?? 'reading') as ModuleType,
-                      is_mandatory: m.is_mandatory ?? true,
-                      duration_minutes: m.duration_minutes ?? 10,
-                      content: m.content ?? {},
-                    }))
-                  )
-                }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={aiLoading}
+                  onClick={async () => {
+                    if (!(await checkAddOn())) return
+                    setAiModalOpen(true)
+                  }}
+                >
                   {aiLoading ? 'Drafting modules...' : 'Generate with AI'}
                 </Button>
               )}

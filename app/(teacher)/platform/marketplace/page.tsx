@@ -6,7 +6,9 @@ import TopBar from '@/components/brand/TopBar'
 import { IconSearch, IconDocument, IconPlay, IconUser } from '@/components/icons'
 import {
   fetchResources,
+  fetchAllImportedResourceIds,
   getViewerLevelType,
+  moduleForMarketplaceResource,
   FILTER_CHIPS,
   formatPrice,
   isFreeResource,
@@ -14,6 +16,9 @@ import {
   type MarketplaceResource,
 } from '@/lib/marketplace'
 import { usePlanContext } from '@/lib/use-plan-context'
+import { getMarketplaceCreatorEligibility, type CreatorEligibility } from '@/lib/creator-eligibility'
+import { getCurrentUser } from '@/lib/auth'
+import { LIBRARY_TAB_FOR_MODULE } from '@/lib/library-scope'
 
 const ACCENT_GRADIENTS: Record<string, string> = {
   teal: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)',
@@ -57,7 +62,7 @@ function RatingDisplay({ avg, count }: { avg: number; count: number }) {
   )
 }
 
-function FeaturedCard({ resource }: { resource: MarketplaceResource }) {
+function FeaturedCard({ resource, imported }: { resource: MarketplaceResource; imported: boolean }) {
   const free = isFreeResource(resource)
   const typeLabel = resource.resource_type === 'engage_game'
     ? 'Engage'
@@ -65,14 +70,18 @@ function FeaturedCard({ resource }: { resource: MarketplaceResource }) {
       ? 'Train'
       : resource.subject ?? getResourceTypeLabel(resource.resource_type)
 
+  const libraryTab = LIBRARY_TAB_FOR_MODULE[moduleForMarketplaceResource(resource)]
+  const href = imported ? `/platform/library?tab=${libraryTab}` : `/platform/marketplace/${resource.id}`
+
   return (
-    <Link href={`/platform/marketplace/${resource.id}`} style={{ textDecoration: 'none' }}>
+    <Link href={href} style={{ textDecoration: 'none' }}>
       <div style={{
         background: 'var(--white)',
         borderRadius: 12,
         overflow: 'hidden',
         boxShadow: 'var(--shadow-soft)',
         height: '100%',
+        opacity: imported ? 0.72 : 1,
       }}>
         <ResourceThumb resource={resource} />
         <div style={{ padding: 12 }}>
@@ -108,10 +117,10 @@ function FeaturedCard({ resource }: { resource: MarketplaceResource }) {
               alignItems: 'center',
               fontSize: 11,
               fontWeight: 600,
-              background: free ? 'var(--teal-light)' : 'var(--amber-light)',
-              color: free ? 'var(--teal)' : 'var(--amber)',
+              background: imported ? 'var(--bg2)' : free ? 'var(--teal-light)' : 'var(--amber-light)',
+              color: imported ? 'var(--mid-grey)' : free ? 'var(--teal)' : 'var(--amber)',
             }}>
-              {free ? 'Import' : 'Buy'}
+              {imported ? 'In your library' : free ? 'Import' : 'Buy'}
             </span>
           </div>
         </div>
@@ -120,8 +129,10 @@ function FeaturedCard({ resource }: { resource: MarketplaceResource }) {
   )
 }
 
-function ListRow({ resource }: { resource: MarketplaceResource }) {
+function ListRow({ resource, imported }: { resource: MarketplaceResource; imported: boolean }) {
   const free = isFreeResource(resource)
+  const libraryTab = LIBRARY_TAB_FOR_MODULE[moduleForMarketplaceResource(resource)]
+  const href = imported ? `/platform/library?tab=${libraryTab}` : `/platform/marketplace/${resource.id}`
   const meta = resource.metadata?.stats
   const detail = [
     meta?.questions ? `${meta.questions} questions` : null,
@@ -131,7 +142,7 @@ function ListRow({ resource }: { resource: MarketplaceResource }) {
   ].filter(Boolean).join(' · ')
 
   return (
-    <Link href={`/platform/marketplace/${resource.id}`} style={{ textDecoration: 'none' }}>
+    <Link href={href} style={{ textDecoration: 'none' }}>
       <div style={{
         background: 'var(--white)',
         borderRadius: 10,
@@ -140,6 +151,7 @@ function ListRow({ resource }: { resource: MarketplaceResource }) {
         display: 'flex',
         alignItems: 'center',
         gap: 12,
+        opacity: imported ? 0.72 : 1,
       }}>
         <div style={{
           width: 40,
@@ -159,8 +171,8 @@ function ListRow({ resource }: { resource: MarketplaceResource }) {
           </p>
           <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{detail}</p>
         </div>
-        <p style={{ fontSize: 13, fontWeight: 700, color: free ? 'var(--teal)' : 'var(--amber)', flexShrink: 0 }}>
-          {formatPrice(resource.price_ghs)}
+        <p style={{ fontSize: 13, fontWeight: 700, color: imported ? 'var(--mid-grey)' : free ? 'var(--teal)' : 'var(--amber)', flexShrink: 0 }}>
+          {imported ? 'In library' : formatPrice(resource.price_ghs)}
         </p>
       </div>
     </Link>
@@ -175,9 +187,13 @@ export default function MarketplacePage() {
   const { canSellMarketplace, isSphereStaff } = usePlanContext()
 
   const [viewerLevelType, setViewerLevelType] = useState<string | null>(null)
+  const [eligibility, setEligibility] = useState<CreatorEligibility | null>(null)
+  const [importedIds, setImportedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     getViewerLevelType().then(setViewerLevelType)
+    getMarketplaceCreatorEligibility(getCurrentUser().id).then(setEligibility)
+    fetchAllImportedResourceIds(getCurrentUser().id).then(setImportedIds)
   }, [])
 
   useEffect(() => {
@@ -197,14 +213,20 @@ export default function MarketplacePage() {
     return () => clearTimeout(timer)
   }, [search, activeChip, viewerLevelType])
 
+  function sortImportedLast(items: MarketplaceResource[]) {
+    const fresh = items.filter((r) => !importedIds.has(r.id))
+    const owned = items.filter((r) => importedIds.has(r.id))
+    return [...fresh, ...owned]
+  }
+
   const featured = useMemo(
-    () => resources.filter((r) => r.metadata?.featured).slice(0, 3),
-    [resources]
+    () => sortImportedLast(resources.filter((r) => r.metadata?.featured)).slice(0, 3),
+    [resources, importedIds]
   )
 
   const recent = useMemo(
-    () => resources.filter((r) => !r.metadata?.featured).slice(0, 6),
-    [resources]
+    () => sortImportedLast(resources.filter((r) => !r.metadata?.featured)).slice(0, 6),
+    [resources, importedIds]
   )
 
   return (
@@ -329,6 +351,38 @@ export default function MarketplacePage() {
           })}
         </div>
 
+        {eligibility && eligibility.status !== 'ok' && eligibility.status !== 'not_marketplace' && (
+          <div style={{
+            margin: '14px 20px 0',
+            background: eligibility.status === 'lapsed' ? '#FDECEA' : '#FEF0DC',
+            border: `1px solid ${eligibility.status === 'lapsed' ? '#C23B2A' : '#E8A020'}`,
+            borderRadius: 10, padding: '12px 16px',
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: eligibility.status === 'lapsed' ? '#C23B2A' : '#9A5800' }}>
+                {eligibility.status === 'lapsed'
+                  ? `Your marketplace creator standing has lapsed`
+                  : `${eligibility.shortfall} more listing${eligibility.shortfall === 1 ? '' : 's'} needed this cycle`}
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2, lineHeight: 1.5 }}>
+                Marketplace creators publish at least {eligibility.required} resources every {eligibility.windowDays} days. You have {eligibility.creations} so far.
+                {eligibility.status === 'lapsed'
+                  ? ' Publish more to restore your standing, or switch to Creator Quarterly.'
+                  : ` Keep publishing to stay active.`}
+              </p>
+            </div>
+            <Link href="/platform/settings/billing" style={{
+              height: 34, padding: '0 14px', borderRadius: 7, flexShrink: 0,
+              background: eligibility.status === 'lapsed' ? '#C23B2A' : 'var(--near-black)',
+              color: '#fff', fontSize: 12, fontWeight: 600, textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center',
+            }}>
+              View plans
+            </Link>
+          </div>
+        )}
+
         <div style={{ padding: '18px 20px 28px' }}>
           {loading ? (
             <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>Scanning marketplace listings...</p>
@@ -348,7 +402,7 @@ export default function MarketplacePage() {
                     marginBottom: 22,
                   }}>
                     {featured.map((r) => (
-                      <FeaturedCard key={r.id} resource={r} />
+                      <FeaturedCard key={r.id} resource={r} imported={importedIds.has(r.id)} />
                     ))}
                   </div>
                 </>
@@ -363,8 +417,8 @@ export default function MarketplacePage() {
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {(recent.length > 0 ? recent : resources).map((r) => (
-                  <ListRow key={r.id} resource={r} />
+                {(recent.length > 0 ? recent : sortImportedLast(resources)).map((r) => (
+                  <ListRow key={r.id} resource={r} imported={importedIds.has(r.id)} />
                 ))}
               </div>
             </>

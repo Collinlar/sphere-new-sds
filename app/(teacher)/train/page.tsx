@@ -6,7 +6,8 @@ import { LearningPath } from '@/lib/types'
 import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import Link from 'next/link'
-import { getCurrentUser } from '@/lib/auth'
+import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
+import { getContentInstitutionId } from '@/lib/context'
 import { fetchPathStats, normalizeSteps, type PathStats } from '@/lib/train-paths'
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
@@ -33,17 +34,20 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 export default function TrainPage() {
-  const [paths, setPaths] = useState<(LearningPath & { steps: LearningPath['steps'] })[]>([])
+  const [paths, setPaths] = useState<(LearningPath & { steps: LearningPath['steps']; marketplace_listing_id?: string | null })[]>([])
   const [pathStats, setPathStats] = useState<Record<string, PathStats>>({})
   const [loading, setLoading] = useState(true)
+  const [publishingPath, setPublishingPath] = useState<(LearningPath & { marketplace_listing_id?: string | null }) | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     async function load() {
-      const { data, error } = await supabase
-        .from('learning_paths')
-        .select('*')
-        .eq('institution_id', getCurrentUser().institution_id)
-        .order('created_at', { ascending: false })
+      const institutionId = getContentInstitutionId()
+      let query = supabase.from('learning_paths').select('*')
+      query = institutionId
+        ? query.eq('institution_id', institutionId)
+        : query.is('institution_id', null)
+      const { data, error } = await query.order('created_at', { ascending: false })
 
       if (!error && data) {
         const normalized = data.map(p => ({ ...p, steps: normalizeSteps(p.steps) }))
@@ -54,7 +58,7 @@ export default function TrainPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [reloadKey])
 
   const totalEnrolled = Object.values(pathStats).reduce((sum, s) => sum + s.assigned, 0)
   const avgCompletion = totalEnrolled > 0
@@ -153,6 +157,21 @@ export default function TrainPage() {
                         <Link href={`/train/builder?id=${path.id}`}>
                           <Button variant="secondary" size="sm">Edit path</Button>
                         </Link>
+                        {path.steps.length > 0 && (
+                          <button
+                            onClick={() => setPublishingPath(path)}
+                            style={{
+                              height: 32, padding: '0 12px', borderRadius: 7, border: 'none',
+                              background: path.marketplace_listing_id ? '#DDFAF0' : 'var(--white)',
+                              boxShadow: path.marketplace_listing_id ? 'none' : 'var(--shadow-soft)',
+                              fontSize: 12, fontWeight: 600,
+                              color: path.marketplace_listing_id ? '#1A8966' : 'var(--near-black)',
+                              cursor: 'pointer', fontFamily: 'inherit',
+                            }}
+                          >
+                            {path.marketplace_listing_id ? 'On marketplace' : 'Marketplace'}
+                          </button>
+                        )}
                         <Link href={`/train/team/${path.id}`}>
                           <Button accent="#1052A3" size="sm">View team progress</Button>
                         </Link>
@@ -165,6 +184,22 @@ export default function TrainPage() {
           </>
         )}
       </div>
+
+      {publishingPath && (
+        <PublishToMarketplaceModal
+          open={!!publishingPath}
+          onClose={() => setPublishingPath(null)}
+          onPublished={() => {
+            setPublishingPath(null)
+            setReloadKey(k => k + 1)
+          }}
+          resourceType="training_path"
+          resourceId={publishingPath.id}
+          defaultTitle={publishingPath.title}
+          defaultDescription={publishingPath.description}
+          defaultSubject={publishingPath.category}
+        />
+      )}
     </div>
   )
 }

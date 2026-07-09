@@ -8,6 +8,7 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import StepContentFields from '@/components/train/StepContentFields'
 import { getCurrentUser } from '@/lib/auth'
+import { getContentInstitutionId } from '@/lib/context'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
 import AddOnGate from '@/components/brand/AddOnGate'
@@ -21,6 +22,13 @@ import {
   type TrainStepType,
 } from '@/lib/train-paths'
 import { generateWithAi } from '@/lib/checkout-client'
+import AiTrainingBuilderModal from '@/components/brand/AiTrainingBuilderModal'
+import {
+  configToTrainingApiContext,
+  loadingMessageForTrainingConfig,
+  normalizeGeneratedTrainingSteps,
+  type TrainingAiConfig,
+} from '@/lib/ai-training-generation'
 
 const STEP_TYPES = [
   { type: 'video' as const, label: 'Video' },
@@ -67,6 +75,8 @@ function TrainBuilderInner() {
   const [assignedDepts, setAssignedDepts] = useState<string[]>(['All staff'])
   const [saving, setSaving] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [aiLoadingMessage, setAiLoadingMessage] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState('')
 
@@ -159,7 +169,7 @@ function TrainBuilderInner() {
     setError('')
 
     const payload = {
-      institution_id: getCurrentUser().institution_id,
+      institution_id: getContentInstitutionId(),
       creator_id: getCurrentUser().id,
       title: title.trim(),
       description,
@@ -191,7 +201,10 @@ function TrainBuilderInner() {
     }
 
     if (publish && savedId) {
-      await syncPathEnrollments(savedId, getCurrentUser().institution_id, assignedDepts)
+      const institutionId = getContentInstitutionId()
+      if (institutionId) {
+        await syncPathEnrollments(savedId, institutionId, assignedDepts)
+      }
     }
 
     setter(false)
@@ -207,6 +220,38 @@ function TrainBuilderInner() {
     )
   }
 
+
+  async function handleAiGenerate(config: TrainingAiConfig) {
+    setAiLoading(true)
+    setAiLoadingMessage(loadingMessageForTrainingConfig(config))
+    try {
+      const result = await generateWithAi({
+        addOnId: 'ai_training_builder',
+        task: 'training_steps',
+        prompt: config.topic.trim(),
+        context: configToTrainingApiContext(config),
+      })
+      if (!result.ok) throw new Error(result.error)
+      const generated = normalizeGeneratedTrainingSteps(
+        (result.data.steps as PathStep[] | undefined) ?? []
+      )
+      if (generated.length === 0) {
+        throw new Error('No steps came back. Try a clearer brief or adjust your mix.')
+      }
+      if (config.category && config.category !== category) setCategory(config.category)
+      if (!title.trim()) setTitle(config.topic.trim())
+      if (config.replaceMode === 'append') {
+        setSteps(prev => [...prev, ...generated])
+      } else {
+        setSteps(generated)
+      }
+      setAiModalOpen(false)
+    } finally {
+      setAiLoading(false)
+      setAiLoadingMessage('')
+    }
+  }
+
   return (
     <CreationGate module="train">
       {({ check }) => (
@@ -220,31 +265,21 @@ function TrainBuilderInner() {
               {({ check: checkAddOn }) => (
                 <Button variant="secondary" size="sm" disabled={aiLoading} onClick={async () => {
                   if (!(await checkAddOn())) return
-                  const brief = window.prompt('Describe the training path you need')
-                  if (!brief?.trim()) return
-                  setAiLoading(true)
-                  const result = await generateWithAi({
-                    addOnId: 'ai_training_builder',
-                    task: 'training_steps',
-                    prompt: brief.trim(),
-                    context: { category, count: 5 },
-                  })
-                  setAiLoading(false)
-                  if (!result.ok) {
-                    window.alert(result.error)
-                    return
-                  }
-                  const generated = normalizeSteps((result.data.steps as unknown[]) ?? [])
-                  if (generated.length === 0) {
-                    window.alert('No steps came back. Try a clearer brief.')
-                    return
-                  }
-                  setSteps(generated)
+                  setAiModalOpen(true)
                 }}>
                   {aiLoading ? 'Drafting steps...' : 'Generate with AI'}
                 </Button>
               )}
             </AddOnGate>
+            <AiTrainingBuilderModal
+              open={aiModalOpen}
+              onClose={() => { if (!aiLoading) setAiModalOpen(false) }}
+              onSubmit={handleAiGenerate}
+              loading={aiLoading}
+              loadingMessage={aiLoadingMessage}
+              category={category}
+              hasExistingSteps={steps.length > 0}
+            />
             <Button variant="secondary" size="sm" onClick={() => savePath(false, check)} disabled={saving}>
               {saving ? 'Saving...' : 'Save draft'}
             </Button>

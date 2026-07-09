@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState, use, useCallback, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LearningPath, PathStep } from '@/lib/types'
 import { IconDocument, IconLock, IconPlay, IconCheck } from '@/components/icons'
 import { normalizeSteps } from '@/lib/train-paths'
+import { assertCanTakeAcquired, ensurePathEnrollment } from '@/lib/self-take'
+import { isAcquiredRow } from '@/lib/acquisition-access'
 
 const DEMO_PATH: LearningPath & { steps: (PathStep & { completed?: boolean; locked?: boolean })[] } = {
   id: 'lp1',
@@ -603,16 +606,37 @@ function StarButton({ value }: { value: number }) {
   )
 }
 
-export default function EmployeeTrainPage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+export default function EmployeeTrainPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<div style={{ padding: 24, color: 'var(--mid-grey)', fontSize: 14 }}>Getting your training path...</div>}>
+      <EmployeeTrainPageInner params={params} />
+    </Suspense>
+  )
+}
+
+function EmployeeTrainPageInner({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
   const params = use(paramsPromise)
+  const searchParams = useSearchParams()
+  const fromLibrary = searchParams.get('from') === 'library'
   const [path, setPath] = useState(DEMO_PATH)
   const [loading, setLoading] = useState(true)
   const [completed, setCompleted] = useState<Set<string>>(new Set())
   const [activeStep, setActiveStep] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
   const [userId, setUserId] = useState('')
+  const [enrollmentId, setEnrollmentId] = useState<string | null>(null)
+  const [isAcquired, setIsAcquired] = useState(false)
   const [certState, setCertState] = useState<'pending' | 'issued' | 'blocked'>('pending')
   const [certError, setCertError] = useState('')
+
+  const persistProgress = useCallback(async (nextCompleted: Set<string>, steps: PathStep[]) => {
+    if (!enrollmentId) return
+    const progress = steps.length > 0 ? Math.round((nextCompleted.size / steps.length) * 100) : 0
+    await supabase.from('path_enrollments').update({
+      completed_steps: Array.from(nextCompleted),
+      progress_percentage: progress,
+    }).eq('id', enrollmentId)
+  }, [enrollmentId])
 
   useEffect(() => {
     async function load() {
@@ -626,9 +650,37 @@ export default function EmployeeTrainPage({ params: paramsPromise }: { params: P
         .select('*')
         .eq('id', params.id)
         .single()
+
+      let steps: PathStep[] = []
       if (!error && data) {
-        setPath({ ...data, steps: normalizeSteps(data.steps) })
+        steps = normalizeSteps(data.steps)
+        setPath({ ...data, steps })
+        setIsAcquired(isAcquiredRow(data as Record<string, unknown>))
       }
+
+      const { data: enroll } = await supabase
+        .from('path_enrollments')
+        .select('id, completed_steps, certificate_issued_at')
+        .eq('path_id', params.id)
+        .eq('employee_id', user.id)
+        .maybeSingle()
+
+      if (enroll) {
+        setEnrollmentId(enroll.id as string)
+        setCompleted(new Set((enroll.completed_steps as string[]) ?? []))
+        if (enroll.certificate_issued_at) {
+          setCertState('issued')
+        }
+      } else if (data && isAcquiredRow(data as Record<string, unknown>)) {
+        const gate = await assertCanTakeAcquired('learning_paths', params.id)
+        if (gate.ok) {
+          const enrolled = await ensurePathEnrollment(params.id, user.id)
+          if (enrolled.ok) {
+            setEnrollmentId(enrolled.enrollmentId)
+          }
+        }
+      }
+
       setLoading(false)
     }
     load()
@@ -640,8 +692,10 @@ export default function EmployeeTrainPage({ params: paramsPromise }: { params: P
   const activeIndex = active ? path.steps.findIndex(s => s.id === active.id) : -1
 
   function markComplete(id: string) {
-    setCompleted(p => new Set(Array.from(p).concat(id)))
+    const next = new Set(Array.from(completed).concat(id))
+    setCompleted(next)
     setActiveStep(null)
+    persistProgress(next, path.steps)
   }
 
   useEffect(() => {
@@ -687,6 +741,16 @@ export default function EmployeeTrainPage({ params: paramsPromise }: { params: P
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: 'var(--page-bg)', paddingBottom: 40 }}>
+      {(fromLibrary || isAcquired) && (
+        <div style={{ padding: '12px 16px 0' }}>
+          <Link
+            href="/platform/library"
+            style={{ fontSize: 13, fontWeight: 600, color: '#1052A3', textDecoration: 'none' }}
+          >
+            Back to library
+          </Link>
+        </div>
+      )}
       <div style={{ background: BLUE, padding: '28px 20px 20px' }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
           {path.is_mandatory && (

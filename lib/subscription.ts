@@ -1,10 +1,12 @@
 import { supabase } from './supabase'
-import { getCurrentUser } from './auth'
+import { getCachedUserId, getCurrentUser } from './auth'
 import { getActiveContext, canCreateContent } from './context'
+import { quotasForPlan, upsertCreationUsageForPlan } from './plan-upgrade'
 import {
   getEffectiveModules,
   getPlanIncludedModules,
   isModuleAccessible,
+  MEMBERSHIP_ENGAGE_SESSION_QUOTA,
   parseInstitutionModules,
   type ModuleKey,
 } from './institution-modules'
@@ -32,19 +34,32 @@ function normalisePlanId(planId: string | null | undefined): SubscriptionTier {
   return 'membership'
 }
 
-// Institution admins inherit the institution subscription plan for quotas and gates.
+/** Resolve the authenticated user id from session, falling back to cached profile. */
+export async function resolveAuthUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession()
+  if (data.session?.user?.id) return data.session.user.id
+  return getCachedUserId()
+}
+
+// Institution admins inherit the institution subscription plan in institution context only.
 export async function getEffectivePlanId(userId?: string): Promise<SubscriptionTier> {
-  const user = userId
-    ? (await supabase.from('users').select('id, role, institution_id, subscription_tier').eq('id', userId).single()).data
-    : getCurrentUser()
+  const ctx = getActiveContext()
+  const uid = userId ?? (await resolveAuthUserId())
+  if (!uid) return 'membership'
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('subscription_tier')
+    .eq('id', uid)
+    .maybeSingle()
 
   if (!user) return 'membership'
 
-  if (user.role === 'admin' && user.institution_id) {
+  if (ctx.type === 'institution') {
     const { data: institution } = await supabase
       .from('institutions')
       .select('subscription_plan')
-      .eq('id', user.institution_id)
+      .eq('id', ctx.institutionId)
       .single()
 
     if (institution?.subscription_plan) {
@@ -52,13 +67,13 @@ export async function getEffectivePlanId(userId?: string): Promise<SubscriptionT
     }
   }
 
-  return normalisePlanId((user as { subscription_tier?: SubscriptionTier }).subscription_tier)
+  return normalisePlanId(user.subscription_tier)
 }
 
 // Fetch the active plan record for the current user.
 // Falls back to 'membership' if no subscription row exists.
-export async function getUserPlan(): Promise<SubscriptionPlan | null> {
-  const tier = await getEffectivePlanId()
+export async function getUserPlan(userId?: string): Promise<SubscriptionPlan | null> {
+  const tier = await getEffectivePlanId(userId)
 
   const { data } = await supabase
     .from('subscription_plans')
@@ -71,21 +86,21 @@ export async function getUserPlan(): Promise<SubscriptionPlan | null> {
 
 // Fetch or initialise creation usage row for the current user.
 export async function getCreationUsage(userId?: string): Promise<CreationUsage | null> {
-  const uid = userId ?? getCurrentUser().id
+  const uid = userId ?? (await resolveAuthUserId()) ?? getCurrentUser().id
   const planId = await getEffectivePlanId(uid)
 
   const { data } = await supabase
     .from('creation_usage')
     .select('*')
     .eq('user_id', uid)
-    .single()
+    .maybeSingle()
 
   if (data) {
     if (planId === 'membership') {
       return {
         ...data,
-        assess_quota: 5,
-        engage_quota: 5,
+        assess_quota: 0,
+        engage_quota: MEMBERSHIP_ENGAGE_SESSION_QUOTA,
         learn_quota: 0,
         train_quota: 0,
       }
@@ -93,16 +108,15 @@ export async function getCreationUsage(userId?: string): Promise<CreationUsage |
     return data
   }
 
-  const defaults =
-    planId === 'membership'
-      ? { assess_quota: 5, engage_quota: 5, learn_quota: 0, train_quota: 0 }
-      : { assess_quota: 9999, engage_quota: 9999, learn_quota: 9999, train_quota: 9999 }
+  const defaults = quotasForPlan(planId)
+  const seeded = await upsertCreationUsageForPlan(supabase, uid, planId, { resetUsed: true })
+  if (!seeded.ok) return null
 
   const { data: created } = await supabase
     .from('creation_usage')
-    .insert({ user_id: uid, ...defaults })
-    .select()
-    .single()
+    .select('*')
+    .eq('user_id', uid)
+    .maybeSingle()
 
   return created ?? null
 }
@@ -110,35 +124,34 @@ export async function getCreationUsage(userId?: string): Promise<CreationUsage |
 // Whether the current user can access a module (plan allowance ∩ institution provision).
 export async function canAccessModule(module: Module): Promise<boolean> {
   const planId = await getEffectivePlanId()
-  const user = getCurrentUser()
+  const ctx = getActiveContext()
 
-  if (!user.institution_id) {
-    return getPlanIncludedModules(planId).includes(module as ModuleKey)
+  if (ctx.type === 'institution') {
+    const { data: institution } = await supabase
+      .from('institutions')
+      .select('modules, subscription_plan')
+      .eq('id', ctx.institutionId)
+      .single()
+
+    if (!institution) {
+      return getPlanIncludedModules(planId).includes(module as ModuleKey)
+    }
+
+    const provisioned = parseInstitutionModules(institution.modules)
+    const instPlan =
+      institution.subscription_plan === 'trial'
+        ? 'membership'
+        : (institution.subscription_plan ?? planId)
+
+    return isModuleAccessible(module as ModuleKey, provisioned, instPlan)
   }
 
-  const { data: institution } = await supabase
-    .from('institutions')
-    .select('modules, subscription_plan')
-    .eq('id', user.institution_id)
-    .single()
-
-  if (!institution) {
-    return getPlanIncludedModules(planId).includes(module as ModuleKey)
-  }
-
-  const provisioned = parseInstitutionModules(institution.modules)
-  const instPlan =
-    institution.subscription_plan === 'trial'
-      ? 'membership'
-      : (institution.subscription_plan ?? planId)
-
-  return isModuleAccessible(module as ModuleKey, provisioned, instPlan)
+  return getPlanIncludedModules(planId).includes(module as ModuleKey)
 }
 
 // Check whether the user can create one more resource in the given module.
 // Returns { allowed, reason } so callers can show a specific message.
 export async function canCreate(module: Module): Promise<{ allowed: boolean; reason?: string }> {
-  // Institution context: quota comes from the institution, not the user.
   const ctx = getActiveContext()
   if (ctx.type === 'institution') {
     if (!canCreateContent(ctx)) {
@@ -154,27 +167,51 @@ export async function canCreate(module: Module): Promise<{ allowed: boolean; rea
       ? 'membership'
       : (institution?.subscription_plan ?? 'membership')
     if (!isModuleAccessible(module as ModuleKey, provisioned, instPlan)) {
-      return { allowed: false, reason: `${capitalize(module)} is not active for ${ctx.institutionName}. An admin can enable it from Settings.` }
+      return {
+        allowed: false,
+        reason:
+          instPlan === 'membership'
+            ? `${capitalize(module)} is for Creator and Institution plans. Upgrade ${ctx.institutionName} from Plan and billing.`
+            : `${capitalize(module)} is not active for ${ctx.institutionName}. An admin can enable it from Settings.`,
+      }
     }
-    // Institution plan has unlimited creations
-    return { allowed: true }
+
+    if (instPlan === 'institution' || instPlan === 'creator_marketplace') {
+      return { allowed: true }
+    }
+
+    if (instPlan === 'membership' && module === 'engage') {
+      return { allowed: true }
+    }
+
+    return {
+      allowed: false,
+      reason: `${capitalize(module)} needs a Creator or Institution plan for ${ctx.institutionName}. Upgrade from Plan and billing.`,
+    }
   }
 
-  const plan = await getUserPlan()
+  const uid = await resolveAuthUserId()
+  const plan = await getUserPlan(uid ?? undefined)
   if (!plan) return { allowed: false, reason: 'Could not load your plan. Try again.' }
 
   const hasModule = await canAccessModule(module)
   if (!hasModule) {
     return {
       allowed: false,
-      reason: `Your plan does not include ${capitalize(module)}. Upgrade your plan to unlock it.`,
+      reason:
+        module === 'engage'
+          ? 'Your plan does not include Engage. Upgrade to Creator or Institution to unlock it.'
+          : `${capitalize(module)} is for Creator and Institution plans. Upgrade from Plan and billing to unlock it.`,
     }
   }
 
-  const usage = await getCreationUsage()
+  if (plan.id === 'membership' && module === 'engage') {
+    return { allowed: true }
+  }
+
+  const usage = await getCreationUsage(uid ?? undefined)
   if (!usage) return { allowed: false, reason: 'Could not load your usage. Try again.' }
 
-  // Institution and marketplace-route creators have unlimited creations
   if (plan.id === 'institution' || plan.id === 'creator_marketplace') {
     return { allowed: true }
   }
@@ -188,6 +225,12 @@ export async function canCreate(module: Module): Promise<{ allowed: boolean; rea
       : (usage[`${module}_quota` as keyof CreationUsage] as number)
 
   if (quota === 0) {
+    if (plan.id === 'creator_quarterly') {
+      return {
+        allowed: false,
+        reason: `You have 0 ${capitalize(module)} creations allocated. Redistribute your pool from Plan and billing.`,
+      }
+    }
     return {
       allowed: false,
       reason: `Your plan does not include ${capitalize(module)}. Upgrade to Creator or Institution to unlock it.`,
@@ -204,39 +247,78 @@ export async function canCreate(module: Module): Promise<{ allowed: boolean; rea
   return { allowed: true }
 }
 
-// Increment the used count for a module after a resource is created.
-// Institution-context creations draw on the institution pool, not the
-// user's personal quota, so they are not counted here.
 export async function incrementUsed(module: Module, userId?: string): Promise<void> {
   if (getActiveContext().type === 'institution') return
 
-  const uid = userId ?? getCurrentUser().id
+  const planId = await getEffectivePlanId(userId)
+  if (planId === 'membership' && module === 'engage') return
+
+  const uid = userId ?? (await resolveAuthUserId()) ?? getCurrentUser().id
   const field = `${module}_used`
 
   await supabase.rpc('increment_creation_used', { p_user_id: uid, p_field: field })
 }
 
-// Decrement the used count when a resource is deleted.
+export async function incrementEngageSessionLaunched(userId?: string): Promise<void> {
+  if (getActiveContext().type === 'institution') return
+
+  const planId = await getEffectivePlanId(userId)
+  if (planId !== 'membership') return
+
+  const uid = userId ?? (await resolveAuthUserId()) ?? getCurrentUser().id
+  await supabase.rpc('increment_creation_used', { p_user_id: uid, p_field: 'engage_used' })
+}
+
+export async function canLaunchEngageSession(): Promise<{ allowed: boolean; reason?: string }> {
+  if (!(await canAccessModule('engage'))) {
+    return {
+      allowed: false,
+      reason: 'Your plan does not include Engage. Upgrade to Creator or Institution to unlock live sessions.',
+    }
+  }
+
+  const planId = await getEffectivePlanId()
+  if (planId !== 'membership' || getActiveContext().type === 'institution') {
+    return { allowed: true }
+  }
+
+  const usage = await getCreationUsage()
+  if (!usage) {
+    return { allowed: false, reason: 'Could not load your session usage. Try again.' }
+  }
+
+  const quota = usage.engage_quota ?? MEMBERSHIP_ENGAGE_SESSION_QUOTA
+  const used = usage.engage_used ?? 0
+
+  if (used >= quota) {
+    return {
+      allowed: false,
+      reason: `You have used all ${quota} Engage live sessions on your free plan. Upgrade to Creator for Assess, Learn, Train, and unlimited sessions.`,
+    }
+  }
+
+  return { allowed: true }
+}
+
 export async function decrementUsed(module: Module, userId?: string): Promise<void> {
-  const uid = userId ?? getCurrentUser().id
+  const uid = userId ?? (await resolveAuthUserId()) ?? getCurrentUser().id
   const field = `${module}_used`
 
   await supabase.rpc('decrement_creation_used', { p_user_id: uid, p_field: field })
 }
 
-// Update the quota allocation for a creator_quarterly user (pool redistribution).
-// The total of all four must not exceed the plan's total_creation_pool (40).
 export async function updateQuotaAllocation(
   userId: string,
   allocation: { assess: number; engage: number; learn: number; train: number }
 ): Promise<{ ok: boolean; error?: string }> {
-  const plan = await getUserPlan()
-  if (!plan || plan.id !== 'creator_quarterly') {
+  const planId = await getEffectivePlanId(userId)
+  if (planId !== 'creator_quarterly') {
     return { ok: false, error: 'Quota redistribution is only available on the Creator Quarterly plan.' }
   }
 
+  const plan = await getUserPlan(userId)
   const total = allocation.assess + allocation.engage + allocation.learn + allocation.train
-  const pool = plan.total_creation_pool ?? 40
+  const pool = plan?.total_creation_pool ?? 40
 
   if (total > pool) {
     return { ok: false, error: `Your total allocation (${total}) exceeds your pool of ${pool} creations.` }
@@ -244,49 +326,47 @@ export async function updateQuotaAllocation(
 
   const { error } = await supabase
     .from('creation_usage')
-    .upsert({
-      user_id: userId,
-      assess_quota: allocation.assess,
-      engage_quota: allocation.engage,
-      learn_quota: allocation.learn,
-      train_quota: allocation.train,
-    })
+    .upsert(
+      {
+        user_id: userId,
+        assess_quota: allocation.assess,
+        engage_quota: allocation.engage,
+        learn_quota: allocation.learn,
+        train_quota: allocation.train,
+      },
+      { onConflict: 'user_id' }
+    )
 
   if (error) return { ok: false, error: 'Could not save your allocation. Try again.' }
   return { ok: true }
 }
 
-// Check whether the user's active plan allows selling on the marketplace.
 export async function canSellOnMarketplace(): Promise<boolean> {
   const plan = await getUserPlan()
   return plan?.can_sell_marketplace ?? false
 }
 
-// Check whether the user's active plan allows issuing certificates.
 export async function canIssueCertificates(): Promise<boolean> {
   const plan = await getUserPlan()
   return plan?.can_issue_certificates ?? false
 }
 
-// Fetch all add-ons the current user has active.
 export async function getUserAddOns(): Promise<string[]> {
-  const user = getCurrentUser()
+  const uid = (await resolveAuthUserId()) ?? getCurrentUser().id
   const { data } = await supabase
     .from('user_add_ons')
     .select('add_on_id')
-    .eq('user_id', user.id)
+    .eq('user_id', uid)
     .eq('status', 'active')
 
   return (data ?? []).map(r => r.add_on_id)
 }
 
-// Check whether the user has a specific add-on active.
 export async function hasAddOn(addOnId: string): Promise<boolean> {
   const active = await getUserAddOns()
   return active.includes(addOnId)
 }
 
-/** Verify plan eligibility and active add-on before using an AI feature. */
 export async function assertAddOnAccess(addOnId: AddOnId): Promise<AddOnCheckResult> {
   const planId = await getEffectivePlanId()
 
@@ -320,8 +400,6 @@ export async function assertAddOnAccess(addOnId: AddOnId): Promise<AddOnCheckRes
   return { allowed: true }
 }
 
-// Check the session student cap for the user's plan.
-// Returns null if the plan has no cap (unlimited).
 export async function getSessionStudentCap(): Promise<number | null> {
   const plan = await getUserPlan()
   return plan?.session_student_cap ?? null

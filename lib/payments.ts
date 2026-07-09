@@ -1,6 +1,8 @@
 import { resolveInstitutionOnboardingDepositGhs } from './institution-deposit'
+import { applyPlanUpgrade, upsertCreationUsageForPlan } from './plan-upgrade'
 import { getSupabaseAdmin } from './supabase-admin'
 import { importFromListing, type MarketplaceListingRow } from './marketplace-bridge'
+import type { SubscriptionTier } from './types'
 
 export type PaymentIntentType =
   | 'subscription'
@@ -14,7 +16,13 @@ export interface PaymentPayload {
   addOnId?: string
   listingId?: string
   institutionId?: string
+  importDestinationKind?: 'personal' | 'institution'
   inquiryId?: string
+}
+
+export function institutionIdFromImportPayload(payload: PaymentPayload): string | null {
+  if (payload.importDestinationKind === 'personal') return null
+  return payload.institutionId ?? null
 }
 
 export async function assertInstitutionDepositCheckout(
@@ -123,32 +131,19 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
       payment_reference: reference,
     })
 
-    await admin.from('users').update({ subscription_tier: payload.planId }).eq('id', intent.user_id)
-
-    const poolDefaults =
-      payload.planId === 'creator_quarterly'
-        ? { assess_quota: 10, engage_quota: 10, learn_quota: 10, train_quota: 10 }
-        : { assess_quota: 9999, engage_quota: 9999, learn_quota: 9999, train_quota: 9999 }
-
-    await admin.from('creation_usage').upsert({
-      user_id: intent.user_id,
-      ...poolDefaults,
-      assess_used: 0,
-      engage_used: 0,
-      learn_used: 0,
-      train_used: 0,
+    const upgraded = await applyPlanUpgrade(intent.user_id, payload.planId as SubscriptionTier, {
+      resetUsed: true,
+      client: admin,
     })
+    if (!upgraded.ok) return upgraded
   }
 
   if (intent.intent_type === 'plan_switch' && payload.planId) {
-    await admin.from('users').update({ subscription_tier: payload.planId }).eq('id', intent.user_id)
-    await admin.from('creation_usage').upsert({
-      user_id: intent.user_id,
-      assess_quota: 9999,
-      engage_quota: 9999,
-      learn_quota: 9999,
-      train_quota: 9999,
+    const switched = await applyPlanUpgrade(intent.user_id, payload.planId as SubscriptionTier, {
+      resetUsed: true,
+      client: admin,
     })
+    if (!switched.ok) return switched
   }
 
   if (intent.intent_type === 'addon' && payload.addOnId) {
@@ -168,11 +163,15 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
     )
   }
 
-  if (intent.intent_type === 'marketplace' && payload.listingId && payload.institutionId) {
+  if (intent.intent_type === 'marketplace' && payload.listingId) {
+    const institutionId = institutionIdFromImportPayload(payload)
+    if (payload.importDestinationKind === 'institution' && !institutionId) {
+      return { ok: false, error: 'Missing institution for this purchase.' }
+    }
     const result = await fulfillMarketplacePurchase(
       intent.user_id,
       payload.listingId,
-      payload.institutionId,
+      institutionId,
       reference
     )
     if (!result.ok) return result
@@ -194,13 +193,10 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
       .eq('institution_id', payload.institutionId)
       .eq('role', 'admin')
 
-    await admin.from('creation_usage').upsert({
-      user_id: intent.user_id,
-      assess_quota: 9999,
-      engage_quota: 9999,
-      learn_quota: 9999,
-      train_quota: 9999,
+    const usageSeeded = await upsertCreationUsageForPlan(admin, intent.user_id, 'institution', {
+      resetUsed: true,
     })
+    if (!usageSeeded.ok) return usageSeeded
 
     await admin.from('user_subscriptions').insert({
       user_id: intent.user_id,
@@ -233,7 +229,7 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
 async function fulfillMarketplacePurchase(
   buyerId: string,
   listingId: string,
-  institutionId: string,
+  institutionId: string | null,
   paymentReference: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = getSupabaseAdmin()

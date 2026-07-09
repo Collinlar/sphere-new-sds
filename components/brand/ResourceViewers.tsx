@@ -64,13 +64,59 @@ export function GuideViewer({ guide, accent }: { guide: Guide; accent: string })
   )
 }
 
-export function NoteViewer({ blocks }: { blocks: NoteBlock[] }) {
+function downloadNote(title: string, blocks: NoteBlock[]) {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const parts = blocks.map(block => {
+    const c = (block.content ?? {}) as { text?: string; url?: string; caption?: string; label?: string }
+    switch (block.type) {
+      case 'heading': return `<h2>${esc(c.text ?? '')}</h2>`
+      case 'image': return c.url ? `<figure><img src="${esc(c.url)}" alt="${esc(c.caption ?? '')}" />${c.caption ? `<figcaption>${esc(c.caption)}</figcaption>` : ''}</figure>` : ''
+      case 'video_link': return c.url ? `<p class="link">▶ <a href="${esc(c.url)}">${esc(c.label || c.url)}</a></p>` : ''
+      case 'link': return c.url ? `<p class="link"><a href="${esc(c.url)}">${esc(c.label || c.url)}</a></p>` : ''
+      case 'callout': return `<div class="callout">${esc(c.text ?? '')}</div>`
+      default: return `<p>${esc(c.text ?? '')}</p>`
+    }
+  }).join('\n')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 24px; color: #111827; line-height: 1.7; }
+  h1 { font-size: 26px; border-bottom: 3px solid #2E2886; padding-bottom: 10px; }
+  h2 { font-size: 18px; margin-top: 24px; }
+  img { max-width: 100%; border-radius: 8px; }
+  figcaption { font-size: 12px; color: #6B7280; text-align: center; margin-top: 4px; }
+  .callout { background: #FEF9F1; border: 1px solid #E8A020; border-radius: 8px; padding: 12px 14px; color: #633806; }
+  .link a { color: #1052A3; }
+  @media print { body { margin: 0; } }
+</style></head>
+<body><h1>${esc(title)}</h1>${parts}
+<script>window.onload = function(){ window.print(); }</script>
+</body></html>`
+
+  const win = window.open('', '_blank')
+  if (!win) { alert('Allow pop-ups to download this note.'); return }
+  win.document.write(html)
+  win.document.close()
+}
+
+export function NoteViewer({ blocks, title, downloadable }: { blocks: NoteBlock[]; title?: string; downloadable?: boolean }) {
   if (blocks.length === 0) {
     return <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>This notes pack is empty.</p>
   }
 
   return (
-    <div style={{ background: 'var(--white)', borderRadius: 12, padding: '22px 20px', boxShadow: 'var(--shadow-soft)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div>
+      {downloadable && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <button
+            onClick={() => downloadNote(title ?? 'Note', blocks)}
+            style={{ height: 34, padding: '0 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--white)', fontSize: 13, fontWeight: 600, color: '#2E2886', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Download for offline
+          </button>
+        </div>
+      )}
+      <div style={{ background: 'var(--white)', borderRadius: 12, padding: '22px 20px', boxShadow: 'var(--shadow-soft)', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {blocks.map((block, i) => {
         const c = (block.content ?? {}) as { text?: string; url?: string; caption?: string; label?: string }
         const key = block.id ?? `block-${i}`
@@ -114,6 +160,7 @@ export function NoteViewer({ blocks }: { blocks: NoteBlock[] }) {
             return <p key={key} style={{ fontSize: 15, color: 'var(--near-black)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{c.text ?? ''}</p>
         }
       })}
+      </div>
     </div>
   )
 }

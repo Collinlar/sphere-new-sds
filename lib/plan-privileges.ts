@@ -4,7 +4,8 @@
  */
 
 import { supabase } from './supabase'
-import { getCurrentUser } from './auth'
+import { getCachedUserId, getCurrentUser } from './auth'
+import { getActiveContext } from './context'
 import {
   getEffectiveModules,
   getPlanIncludedModules,
@@ -34,12 +35,13 @@ export interface PlanContext {
 /** Human-readable privilege summary per plan (for billing / upgrade copy). */
 export const PLAN_PRIVILEGE_SUMMARY: Record<SubscriptionTier, string[]> = {
   membership: [
-    '5 Assess creations',
-    '5 Engage creations',
-    'Up to 5 students per live session',
-    'Browse and import from marketplace',
-    'No marketplace publishing',
-    'No certificates',
+    'Engage live sessions only',
+    '5 live sessions included',
+    'Up to 5 students per session',
+    'Save free resources to your personal or institution library',
+    'Take imported assessments, courses, and training on your own',
+    'Create and host content for others on Creator plans',
+    'No marketplace publishing or certificates',
   ],
   creator_quarterly: [
     '40 creations across all modules',
@@ -63,10 +65,10 @@ export const PLAN_PRIVILEGE_SUMMARY: Record<SubscriptionTier, string[]> = {
 }
 
 export async function getPlanContext(userId?: string): Promise<PlanContext> {
-  const uid = userId ?? getCurrentUser().id
+  const uid = userId ?? getCachedUserId() ?? getCurrentUser().id
   const [planId, plan] = await Promise.all([
     getEffectivePlanId(uid),
-    getUserPlan(),
+    getUserPlan(uid),
   ])
 
   const { data: userRow } = await supabase
@@ -76,12 +78,13 @@ export async function getPlanContext(userId?: string): Promise<PlanContext> {
     .maybeSingle()
 
   let effectiveModules = getPlanIncludedModules(planId)
+  const ctx = getActiveContext()
 
-  if (userRow?.institution_id) {
+  if (ctx.type === 'institution') {
     const { data: institution } = await supabase
       .from('institutions')
       .select('modules, subscription_plan')
-      .eq('id', userRow.institution_id)
+      .eq('id', ctx.institutionId)
       .single()
 
     if (institution) {

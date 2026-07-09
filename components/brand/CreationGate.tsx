@@ -21,7 +21,8 @@ const PLAN_LABELS: Record<string, string> = {
 
 const UPGRADE_PERKS: Record<string, string[]> = {
   membership: [
-    '40 creations across Assess, Engage, Learn, and Train',
+    'Assess, Learn, and Train unlocked',
+    '40 creations across all modules',
     'Up to 50 students per live session',
     'Publish and sell on the marketplace',
     'Issue certificates',
