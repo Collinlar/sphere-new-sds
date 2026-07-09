@@ -4,6 +4,7 @@ import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getEnrollmentBilling, type EnrollmentBilling } from '@/lib/enrollment-billing'
 
 interface Institution {
   id: string
@@ -38,6 +39,7 @@ export default function InstitutionDetailPage({ params: paramsPromise }: { param
   const [msg, setMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [billing, setBilling] = useState<EnrollmentBilling | null>(null)
 
   // Edit state
   const [name, setName] = useState('')
@@ -73,6 +75,7 @@ export default function InstitutionDetailPage({ params: paramsPromise }: { param
         .order('created_at', { ascending: false })
 
       setUsers((userRows ?? []) as User[])
+      getEnrollmentBilling(id).then(setBilling)
       setLoading(false)
     }
     load()
@@ -185,6 +188,27 @@ export default function InstitutionDetailPage({ params: paramsPromise }: { param
           </div>
         </div>
       </div>
+
+      {/* Enrolled student metering / per-head overage */}
+      {billing?.metered && (
+        <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', padding: '18px 20px', marginBottom: 24, border: billing.overage > 0 ? '1px solid #E8A020' : undefined }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 12 }}>Enrolled students</p>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--near-black)', lineHeight: 1 }}>{billing.current}</p>
+              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>Enrolled ({billing.cap} included)</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 22, fontWeight: 800, color: billing.overage > 0 ? '#D97010' : 'var(--near-black)', lineHeight: 1 }}>{billing.overage}</p>
+              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>Above cap</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 22, fontWeight: 800, color: billing.overageMonthlyGhs > 0 ? '#1A8966' : 'var(--near-black)', lineHeight: 1 }}>GHS {billing.overageMonthlyGhs.toLocaleString()}</p>
+              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>Per-head / month (at GHS {billing.perHeadGhs})</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Users table */}
       <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflow: 'hidden', marginBottom: 24 }}>

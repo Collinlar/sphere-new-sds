@@ -58,10 +58,17 @@ export async function checkEnrolledStudentCapacity(
   const current = await countInstitutionStudents(institutionId)
   const remaining = Math.max(cap - current, 0)
 
+  // Institution plan grows past its included cap on a per-head basis, so adding
+  // students beyond the cap is always allowed — the overage is billed, not
+  // blocked. Other plans keep a hard ceiling.
+  if (planId === 'institution') {
+    return { allowed: true, cap, current, remaining: remaining - additional }
+  }
+
   if (current + additional > cap) {
     return {
       allowed: false,
-      reason: `Your institution plan allows ${cap} enrolled students. You have ${current} and are trying to add ${additional} more. Contact Sphere to expand capacity.`,
+      reason: `Your plan allows ${cap} enrolled students. You have ${current} and are trying to add ${additional} more. Upgrade to the Institution plan to grow beyond this.`,
       cap,
       current,
       remaining,

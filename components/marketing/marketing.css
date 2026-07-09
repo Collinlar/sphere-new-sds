@@ -1,0 +1,83 @@
+/* SphereSDS public marketing pages — landing, pricing, module pages.
+   Ported from the approved standalone design. Mobile-first responsive. */
+
+.mkt-root {
+  font-family: 'Outfit', system-ui, sans-serif;
+  background: #F5F4F1;
+  color: #18171A;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes mkt-fadeUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.mkt-anim-1 { animation: mkt-fadeUp 0.55s ease both; }
+.mkt-anim-2 { animation: mkt-fadeUp 0.55s 0.1s ease both; }
+.mkt-anim-3 { animation: mkt-fadeUp 0.55s 0.2s ease both; }
+.mkt-anim-4 { animation: mkt-fadeUp 0.55s 0.3s ease both; }
+
+.mode-chip { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.mode-chip:hover { transform: translateY(-3px); box-shadow: 0 10px 36px rgba(0,0,0,0.11) !important; }
+
+.persona-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.persona-card:hover { transform: translateY(-3px); box-shadow: 0 14px 48px rgba(0,0,0,0.10) !important; }
+
+.pricing-card { transition: transform 0.18s ease; }
+.pricing-card:hover { transform: translateY(-3px); }
+
+.nav-link { transition: color 0.15s; }
+.nav-link:hover { color: #18171A !important; }
+.nav-link-amber { transition: background 0.15s, color 0.15s; }
+.nav-link-amber:hover { background: #FEF0DC !important; }
+
+.cta-primary { transition: background 0.15s, transform 0.1s; }
+.cta-primary:hover { background: #bf6210 !important; }
+.cta-primary:active { transform: scale(0.98); }
+
+.cta-ghost { transition: background 0.15s, border-color 0.15s; }
+.cta-ghost:hover { background: #EDECE9 !important; }
+
+.join-btn-inner { transition: background 0.15s; }
+.join-btn-inner:hover { background: #bf6210 !important; }
+
+.signin-link { transition: background 0.15s; }
+.signin-link:hover { background: #F5F4F1 !important; }
+
+.mkt-root :focus-visible { outline: 2px solid #D97010; outline-offset: 3px; border-radius: 4px; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 960px) {
+  .hero-grid    { grid-template-columns: 1fr !important; }
+  .hero-right   { order: -1; max-width: 480px; }
+  .persona-grid { grid-template-columns: 1fr !important; }
+  .pricing-inner{ grid-template-columns: 1fr !important; gap: 40px !important; }
+  .pricing-plans{ grid-template-columns: 1fr !important; }
+  .why-grid     { grid-template-columns: 1fr 1fr !important; }
+  .bottom-cta   { grid-template-columns: 1fr !important; text-align: center !important; }
+  .bottom-cta-btns { align-items: center !important; }
+  .nav-links    { display: none !important; }
+  .mob-trigger  { display: flex !important; }
+  .footer-inner { flex-direction: column !important; gap: 20px !important; align-items: flex-start !important; }
+  .feature-split { grid-template-columns: 1fr !important; }
+}
+@media (min-width: 961px) {
+  .mob-trigger  { display: none !important; }
+  .mob-overlay  { display: none !important; }
+}
+@media (max-width: 640px) {
+  .sec          { padding: 52px 20px !important; }
+  .hero-sec     { padding: 44px 20px 56px !important; }
+  .nav-inner    { padding: 0 20px !important; }
+  .footer-pad   { padding: 22px 20px !important; }
+  .hero-h1      { font-size: 34px !important; }
+  .modes-grid   { grid-template-columns: 1fr 1fr !important; }
+  .why-grid     { grid-template-columns: 1fr !important; }
+  .mode-row-grid{ grid-template-columns: 1fr !important; gap: 12px !important; }
+  .cta-row      { flex-direction: column !important; align-items: flex-start !important; }
+  .page-h1      { font-size: 38px !important; }
+}
+@media (max-width: 380px) {
+  .modes-grid   { grid-template-columns: 1fr !important; }
+}

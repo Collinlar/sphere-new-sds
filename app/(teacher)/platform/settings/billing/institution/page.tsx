@@ -7,6 +7,7 @@ import TopBar from '@/components/brand/TopBar'
 import { getCurrentUser } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { INSTITUTION_ONBOARDING_DEPOSIT_GHS } from '@/lib/institution-deposit'
+import { getEnrollmentBilling, type EnrollmentBilling } from '@/lib/enrollment-billing'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
 
 function InstitutionInquiryInner() {
@@ -27,6 +28,7 @@ function InstitutionInquiryInner() {
   const [checkoutMsg, setCheckoutMsg] = useState('')
   const [sent, setSent] = useState(false)
   const [inquiryId, setInquiryId] = useState<string | null>(null)
+  const [billing, setBilling] = useState<EnrollmentBilling | null>(null)
 
   const isAdmin = user.role === 'admin'
   const depositAmount = INSTITUTION_ONBOARDING_DEPOSIT_GHS
@@ -44,6 +46,7 @@ function InstitutionInquiryInner() {
         setInstitutionPlan(data?.subscription_plan ?? null)
         setDepositPaidAt(data?.onboarding_deposit_paid_at ?? null)
       })
+    getEnrollmentBilling(user.institution_id).then(setBilling)
   }, [user.institution_id])
 
   useEffect(() => {
@@ -136,12 +139,53 @@ function InstitutionInquiryInner() {
         )}
 
         {institutionActive ? (
-          <div style={{ background: 'var(--teal-light)', borderRadius: 12, padding: '24px 20px' }}>
-            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--teal-dark)', marginBottom: 8 }}>Institution plan active</p>
-            <p style={{ fontSize: 14, color: 'var(--teal-dark)', lineHeight: 1.6 }}>
-              {institutionName} is on the Institution plan with unlimited creations, certificates, and marketplace access for up to 100 enrolled students.
-            </p>
-          </div>
+          <>
+            <div style={{ background: 'var(--teal-light)', borderRadius: 12, padding: '24px 20px', marginBottom: billing?.metered ? 16 : 0 }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--teal-dark)', marginBottom: 8 }}>Institution plan active</p>
+              <p style={{ fontSize: 14, color: 'var(--teal-dark)', lineHeight: 1.6 }}>
+                {institutionName} is on the Institution plan with unlimited creations, certificates, and marketplace access for up to {billing?.cap ?? 100} enrolled students.
+              </p>
+            </div>
+
+            {billing?.metered && (
+              <div className="sphere-card" style={{ padding: '18px 20px' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: 14 }}>
+                  Enrolled students this cycle
+                </p>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginBottom: 10 }}>
+                  <span style={{ fontSize: 30, fontWeight: 800, color: 'var(--near-black)', lineHeight: 1 }}>{billing.current}</span>
+                  <span style={{ fontSize: 13, color: 'var(--mid-grey)', marginBottom: 2 }}>enrolled · {billing.cap} included</span>
+                </div>
+                {(() => {
+                  const pct = billing.cap ? Math.min((billing.current / billing.cap) * 100, 100) : 0
+                  const over = billing.overage > 0
+                  return (
+                    <>
+                      <div style={{ height: 8, background: 'var(--bg2)', borderRadius: 4, overflow: 'hidden', marginBottom: 14 }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: over ? '#D97010' : '#1A8966', borderRadius: 4 }} />
+                      </div>
+                      {over ? (
+                        <div style={{ background: '#FEF0DC', border: '1px solid #E8A020', borderRadius: 8, padding: '12px 14px' }}>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: '#9A5800', marginBottom: 3 }}>
+                            {billing.overage} student{billing.overage === 1 ? '' : 's'} above your included {billing.cap}
+                          </p>
+                          <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.5 }}>
+                            Per-head pricing applies: {billing.overage} × GHS {billing.perHeadGhs} = <strong>GHS {billing.overageMonthlyGhs.toLocaleString()} per month</strong>. Sphere will include this in your next invoice.
+                          </p>
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.5 }}>
+                          {billing.cap && billing.current < billing.cap
+                            ? `${billing.cap - billing.current} more within your included allowance. Beyond ${billing.cap}, students are GHS ${billing.perHeadGhs} each per month.`
+                            : `You are at your included allowance. Additional students are GHS ${billing.perHeadGhs} each per month.`}
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+          </>
         ) : sent ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ background: 'var(--teal-light)', borderRadius: 12, padding: '24px 20px' }}>
