@@ -12,6 +12,7 @@ interface Stats {
   pendingCreators: number
   pendingListings: number
   guestUnclaimed: number
+  pendingPayouts: number
   signupsThisWeek: number
   signupsLastWeek: number
 }
@@ -112,6 +113,24 @@ export default function AdminDashboard() {
           </p>
           <p style={{ fontSize: 12, color: '#185FA5', marginTop: 2 }}>These users completed exams or games without an account and have not claimed their results.</p>
         </div>
+      )}
+
+      {stats && stats.pendingPayouts > 0 && (
+        <Link href="/admin/payouts" style={{ textDecoration: 'none', display: 'block' }}>
+          <div style={{
+            background: '#FEF0DC',
+            border: '0.5px solid #E8A020',
+            borderLeft: '3px solid #E8A020',
+            borderRadius: 10,
+            padding: '14px 18px',
+            marginBottom: 24,
+          }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#9A5800' }}>
+              {stats.pendingPayouts} creator payout request{stats.pendingPayouts !== 1 ? 's' : ''} waiting
+            </p>
+            <p style={{ fontSize: 12, color: '#9A5800', marginTop: 2, opacity: 0.85 }}>Review and mark them paid in Payouts.</p>
+          </div>
+        </Link>
       )}
 
       {/* Stats grid */}

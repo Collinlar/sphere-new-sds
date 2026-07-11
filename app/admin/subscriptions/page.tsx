@@ -107,6 +107,8 @@ export default function SubscriptionsPage() {
   async function savePlan(plan: Plan) {
     setSavingPlan(plan.id)
     await supabase.from('subscription_plans').update({
+      price_ghs: plan.price_ghs,
+      billing_period: plan.billing_period || null,
       assess_quota: plan.assess_quota,
       engage_quota: plan.engage_quota,
       learn_quota: plan.learn_quota,
@@ -116,8 +118,9 @@ export default function SubscriptionsPage() {
       enrolled_student_cap: plan.enrolled_student_cap,
       marketplace_commission_rate: plan.marketplace_commission_rate,
     }).eq('id', plan.id)
+    setPlans(prev => prev.map(p => p.id === plan.id ? plan : p))
     setSavingPlan(null)
-    setPlanMsg(`${plan.name} updated. Changes apply to new signups only.`)
+    setPlanMsg(`${plan.name} updated. Live everywhere now.`)
     setTimeout(() => setPlanMsg(''), 4000)
   }
 
@@ -247,7 +250,7 @@ export default function SubscriptionsPage() {
         <div>
           <div style={{ background: '#FFF8ED', border: '0.5px solid #D97010', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
             <p style={{ fontSize: 13, color: '#7A4A00', lineHeight: 1.6 }}>
-              Changes here affect quotas and caps for new signups only. Existing users keep their current allocation until you manually update them via the Users panel.
+              Prices, caps, and the Membership quota apply everywhere the moment you save, including the public pricing page. Creator Quarterly&apos;s creation pool caps how much a creator can redistribute; existing creators keep their current split until they re-allocate.
             </p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -342,6 +345,20 @@ function PlanEditorCard({ plan, saving, onSave }: { plan: Plan; saving: boolean;
     <div style={{ background: 'var(--white)', borderRadius: 12, padding: '18px 20px', boxShadow: 'var(--shadow-soft)' }}>
       <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)', marginBottom: 16 }}>{plan.name}</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 12, marginBottom: 16 }}>
+        {field('price_ghs', 'Price (GHS)')}
+        <div>
+          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }}>Billing period</label>
+          <select
+            value={local.billing_period ?? ''}
+            onChange={e => setLocal(prev => ({ ...prev, billing_period: e.target.value || undefined }))}
+            style={{ width: '100%', height: 34, border: '0.5px solid var(--border)', borderRadius: 6, padding: '0 8px', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', background: 'var(--white)' }}
+          >
+            <option value="">Free / commission</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
         {field('assess_quota', 'Assess quota')}
         {field('engage_quota', 'Engage quota')}
         {field('learn_quota', 'Learn quota')}

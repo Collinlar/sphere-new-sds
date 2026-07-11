@@ -7,7 +7,8 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import { refreshUserProfile } from '@/lib/auth'
 import { getCreationUsage, getEffectivePlanId, updateQuotaAllocation } from '@/lib/subscription'
-import { isModuleAllowedForPlan } from '@/lib/plan-privileges'
+import { isModuleAllowedForPlan, PLAN_PRIVILEGE_SUMMARY } from '@/lib/plan-privileges'
+import type { SubscriptionTier } from '@/lib/types'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
 import type { CreationUsage } from '@/lib/types'
 
@@ -88,6 +89,7 @@ function BillingPageInner() {
   const [savingAlloc, setSavingAlloc] = useState(false)
   const [allocMsg, setAllocMsg] = useState('')
   const [checkoutMsg, setCheckoutMsg] = useState('')
+  const [justUpgraded, setJustUpgraded] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [checkingOut, setCheckingOut] = useState(false)
 
@@ -122,7 +124,7 @@ function BillingPageInner() {
 
     verifyCheckoutReference(reference).then(async (result) => {
       if (result.ok) {
-        setCheckoutMsg('Payment confirmed. Your plan is updated.')
+        setJustUpgraded(true)
         window.history.replaceState({}, '', '/platform/settings/billing')
         await refreshUserProfile(userId ?? undefined)
         if (userId) {
@@ -237,6 +239,23 @@ function BillingPageInner() {
 
       <div style={{ padding: '28px 32px 60px', maxWidth: 860 }}>
 
+        {justUpgraded && (
+          <div style={{ background: 'var(--teal-light)', borderRadius: 12, padding: '18px 20px', marginBottom: 20, border: '0.5px solid #1A8966' }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0d5e3d', marginBottom: 4 }}>Payment confirmed</p>
+            <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--near-black)', marginBottom: 12 }}>You&apos;re on {currentPlan.name} now. Here&apos;s what you have:</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {(PLAN_PRIVILEGE_SUMMARY[currentTier as SubscriptionTier] ?? []).map(item => (
+                <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ marginTop: 3, flexShrink: 0 }}><path d="M2.5 7l3 3 6-6.5" stroke="#1A8966" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <span style={{ fontSize: 13, color: 'var(--near-black)', lineHeight: 1.5 }}>{item}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setJustUpgraded(false)} style={{ marginTop: 14, height: 34, padding: '0 16px', borderRadius: 8, border: 'none', background: '#1A8966', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Got it
+            </button>
+          </div>
+        )}
         {checkoutMsg && (
           <div style={{ background: 'var(--teal-light)', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
             <p style={{ fontSize: 13, color: 'var(--teal-dark)' }}>{checkoutMsg}</p>
@@ -270,21 +289,27 @@ function BillingPageInner() {
           padding: '20px 24px',
           boxShadow: 'var(--shadow-soft)',
           borderLeft: `3px solid ${currentPlan.accent}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 12,
           marginBottom: 24,
         }}>
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: currentPlan.accent, marginBottom: 3 }}>Current plan</p>
-            <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--near-black)' }}>{currentPlan.name}</p>
-            <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginTop: 3 }}>{currentPlan.description}</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: currentPlan.accent, marginBottom: 3 }}>Current plan</p>
+              <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--near-black)' }}>{currentPlan.name}</p>
+              <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginTop: 3 }}>{currentPlan.description}</p>
+            </div>
+            <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--near-black)' }}>
+              {currentPlan.price}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--mid-grey)' }}>{currentPlan.period}</span>
+            </p>
           </div>
-          <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--near-black)' }}>
-            {currentPlan.price}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--mid-grey)' }}>{currentPlan.period}</span>
-          </p>
+          {/* What this plan gives you — always visible, plain language. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '7px 18px', marginTop: 16, paddingTop: 16, borderTop: '0.5px solid var(--border)' }}>
+            {(PLAN_PRIVILEGE_SUMMARY[currentTier as SubscriptionTier] ?? []).map(item => (
+              <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ marginTop: 3, flexShrink: 0 }}><path d="M2.5 7l3 3 6-6.5" stroke={currentPlan.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <span style={{ fontSize: 12.5, color: 'var(--mid-grey)', lineHeight: 1.5 }}>{item}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Usage bars */}
@@ -350,7 +375,21 @@ function BillingPageInner() {
           </div>
         )}
 
-        {/* Plan cards */}
+        {/* Plan cards — hidden for institutions. An institution's economics
+            (deposit, quarterly, seats, overage) live on the institution
+            billing page; it never "downgrades" to a personal Creator plan. */}
+        {currentTier === 'institution' ? (
+          <div style={{ background: 'var(--white)', borderRadius: 12, padding: '20px 24px', boxShadow: 'var(--shadow-soft)', borderLeft: '3px solid #1A8966', marginBottom: 28 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--near-black)', marginBottom: 4 }}>This is an institution account</p>
+            <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 14 }}>
+              Seats, renewals, and per-head billing are managed on your institution billing page. To sell on the marketplace, switch to your personal workspace, where a Creator plan lives separately from the institution.
+            </p>
+            <Link href="/platform/settings/billing/institution" style={{ display: 'inline-block', height: 40, lineHeight: '40px', padding: '0 20px', borderRadius: 9, background: '#1A8966', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+              Open institution billing
+            </Link>
+          </div>
+        ) : (
+        <>
         <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>Available plans</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 28 }}>
           {PLANS.map(plan => {
@@ -390,6 +429,8 @@ function BillingPageInner() {
             )
           })}
         </div>
+        </>
+        )}
 
         {/* AI Add-ons */}
         <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>AI add-ons</p>

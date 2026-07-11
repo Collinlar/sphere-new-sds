@@ -1,16 +1,27 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPlatformSetting, getPlatformSettingNumber, setPlatformSetting, GUEST_TTL_KEY, DEFAULT_GUEST_TTL_DAYS } from '@/lib/platform-settings'
+import { TRUSTED_DOMAINS_KEY } from '@/lib/institution-verification'
+
+interface TypeLevel { id: string; label: string }
 
 interface InstitutionType {
   id: string
   name: string
   period_language: string
   period_count: number
+  academic_year_start_month?: number | null
+  level_language?: string
+  calendar_language?: string
+  has_academic_calendar?: boolean
+  levels?: TypeLevel[]
   is_custom: boolean
   is_active?: boolean
 }
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 interface StaffUser {
   id: string
@@ -24,12 +35,32 @@ const SEED_TYPE_IDS = ['primary', 'jhs', 'shs', 'university', 'college', 'traini
 export default function ConfigPage() {
   const [instTypes, setInstTypes] = useState<InstitutionType[]>([])
   const [staff, setStaff] = useState<StaffUser[]>([])
-  const [guestTTL, setGuestTTL] = useState(30)
+  const [guestTTL, setGuestTTL] = useState(DEFAULT_GUEST_TTL_DAYS)
+  const [savingTTL, setSavingTTL] = useState(false)
+  const [trustedDomains, setTrustedDomains] = useState('')
+  const [savingDomains, setSavingDomains] = useState(false)
   const [loading, setLoading] = useState(true)
   const [staffSearch, setStaffSearch] = useState('')
   const [staffSearchResults, setStaffSearchResults] = useState<StaffUser[]>([])
   const [searching, setSearching] = useState(false)
   const [msg, setMsg] = useState('')
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  async function saveType(patch: InstitutionType) {
+    await supabase.from('institution_types').update({
+      period_language: patch.period_language,
+      period_count: patch.period_count,
+      academic_year_start_month: patch.academic_year_start_month ?? null,
+      level_language: patch.level_language || 'Level',
+      calendar_language: patch.calendar_language || 'Academic year',
+      has_academic_calendar: patch.has_academic_calendar ?? true,
+      levels: patch.levels ?? [],
+    }).eq('id', patch.id)
+    setInstTypes(prev => prev.map(t => t.id === patch.id ? patch : t))
+    setEditingId(null)
+    flash(`${patch.name} updated.`)
+  }
 
   // New institution type form
   const [newTypeName, setNewTypeName] = useState('')
@@ -45,10 +76,28 @@ export default function ConfigPage() {
       ])
       setInstTypes((typeData ?? []) as InstitutionType[])
       setStaff((staffData ?? []) as StaffUser[])
+      setGuestTTL(await getPlatformSettingNumber(GUEST_TTL_KEY, DEFAULT_GUEST_TTL_DAYS))
+      setTrustedDomains(await getPlatformSetting(TRUSTED_DOMAINS_KEY, ''))
       setLoading(false)
     }
     load()
   }, [])
+
+  async function saveGuestTTL() {
+    setSavingTTL(true)
+    const result = await setPlatformSetting(GUEST_TTL_KEY, String(guestTTL))
+    setSavingTTL(false)
+    flash(result.ok ? `Guest sessions now expire after ${guestTTL} days.` : 'That did not save. Try again.')
+  }
+
+  async function saveTrustedDomains() {
+    setSavingDomains(true)
+    const cleaned = trustedDomains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean).join(', ')
+    const result = await setPlatformSetting(TRUSTED_DOMAINS_KEY, cleaned)
+    setTrustedDomains(cleaned)
+    setSavingDomains(false)
+    flash(result.ok ? 'Trusted domains saved.' : 'That did not save. Try again.')
+  }
 
   function flash(msg: string) {
     setMsg(msg)
@@ -129,30 +178,47 @@ export default function ConfigPage() {
               </thead>
               <tbody>
                 {instTypes.map((t, i) => (
-                  <tr key={t.id} style={{ borderTop: i > 0 ? '0.5px solid var(--border)' : 'none' }}>
-                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{t.name}</td>
-                    <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--mid-grey)' }}>{t.period_language}</td>
-                    <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--mid-grey)' }}>{t.period_count}</td>
-                    <td style={{ padding: '10px 16px' }}>
-                      {t.is_custom ? (
+                  <Fragment key={t.id}>
+                    <tr style={{ borderTop: i > 0 ? '0.5px solid var(--border)' : 'none' }}>
+                      <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 500, color: 'var(--near-black)' }}>{t.name}</td>
+                      <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--mid-grey)' }}>{t.period_language}</td>
+                      <td style={{ padding: '10px 16px', fontSize: 13, color: 'var(--mid-grey)' }}>{t.period_count}</td>
+                      <td style={{ padding: '10px 16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#D97010', background: '#FEF0DC', padding: '3px 8px', borderRadius: 20 }}>Custom</span>
+                          {t.is_custom ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#D97010', background: '#FEF0DC', padding: '3px 8px', borderRadius: 20 }}>Custom</span>
+                          ) : (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', background: 'var(--bg2)', padding: '3px 8px', borderRadius: 20 }}>Default</span>
+                          )}
                           <button
-                            onClick={async () => {
-                              await supabase.from('institution_types').delete().eq('id', t.id)
-                              setInstTypes(prev => prev.filter(x => x.id !== t.id))
-                              flash('Type removed.')
-                            }}
-                            style={{ fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                            onClick={() => setEditingId(editingId === t.id ? null : t.id)}
+                            style={{ fontSize: 11, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0, fontWeight: 600 }}
                           >
-                            Remove
+                            {editingId === t.id ? 'Close' : 'Edit'}
                           </button>
+                          {t.is_custom && (
+                            <button
+                              onClick={async () => {
+                                await supabase.from('institution_types').delete().eq('id', t.id)
+                                setInstTypes(prev => prev.filter(x => x.id !== t.id))
+                                flash('Type removed.')
+                              }}
+                              style={{ fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                            >
+                              Remove
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', background: 'var(--bg2)', padding: '3px 8px', borderRadius: 20 }}>Default</span>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    {editingId === t.id && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: 0, background: 'var(--page-bg)' }}>
+                          <TypeEditor type={t} onCancel={() => setEditingId(null)} onSave={saveType} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -187,7 +253,7 @@ export default function ConfigPage() {
           {/* Guest session TTL */}
           <section style={{ background: 'var(--white)', borderRadius: 12, padding: '20px', boxShadow: 'var(--shadow-soft)' }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)', marginBottom: 4 }}>Guest session expiry</p>
-            <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 14 }}>How many days before unclaimed guest sessions expire. Currently {guestTTL} days.</p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 14 }}>How many days before unclaimed guest sessions expire. New guest sessions use this value.</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <input
                 type="number"
@@ -198,11 +264,32 @@ export default function ConfigPage() {
                 style={{ height: 34, width: 80, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 12px', fontSize: 13, fontFamily: 'inherit' }}
               />
               <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>days</span>
-              <button onClick={() => flash('Guest TTL saved (schema-enforced — update via migration).')} style={{
+              <button onClick={saveGuestTTL} disabled={savingTTL} style={{
                 height: 34, padding: '0 16px', borderRadius: 7, border: 'none',
                 background: 'var(--amber)', color: '#fff', fontSize: 13, fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}>Save</button>
+                cursor: savingTTL ? 'wait' : 'pointer', fontFamily: 'inherit',
+              }}>{savingTTL ? 'Saving...' : 'Save'}</button>
+            </div>
+          </section>
+
+          {/* Trusted verification domains */}
+          <section style={{ background: 'var(--white)', borderRadius: 12, padding: '20px', boxShadow: 'var(--shadow-soft)' }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)', marginBottom: 4 }}>Auto-verify email domains</p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 14, lineHeight: 1.5 }}>
+              Institutions whose owner signs up on one of these domains are verified automatically. Educational and government domains (.edu, .edu.gh, .gov.gh, .ac.*) are always trusted. Add extra domains here, comma separated. Free providers like gmail never auto-verify.
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <input
+                value={trustedDomains}
+                onChange={e => setTrustedDomains(e.target.value)}
+                placeholder="e.g. ashesi.edu.gh, mycompany.com"
+                style={{ flex: 1, minWidth: 240, height: 34, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 12px', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
+              />
+              <button onClick={saveTrustedDomains} disabled={savingDomains} style={{
+                height: 34, padding: '0 16px', borderRadius: 7, border: 'none',
+                background: 'var(--amber)', color: '#fff', fontSize: 13, fontWeight: 600,
+                cursor: savingDomains ? 'wait' : 'pointer', fontFamily: 'inherit',
+              }}>{savingDomains ? 'Saving...' : 'Save'}</button>
             </div>
           </section>
 
@@ -261,6 +348,100 @@ export default function ConfigPage() {
 
         </div>
       )}
+    </div>
+  )
+}
+
+// Inline editor for an institution type: period language/count, academic
+// calendar start month, and the seeded level list. Levels feed every level
+// dropdown in the app, so editing here changes what institutions of this
+// type can assign content to.
+function TypeEditor({ type, onCancel, onSave }: { type: InstitutionType; onCancel: () => void; onSave: (t: InstitutionType) => void }) {
+  const [periodLang, setPeriodLang] = useState(type.period_language)
+  const [periodCount, setPeriodCount] = useState(type.period_count)
+  const [startMonth, setStartMonth] = useState<number | ''>(type.academic_year_start_month ?? '')
+  const [levelLang, setLevelLang] = useState(type.level_language || 'Level')
+  const [calendarLang, setCalendarLang] = useState(type.calendar_language || 'Academic year')
+  const [hasCalendar, setHasCalendar] = useState(type.has_academic_calendar ?? true)
+  const [levels, setLevels] = useState<TypeLevel[]>(Array.isArray(type.levels) ? type.levels : [])
+  const [newLevel, setNewLevel] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  function addLevel() {
+    const label = newLevel.trim()
+    if (!label) return
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 28)
+    if (levels.some(l => l.id === id)) { setNewLevel(''); return }
+    setLevels(prev => [...prev, { id, label }])
+    setNewLevel('')
+  }
+
+  const fieldLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary)', display: 'block', marginBottom: 4 }
+  const input: React.CSSProperties = { height: 34, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 10px', fontSize: 13, fontFamily: 'inherit', background: 'var(--white)' }
+
+  return (
+    <div style={{ padding: '16px 20px', borderTop: '0.5px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}>
+        <div>
+          <label style={fieldLabel}>Period word</label>
+          <input value={periodLang} onChange={e => setPeriodLang(e.target.value)} style={{ ...input, width: 130 }} />
+        </div>
+        <div>
+          <label style={fieldLabel}>Periods / year</label>
+          <input type="number" min={1} max={12} value={periodCount} onChange={e => setPeriodCount(Number(e.target.value))} style={{ ...input, width: 70 }} />
+        </div>
+        <div>
+          <label style={fieldLabel}>Level word</label>
+          <input value={levelLang} onChange={e => setLevelLang(e.target.value)} placeholder="Grade / Year / Department" style={{ ...input, width: 150 }} />
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', height: 34 }}>
+          <input type="checkbox" checked={hasCalendar} onChange={e => setHasCalendar(e.target.checked)} style={{ width: 15, height: 15 }} />
+          <span style={{ fontSize: 12, color: 'var(--near-black)' }}>Has a calendar</span>
+        </label>
+        {hasCalendar && (
+          <>
+            <div>
+              <label style={fieldLabel}>Calendar word</label>
+              <input value={calendarLang} onChange={e => setCalendarLang(e.target.value)} placeholder="Academic year / Fiscal year" style={{ ...input, width: 170 }} />
+            </div>
+            <div>
+              <label style={fieldLabel}>Year starts</label>
+              <select value={startMonth === '' ? '' : String(startMonth)} onChange={e => setStartMonth(e.target.value === '' ? '' : Number(e.target.value))} style={{ ...input, width: 150 }}>
+                <option value="">September (default)</option>
+                {MONTHS.map((m, idx) => <option key={m} value={idx + 1}>{m}</option>)}
+              </select>
+            </div>
+          </>
+        )}
+      </div>
+
+      <label style={fieldLabel}>Levels</label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10, marginTop: 4 }}>
+        {levels.map(l => (
+          <span key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 28, padding: '0 6px 0 11px', borderRadius: 8, background: 'var(--white)', border: '0.5px solid var(--border)', fontSize: 12, fontWeight: 500, color: 'var(--near-black)' }}>
+            {l.label}
+            <button onClick={() => setLevels(prev => prev.filter(x => x.id !== l.id))} aria-label={`Remove ${l.label}`} style={{ border: 'none', background: 'var(--bg2)', width: 16, height: 16, borderRadius: '50%', cursor: 'pointer', padding: 0, fontSize: 10, color: 'var(--mid-grey)', fontFamily: 'inherit' }}>×</button>
+          </span>
+        ))}
+        {levels.length === 0 && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No levels yet. Add the grades or years this type uses.</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 8, maxWidth: 360, marginBottom: 16 }}>
+        <input value={newLevel} onChange={e => setNewLevel(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addLevel() }} placeholder="e.g. Year 1, Grade 7" style={{ ...input, flex: 1, height: 36 }} />
+        <button onClick={addLevel} disabled={!newLevel.trim()} style={{ height: 36, padding: '0 14px', borderRadius: 7, border: 'none', background: 'var(--near-black)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Add</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button
+          onClick={async () => {
+            setSaving(true)
+            await onSave({ ...type, period_language: periodLang, period_count: periodCount, academic_year_start_month: startMonth === '' ? null : startMonth, level_language: levelLang, calendar_language: calendarLang, has_academic_calendar: hasCalendar, levels })
+            setSaving(false)
+          }}
+          disabled={saving}
+          style={{ height: 34, padding: '0 18px', borderRadius: 7, border: 'none', background: 'var(--amber)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit' }}
+        >{saving ? 'Saving...' : 'Save type'}</button>
+        <button onClick={onCancel} style={{ height: 34, padding: '0 14px', borderRadius: 7, border: 'none', background: 'none', color: 'var(--mid-grey)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+      </div>
     </div>
   )
 }

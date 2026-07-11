@@ -7,6 +7,8 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { getCreationUsage, getEffectivePlanId } from '@/lib/subscription'
+import { quotaRenewsAt } from '@/lib/plan-upgrade'
+import type { SubscriptionTier } from '@/lib/types'
 import { fetchScopedContent } from '@/lib/library-scope'
 import { isAcquiredRow, getAcquisitionUseHref, getAcquisitionTakeLabel, fetchAcquiredContentIds } from '@/lib/acquisition-access'
 import {
@@ -29,6 +31,7 @@ interface QuotaRow {
   learn_used: number
   train_quota: number
   train_used: number
+  period_start?: string | null
 }
 
 interface AcquisitionRow {
@@ -318,44 +321,68 @@ export default function HomePage() {
         )}
 
         {/* Creation quota (personal) */}
-        {context.type === 'personal' && quota && (
-          <div className="sphere-card" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-              <div>
-                <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 3 }}>My creations</h2>
-                <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>
-                  {tier === 'membership' ? 'Free Membership · Engage sessions' : 'Your creation pool this period'}
-                </p>
+        {context.type === 'personal' && quota && (() => {
+          const renewsAt = quotaRenewsAt(tier as SubscriptionTier, quota.period_start ?? null)
+          const renewLabel = renewsAt
+            ? renewsAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+            : null
+          // Natural-but-urging: quiet meter always; amber nudge when close.
+          const nearLimit = quotaModules.some(mod => {
+            const q = quota[`${mod}_quota`]
+            return q > 0 && q - quota[`${mod}_used`] <= 1
+          })
+          return (
+            <div className="sphere-card" style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 3 }}>My creations</h2>
+                  <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>
+                    {tier === 'membership' ? 'Free Membership · Engage sessions' : 'Your creation pool this period'}
+                    {renewLabel ? ` · renews ${renewLabel}` : ''}
+                  </p>
+                </div>
+                {tier === 'membership' && (
+                  <Link href="/platform/settings/billing" style={{
+                    fontSize: 12, fontWeight: 600, color: '#2E2886', textDecoration: 'none',
+                    background: '#EEEDF8', padding: '6px 12px', borderRadius: 20,
+                  }}>
+                    Get more with Creator →
+                  </Link>
+                )}
               </div>
-              {tier === 'membership' && (
-                <Link href="/platform/settings/billing" style={{
-                  fontSize: 12, fontWeight: 600, color: '#2E2886', textDecoration: 'none',
-                  background: '#EEEDF8', padding: '6px 12px', borderRadius: 20,
-                }}>
-                  Get more with Creator →
-                </Link>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 16 }}>
+                {quotaModules.map(mod => {
+                  const q = quota[`${mod}_quota`]
+                  const used = quota[`${mod}_used`]
+                  const pct = Math.min((used / Math.max(q, 1)) * 100, 100)
+                  const remaining = q - used
+                  const tight = q > 0 && remaining <= 1
+                  return (
+                    <div key={mod}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: MODULE_COLOR[mod], textTransform: 'capitalize' }}>{quotaLabel(mod)}</span>
+                        <span style={{ fontSize: 12, fontWeight: tight ? 700 : 400, color: tight ? '#9A5800' : 'var(--mid-grey)' }}>{used} / {q}</span>
+                      </div>
+                      <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: tight ? '#E8A020' : MODULE_COLOR[mod], borderRadius: 3 }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {nearLimit && tier === 'membership' && (
+                <div style={{ marginTop: 14, background: '#FEF9F1', border: '1px solid #E8A020', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: 12, color: '#9A5800', lineHeight: 1.5 }}>
+                    You are almost at your monthly limit{renewLabel ? `, renews ${renewLabel}` : ''}. Creator gives you all four modes and no session caps.
+                  </p>
+                  <Link href="/platform/settings/billing" style={{ fontSize: 12, fontWeight: 700, color: '#9A5800', textDecoration: 'underline', flexShrink: 0 }}>
+                    See Creator plans
+                  </Link>
+                </div>
               )}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 16 }}>
-              {quotaModules.map(mod => {
-                const q = quota[`${mod}_quota`]
-                const used = quota[`${mod}_used`]
-                const pct = Math.min((used / Math.max(q, 1)) * 100, 100)
-                return (
-                  <div key={mod}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: MODULE_COLOR[mod], textTransform: 'capitalize' }}>{quotaLabel(mod)}</span>
-                      <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>{used} / {q}</span>
-                    </div>
-                    <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3 }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: MODULE_COLOR[mod], borderRadius: 3 }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* My acquisitions */}
         <div className="sphere-card">

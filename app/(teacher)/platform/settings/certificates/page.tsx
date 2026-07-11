@@ -6,6 +6,7 @@ import TopBar from '@/components/brand/TopBar'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { getActiveContext } from '@/lib/context'
+import { isInstitutionVerified } from '@/lib/institution-verification'
 
 interface TemplateRow {
   id: string
@@ -26,6 +27,7 @@ export default function CertificateSettingsPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [verified, setVerified] = useState(false)
 
   useEffect(() => {
     const ctx = getActiveContext()
@@ -34,6 +36,11 @@ export default function CertificateSettingsPage() {
     const oid = ctx.type === 'institution' ? ctx.institutionId : user.id
     setOwnerId(oid)
     setOwnerType(ctx.type === 'institution' ? 'institution' : 'creator')
+
+    // Custom branded certificates are for VERIFIED institutions only.
+    if (ctx.type === 'institution') {
+      isInstitutionVerified(ctx.institutionId).then(setVerified)
+    }
 
     supabase
       .from('certificate_templates')
@@ -110,8 +117,33 @@ export default function CertificateSettingsPage() {
       <div style={{ padding: '28px 32px 60px', maxWidth: 640 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Certificate templates</h1>
         <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24, lineHeight: 1.6 }}>
-          Upload your branded certificate. The active template is used when an exam, course, or training path you own issues a certificate. Without one, learners get the Sphere default.
+          {ownerType === 'institution'
+            ? 'Upload your branded certificate. The active template is used when an exam, course, or training path your institution owns issues a certificate. Without one, learners get the Sphere default.'
+            : 'Certificates you issue use the Sphere-branded template. Custom branded templates are an Institution plan feature.'}
         </p>
+
+        {ownerType !== 'institution' ? (
+          <div className="sphere-card" style={{ textAlign: 'center', padding: '36px 24px' }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--near-black)', marginBottom: 8 }}>Branded certificates are for institutions</p>
+            <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 18, maxWidth: 400, margin: '0 auto 18px' }}>
+              Your learners still receive verifiable Sphere certificates on every resource that awards one. To issue certificates carrying your own logo and signatories, set up an Institution plan.
+            </p>
+            <Link href="/platform/settings/billing/institution" style={{ display: 'inline-block', height: 42, lineHeight: '42px', padding: '0 22px', borderRadius: 9, background: 'var(--blue)', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+              See the Institution plan
+            </Link>
+          </div>
+        ) : !verified ? (
+          <div className="sphere-card" style={{ textAlign: 'center', padding: '36px 24px' }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--near-black)', marginBottom: 8 }}>Verify your institution first</p>
+            <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 18, maxWidth: 420, margin: '0 auto 18px' }}>
+              Branded certificates carry your institution&apos;s authority, so Sphere verifies institutions before enabling them. Your learners still receive verifiable Sphere-branded certificates in the meantime. Request verification from your institution settings.
+            </p>
+            <Link href="/platform/settings" style={{ display: 'inline-block', height: 42, lineHeight: '42px', padding: '0 22px', borderRadius: 9, background: 'var(--blue)', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+              Go to institution settings
+            </Link>
+          </div>
+        ) : (
+        <>
 
         {error && <p style={{ fontSize: 13, color: 'var(--coral)', background: '#FDECEA', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>{error}</p>}
         {message && <p style={{ fontSize: 13, color: 'var(--teal)', background: '#DDFAF0', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>{message}</p>}
@@ -153,6 +185,8 @@ export default function CertificateSettingsPage() {
               </div>
             ))}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

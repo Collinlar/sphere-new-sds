@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { getPlatformSettingNumber, GUEST_TTL_KEY, DEFAULT_GUEST_TTL_DAYS } from './platform-settings'
 
 const BROWSER_TOKEN_KEY = 'sphere_guest_token'
 const PENDING_CLAIMS_KEY = 'sphere_pending_claims'
@@ -32,6 +33,10 @@ export async function createGuestSession(params: {
   const claimToken = generateClaimToken()
   const browserToken = getBrowserToken()
 
+  // Expiry honours the admin-configured guest TTL (Platform config).
+  const ttlDays = await getPlatformSettingNumber(GUEST_TTL_KEY, DEFAULT_GUEST_TTL_DAYS)
+  const expiresAt = new Date(Date.now() + ttlDays * 86400000).toISOString()
+
   const { error } = await supabase.from('guest_sessions').insert({
     session_type: params.sessionType,
     resource_session_id: params.resourceSessionId,
@@ -39,6 +44,7 @@ export async function createGuestSession(params: {
     display_name: params.displayName,
     claim_token: claimToken,
     browser_token: browserToken,
+    expires_at: expiresAt,
   })
 
   if (error) return null

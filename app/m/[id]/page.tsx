@@ -50,6 +50,7 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
   const [error, setError] = useState<string | null>(null)
   const [signedIn, setSignedIn] = useState(false)
   const [imported, setImported] = useState(false)
+  const [staffPreview, setStaffPreview] = useState(false)
   const [importDestination, setImportDestination] = useImportDestination()
 
   useEffect(() => {
@@ -81,13 +82,23 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
       setLoading(true)
       const { data } = await supabase
         .from('marketplace_listings')
-        .select('id, title, description, resource_type, price_ghs, is_free, subject, thumbnail_color, total_purchases, creator_id, creator_profiles(slug, users(name))')
+        .select('id, title, description, resource_type, price_ghs, is_free, subject, thumbnail_color, total_purchases, creator_id, status, creator_profiles(slug, users(name))')
         .eq('id', params.id)
-        .eq('status', 'approved')
         .maybeSingle()
 
       if (cancelled) return
+      // Approved listings are public. Anything else is only visible to Sphere
+      // staff, so they can preview a pending listing before approving it.
       if (!data) { setLoading(false); return }
+      if ((data as { status?: string }).status !== 'approved') {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const uid = sessionData.session?.user?.id
+        const staff = uid
+          ? (await supabase.from('users').select('is_sphere_staff').eq('id', uid).maybeSingle()).data?.is_sphere_staff
+          : false
+        if (!staff) { setLoading(false); return }
+        if (!cancelled) setStaffPreview(true)
+      }
       const profile = (data as unknown as { creator_profiles?: { slug: string; users?: { name: string } } }).creator_profiles
       setListing({
         ...(data as unknown as PublicListing),
@@ -161,6 +172,11 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg)', fontFamily: 'var(--font)' }}>
+      {staffPreview && (
+        <div style={{ background: '#2E2886', color: '#fff', padding: '9px 20px', textAlign: 'center', fontSize: 13, fontWeight: 600 }}>
+          Staff preview — this listing is not yet approved. This is what a buyer would see.
+        </div>
+      )}
       {/* Public header */}
       <div style={{ background: 'var(--white)', borderBottom: '0.5px solid var(--border)', padding: '14px 20px' }}>
         <div style={{ maxWidth: 560, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

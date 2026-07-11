@@ -33,8 +33,12 @@ const TABLE_QUERIES: Record<ContentType, { table: string; select: string }> = {
   learning_paths: { table: 'learning_paths', select: 'id, title, created_at, is_published, users(name), institutions(name)' },
   guides: { table: 'guides', select: 'id, title, created_at, is_published, users(name), institutions(name)' },
   notes: { table: 'notes', select: 'id, title, created_at, is_published, users(name), institutions(name)' },
-  documents: { table: 'documents', select: 'id, title, created_at, users(name), institutions(name)' },
+  documents: { table: 'documents', select: 'id, title, created_at, is_published, users(name), institutions(name)' },
 }
+
+// Content types that carry a publish flag, so admin can take them down or
+// restore them. Exams and quizzes are session-based and have no flag.
+const PUBLISHABLE: ContentType[] = ['courses', 'learning_paths', 'guides', 'notes', 'documents']
 
 export default function ContentPage() {
   const [activeTab, setActiveTab] = useState<ContentType>('exams')
@@ -69,8 +73,22 @@ export default function ContentPage() {
       })
   }, [activeTab])
 
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  async function toggleTakedown(row: ContentRow) {
+    const table = TABLE_QUERIES[activeTab].table
+    const next = !(row.is_published ?? true)
+    setBusyId(row.id)
+    const { error } = await supabase.from(table).update({ is_published: next }).eq('id', row.id)
+    setBusyId(null)
+    if (!error) {
+      setData(prev => prev.map(r => r.id === row.id ? { ...r, is_published: next } : r))
+    }
+  }
+
   const filtered = data.filter(row => !search || row.title.toLowerCase().includes(search.toLowerCase()))
   const tabColor = TABS.find(t => t.key === activeTab)?.color ?? '#A09DA8'
+  const canModerate = PUBLISHABLE.includes(activeTab)
 
   return (
     <div style={{ padding: '32px 32px 60px', maxWidth: 1000 }}>
@@ -116,7 +134,7 @@ export default function ContentPage() {
           <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--page-bg)' }}>
-                {['Title', 'Creator', 'Institution', 'Status', 'Created'].map(h => (
+                {['Title', 'Creator', 'Institution', 'Status', 'Created', ...(canModerate ? ['Action'] : [])].map(h => (
                   <th key={h} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -149,11 +167,27 @@ export default function ContentPage() {
                     <td style={{ padding: '11px 16px', fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                       {new Date(row.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
+                    {canModerate && (
+                      <td style={{ padding: '11px 16px', whiteSpace: 'nowrap' }}>
+                        <button
+                          onClick={() => toggleTakedown(row)}
+                          disabled={busyId === row.id}
+                          style={{
+                            height: 28, padding: '0 12px', borderRadius: 6, border: 'none',
+                            background: isPublished ? 'var(--coral-light, #FDECEA)' : 'var(--teal-light)',
+                            color: isPublished ? 'var(--coral)' : 'var(--teal)',
+                            fontSize: 12, fontWeight: 600, cursor: busyId === row.id ? 'wait' : 'pointer', fontFamily: 'inherit',
+                          }}
+                        >
+                          {busyId === row.id ? '...' : isPublished ? 'Take down' : 'Restore'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={5} style={{ padding: '32px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No {activeTab} found.</td></tr>
+                <tr><td colSpan={canModerate ? 6 : 5} style={{ padding: '32px 16px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No {activeTab} found.</td></tr>
               )}
             </tbody>
           </table>

@@ -30,6 +30,52 @@ export function quotasForPlan(planId: SubscriptionTier) {
   return { ...UNLIMITED_QUOTAS }
 }
 
+/**
+ * How long a plan's creation quota period lasts, in months.
+ * Membership renews monthly (keeps free users coming back);
+ * Creator Quarterly renews with its billing quarter.
+ * Unlimited plans have no period (null = never reset).
+ */
+export function quotaPeriodMonths(planId: SubscriptionTier): number | null {
+  if (planId === 'membership') return 1
+  if (planId === 'creator_quarterly') return 3
+  return null
+}
+
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() + months)
+  return d
+}
+
+/**
+ * Given when the current period started, when does the quota renew?
+ * Returns null for plans without a period.
+ */
+export function quotaRenewsAt(planId: SubscriptionTier, periodStart: string | Date | null): Date | null {
+  const months = quotaPeriodMonths(planId)
+  if (!months) return null
+  const start = periodStart ? new Date(periodStart) : new Date()
+  return addMonths(start, months)
+}
+
+/**
+ * If the period has rolled over, compute the fresh period start
+ * (advanced whole periods, so a user away for 3 months lands in the
+ * current window, not a stale one). Returns null when no reset is due.
+ */
+export function nextPeriodStartIfDue(planId: SubscriptionTier, periodStart: string | Date | null): Date | null {
+  const months = quotaPeriodMonths(planId)
+  if (!months) return null
+  let start = periodStart ? new Date(periodStart) : new Date()
+  const now = new Date()
+  if (addMonths(start, months) > now) return null
+  while (addMonths(start, months) <= now) {
+    start = addMonths(start, months)
+  }
+  return start
+}
+
 export function buildCreationUsageRow(
   userId: string,
   planId: SubscriptionTier,
@@ -45,6 +91,7 @@ export function buildCreationUsageRow(
     row.engage_used = 0
     row.learn_used = 0
     row.train_used = 0
+    row.period_start = new Date().toISOString()
   }
   return row
 }

@@ -53,7 +53,7 @@ export default function LandingPage() {
               SphereSDS gives schools, companies, and educators four purpose-built tools in one place. Use one. Use all four. Pay for exactly what you need.
             </p>
             <div className="mkt-anim-4 cta-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
-              <Link href="/onboarding" className="cta-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '14px 28px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 15, fontWeight: 600, textDecoration: 'none' }}>
+              <Link href="/signup" className="cta-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '14px 28px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 15, fontWeight: 600, textDecoration: 'none' }}>
                 Get started free
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </Link>
@@ -148,7 +148,7 @@ export default function LandingPage() {
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#1A8966', background: '#DDFAF0', border: '1px solid rgba(26,137,102,0.16)', padding: '4px 12px', borderRadius: 20 }}>Learn</span>
                 </div>
               </div>
-              <Link href="/onboarding" className="cta-ghost" style={{ display: 'block', textAlign: 'center', padding: 13, borderRadius: 10, border: '1px solid #D0CBBC', fontSize: 14, fontWeight: 600, color: '#18171A', textDecoration: 'none', background: 'transparent' }}>Get started free</Link>
+              <Link href="/signup" className="cta-ghost" style={{ display: 'block', textAlign: 'center', padding: 13, borderRadius: 10, border: '1px solid #D0CBBC', fontSize: 14, fontWeight: 600, color: '#18171A', textDecoration: 'none', background: 'transparent' }}>Get started free</Link>
             </div>
 
             {/* Companies */}
@@ -165,7 +165,7 @@ export default function LandingPage() {
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#1052A3', background: 'rgba(16,82,163,0.18)', border: '1px solid rgba(16,82,163,0.26)', padding: '4px 12px', borderRadius: 20 }}>Train</span>
                 </div>
               </div>
-              <Link href="/onboarding" className="cta-primary" style={{ display: 'block', textAlign: 'center', padding: 13, borderRadius: 10, background: '#D97010', fontSize: 14, fontWeight: 600, color: '#fff', textDecoration: 'none' }}>Get started free</Link>
+              <Link href="/signup" className="cta-primary" style={{ display: 'block', textAlign: 'center', padding: 13, borderRadius: 10, background: '#D97010', fontSize: 14, fontWeight: 600, color: '#fff', textDecoration: 'none' }}>Get started free</Link>
             </div>
 
             {/* Individual educators */}
@@ -182,7 +182,7 @@ export default function LandingPage() {
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#1A8966', background: '#DDFAF0', border: '1px solid rgba(26,137,102,0.16)', padding: '4px 12px', borderRadius: 20 }}>Learn</span>
                 </div>
               </div>
-              <Link href="/onboarding" className="cta-ghost" style={{ display: 'block', textAlign: 'center', padding: 13, borderRadius: 10, border: '1px solid #D0CBBC', fontSize: 14, fontWeight: 600, color: '#18171A', textDecoration: 'none', background: 'transparent' }}>Get started free</Link>
+              <Link href="/signup" className="cta-ghost" style={{ display: 'block', textAlign: 'center', padding: 13, borderRadius: 10, border: '1px solid #D0CBBC', fontSize: 14, fontWeight: 600, color: '#18171A', textDecoration: 'none', background: 'transparent' }}>Get started free</Link>
             </div>
           </div>
         </div>
@@ -233,7 +233,7 @@ export default function LandingPage() {
               <p style={{ fontSize: 16, color: '#A09DA8', lineHeight: 1.6 }}>Set up in under 10 minutes. No IT team required.</p>
             </div>
             <div className="bottom-cta-btns" style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end', flexShrink: 0 }}>
-              <Link href="/onboarding" className="cta-primary" style={{ display: 'inline-block', padding: '16px 32px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 16, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Start free, no card needed</Link>
+              <Link href="/signup" className="cta-primary" style={{ display: 'inline-block', padding: '16px 32px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 16, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Start free, no card needed</Link>
               <p style={{ fontSize: 13, color: '#6B6870' }}>Already have an account? <Link href="/login" style={{ color: '#fff', fontWeight: 600, textDecoration: 'none' }}>Sign in →</Link></p>
             </div>
           </div>

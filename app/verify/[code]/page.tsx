@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import QRCode from 'qrcode'
 import { supabase } from '@/lib/supabase'
 
 interface VerifiedCertificate {
@@ -18,6 +19,16 @@ export default function VerifyCertificatePage() {
   const [cert, setCert] = useState<VerifiedCertificate | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+
+  // QR pointing at this very page, so a printed certificate can carry it.
+  useEffect(() => {
+    if (!cert) return
+    const url = `${window.location.origin}/verify/${cert.verification_code}`
+    QRCode.toDataURL(url, { width: 160, margin: 1, color: { dark: '#18171A', light: '#FFFFFF' } })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(null))
+  }, [cert])
 
   useEffect(() => {
     async function load() {
@@ -94,11 +105,20 @@ export default function VerifyCertificatePage() {
                     {new Date(cert.issued_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
-                <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 12px' }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                    Verification code
-                  </p>
-                  <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '0.06em' }}>{cert.verification_code}</p>
+                <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                      Verification code
+                    </p>
+                    <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '0.06em' }}>{cert.verification_code}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
+                      Scan the code to reopen this verification page from a printed certificate.
+                    </p>
+                  </div>
+                  {qrDataUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={qrDataUrl} alt={`QR code for certificate ${cert.verification_code}`} width={104} height={104} style={{ borderRadius: 6, background: '#fff', padding: 4, flexShrink: 0 }} />
+                  )}
                 </div>
               </div>
             </>

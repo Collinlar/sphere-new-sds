@@ -39,7 +39,7 @@ export default function MarketingNav({ platformHref = '/#modes', forHref = '/#fo
           <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <Link href="/join" className="nav-link-amber" style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #D97010', color: '#D97010', fontSize: 13, fontWeight: 600, textDecoration: 'none', letterSpacing: '-0.01em' }}>Join session</Link>
             <Link href="/login" className="cta-ghost" style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #DDD9D2', color: '#18171A', fontSize: 13, fontWeight: 500, textDecoration: 'none', background: 'transparent' }}>Sign in</Link>
-            <Link href="/onboarding" className="cta-primary" style={{ padding: '8px 18px', borderRadius: 8, background: '#D97010', color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Get started</Link>
+            <Link href="/signup" className="cta-primary" style={{ padding: '8px 18px', borderRadius: 8, background: '#D97010', color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Get started</Link>
           </div>
 
           <button aria-label="Menu" className="mob-trigger" onClick={() => setMobileMenu(m => !m)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, flexDirection: 'column', gap: 5, alignItems: 'flex-end' }}>
@@ -58,7 +58,7 @@ export default function MarketingNav({ platformHref = '/#modes', forHref = '/#fo
           <div style={{ height: 20 }} />
           <Link href="/join" onClick={() => setMobileMenu(false)} style={{ display: 'block', padding: '15px 18px', borderRadius: 10, background: '#FEF0DC', color: '#D97010', fontSize: 16, fontWeight: 700, textDecoration: 'none', textAlign: 'center', marginBottom: 8 }}>Join a session →</Link>
           <Link href="/login" onClick={() => setMobileMenu(false)} style={{ display: 'block', padding: '13px 18px', borderRadius: 10, border: '1px solid #DDD9D2', color: '#18171A', fontSize: 15, fontWeight: 500, textDecoration: 'none', textAlign: 'center', marginBottom: 8 }}>Sign in</Link>
-          <Link href="/onboarding" onClick={() => setMobileMenu(false)} style={{ display: 'block', padding: '13px 18px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 15, fontWeight: 600, textDecoration: 'none', textAlign: 'center' }}>Get started free</Link>
+          <Link href="/signup" onClick={() => setMobileMenu(false)} style={{ display: 'block', padding: '13px 18px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 15, fontWeight: 600, textDecoration: 'none', textAlign: 'center' }}>Get started free</Link>
         </div>
       )}
     </>

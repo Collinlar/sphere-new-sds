@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { createClient } from '@supabase/supabase-js'
 import MarketingNav from '@/components/marketing/MarketingNav'
 import MarketingFooter from '@/components/marketing/MarketingFooter'
 
@@ -8,23 +9,59 @@ export const metadata: Metadata = {
   description: 'Simple plans for schools, creators, and institutions. Pay monthly via MTN MoMo, Telecel Cash, or bank transfer.',
 }
 
+// Re-read live prices from subscription_plans at most once a minute, so an
+// admin price change in the panel reaches this public page without a deploy.
+export const revalidate = 60
+
+const PERIOD_LABEL: Record<string, string> = {
+  monthly: '/month',
+  quarterly: '/quarter',
+  yearly: '/year',
+}
+
+// Overlay live price + billing period from the plan table onto each card,
+// keeping the static string as the fallback (Free, Commission only) for
+// plans whose price is 0/null.
+async function fetchLivePrices(): Promise<Record<string, { price?: string; period?: string }>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) return {}
+  try {
+    const db = createClient(url, key, { auth: { persistSession: false } })
+    const { data } = await db.from('subscription_plans').select('id, price_ghs, billing_period')
+    const map: Record<string, { price?: string; period?: string }> = {}
+    for (const row of data ?? []) {
+      const priceGhs = row.price_ghs != null ? Number(row.price_ghs) : 0
+      if (priceGhs > 0) {
+        map[row.id as string] = {
+          price: `GHS ${priceGhs.toLocaleString('en-GB')}`,
+          period: PERIOD_LABEL[row.billing_period as string] ?? '',
+        }
+      }
+    }
+    return map
+  } catch {
+    return {}
+  }
+}
+
 const PLANS = [
   {
     id: 'membership', name: 'Membership', price: 'Free', period: '',
     tagline: 'Test the platform. Good for individuals exploring Sphere.',
-    accent: '#6B6870', highlight: false, cta: 'Get started free', href: '/onboarding',
+    accent: '#6B6870', highlight: false, cta: 'Get started free', href: '/signup',
     features: ['5 Assess creations', '5 Engage creations', 'Up to 5 students per session', 'No credit card needed'],
   },
   {
     id: 'creator_quarterly', name: 'Creator Quarterly', price: 'GHS 300', period: '/quarter',
     tagline: 'For educators and trainers who create and sell resources.',
-    accent: '#D97010', highlight: true, cta: 'Upgrade to Creator', href: '/onboarding',
+    accent: '#D97010', highlight: true, cta: 'Upgrade to Creator', href: '/signup',
     features: ['40 creations, allocate across modules', 'Up to 50 students per session', 'Sell on the marketplace (15% commission)', 'Issue certificates'],
   },
   {
     id: 'creator_marketplace', name: 'Creator Marketplace', price: 'Commission only', period: '',
     tagline: 'Earn from what you build, no quarterly fee.',
-    accent: '#2E2886', highlight: false, cta: 'Start selling', href: '/onboarding',
+    accent: '#2E2886', highlight: false, cta: 'Start selling', href: '/signup',
     features: ['Unlimited creations', 'Keep 70% of every sale', 'Unlimited marketplace buyers', 'Personal creator storefront'],
   },
   {
@@ -35,7 +72,13 @@ const PLANS = [
   },
 ]
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const livePrices = await fetchLivePrices()
+  const plans = PLANS.map(plan => {
+    const live = livePrices[plan.id]
+    return live ? { ...plan, price: live.price ?? plan.price, period: live.period ?? plan.period } : plan
+  })
+
   return (
     <div className="mkt-root" style={{ background: '#F5F4F1', minHeight: '100vh' }}>
       <MarketingNav />
@@ -52,7 +95,7 @@ export default function PricingPage() {
       {/* Plans */}
       <section className="sec" style={{ padding: '8px 48px 72px', maxWidth: 1200, margin: '0 auto' }}>
         <div className="pricing-plans" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 18, alignItems: 'stretch' }}>
-          {PLANS.map(plan => (
+          {plans.map(plan => (
             <div key={plan.id} className="pricing-card" style={{
               background: plan.highlight ? '#18171A' : '#fff',
               border: plan.highlight ? '0.5px solid #2A2730' : '0.5px solid #EDECE9',
@@ -115,7 +158,7 @@ export default function PricingPage() {
       <section className="sec" style={{ padding: '72px 48px', borderTop: '0.5px solid #DDD9D2', background: '#18171A', textAlign: 'center' }}>
         <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.03em', color: '#fff', marginBottom: 12, lineHeight: 1.1 }}>Start free today.</h2>
         <p style={{ fontSize: 15, color: '#A09DA8', marginBottom: 26 }}>Set up your institution in under 10 minutes.</p>
-        <Link href="/onboarding" className="cta-primary" style={{ display: 'inline-block', padding: '15px 32px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 16, fontWeight: 600, textDecoration: 'none' }}>Get started free</Link>
+        <Link href="/signup" className="cta-primary" style={{ display: 'inline-block', padding: '15px 32px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 16, fontWeight: 600, textDecoration: 'none' }}>Get started free</Link>
       </section>
 
       <MarketingFooter />

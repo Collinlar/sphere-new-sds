@@ -173,6 +173,7 @@ function CourseBuilderInner() {
   const [grade, setGrade] = useState('')
   const [description, setDescription] = useState('')
   const [thumbnailColor, setThumbnailColor] = useState('#1A8966')
+  const [issuesCertificate, setIssuesCertificate] = useState(false)
   const [modules, setModules] = useState<Module[]>([])
   const [showAddModule, setShowAddModule] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState('')
@@ -226,6 +227,7 @@ function CourseBuilderInner() {
         setGrade(data.grade_level ?? '')
         setDescription(data.description ?? '')
         setThumbnailColor(data.thumbnail_color ?? '#1A8966')
+        setIssuesCertificate(Boolean(data.issues_certificate))
         setRosterId(data.roster_id ?? '')
         setAudienceGroups(data.audience_groups ?? [])
         setModules((data.modules ?? []).map((m: Module & { content: { required?: boolean } }) => ({
@@ -343,6 +345,7 @@ function CourseBuilderInner() {
       creator_id: getCurrentUser().id,
       title, subject, grade_level: grade, description,
       thumbnail_color: thumbnailColor,
+      issues_certificate: issuesCertificate,
       modules: modules.map(({ is_mandatory, ...m }) => ({ ...m, is_mandatory })),
       is_published: publish,
       roster_id: rosterId || null,
@@ -488,6 +491,11 @@ function CourseBuilderInner() {
               <label style={labelStyle}>Description</label>
               <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What will students learn?" rows={4} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.65 }} />
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={issuesCertificate} onChange={e => setIssuesCertificate(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Issue a certificate when a student finishes this course</span>
+            </label>
 
             <div>
               <label style={labelStyle}>Roster (optional)</label>

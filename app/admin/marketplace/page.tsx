@@ -2,8 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import {
+  adminGetMarketplaceCreatorsStanding,
+  adminSetCreatorMarketplaceStanding,
+  type AdminMarketplaceCreator,
+} from '@/lib/admin'
+import {
+  adminGetAssistRequests,
+  adminCreateAssistOffer,
+  adminUpdateAssistRequest,
+  type AssistRequest,
+  type AssistStatus,
+} from '@/lib/assisted-creation'
 
-type Tab = 'pending' | 'listings' | 'revenue'
+type Tab = 'pending' | 'listings' | 'creators' | 'assisted' | 'revenue'
 
 interface CreatorProfile {
   id: string
@@ -69,6 +81,48 @@ export default function MarketplacePage() {
   const [loadError, setLoadError] = useState('')
   const [actionMsg, setActionMsg] = useState('')
   const [listingFilter, setListingFilter] = useState('all')
+  const [standing, setStanding] = useState<AdminMarketplaceCreator[]>([])
+  const [standingLoading, setStandingLoading] = useState(true)
+  const [assists, setAssists] = useState<AssistRequest[]>([])
+  const [offerEmail, setOfferEmail] = useState('')
+  const [offerNote, setOfferNote] = useState('')
+
+  useEffect(() => {
+    adminGetMarketplaceCreatorsStanding().then(rows => {
+      setStanding(rows)
+      setStandingLoading(false)
+    })
+    adminGetAssistRequests().then(setAssists)
+  }, [])
+
+  async function updateAssist(id: string, patch: { status?: AssistStatus; agreedCommissionRate?: number | null }) {
+    const res = await adminUpdateAssistRequest(id, patch)
+    if (res.ok) {
+      setAssists(prev => prev.map(a => a.id === id ? { ...a, ...(patch.status ? { status: patch.status } : {}), ...(patch.agreedCommissionRate !== undefined ? { agreedCommissionRate: patch.agreedCommissionRate } : {}) } : a))
+      flash('Assist deal updated.')
+    }
+  }
+
+  async function sendAssistOffer() {
+    const email = offerEmail.trim().toLowerCase()
+    if (!email) return
+    const { data: userRow } = await supabase.from('users').select('id').ilike('email', email).maybeSingle()
+    if (!userRow) { flash('No user with that email.'); return }
+    const res = await adminCreateAssistOffer(userRow.id as string, offerNote)
+    if (res.ok) {
+      setOfferEmail(''); setOfferNote('')
+      adminGetAssistRequests().then(setAssists)
+      flash('Offer sent to the creator.')
+    }
+  }
+
+  async function toggleSuspend(userId: string, suspend: boolean) {
+    const res = await adminSetCreatorMarketplaceStanding(userId, !suspend)
+    if (res.ok) {
+      setStanding(prev => prev.map(c => c.userId === userId ? { ...c, suspended: suspend } : c))
+      flash(suspend ? 'Creator suspended from the marketplace route.' : 'Creator reinstated.')
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -179,6 +233,8 @@ export default function MarketplacePage() {
         {([
           { key: 'pending', label: `Pending (${pendingCreators.length + pendingListings.length})` },
           { key: 'listings', label: 'All listings' },
+          { key: 'creators', label: `Creator standing${standing.some(c => c.status === 'lapsed' || c.suspended) ? ' ⚠' : ''}` },
+          { key: 'assisted', label: `Assisted (${assists.filter(a => a.status === 'requested').length})` },
           { key: 'revenue', label: 'Revenue' },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -289,6 +345,7 @@ export default function MarketplacePage() {
                       </td>
                       <td style={{ padding: '11px 14px' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
+                          <a href={`/m/${listing.id}`} target="_blank" rel="noopener noreferrer" style={{ height: 26, lineHeight: '26px', padding: '0 10px', borderRadius: 6, background: 'var(--bg2)', color: 'var(--near-black)', fontSize: 11, fontWeight: 600, textDecoration: 'none' }}>Preview</a>
                           {isPendingListing(listing.status) && (
                             <>
                               <button onClick={() => approveListing(listing.id)} style={{ height: 26, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--teal)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Approve</button>
@@ -316,6 +373,138 @@ export default function MarketplacePage() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {tab === 'creators' && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--mid-grey)', marginBottom: 16, lineHeight: 1.6 }}>
+            Marketplace-route creators (commission-only, no quarterly fee) must publish at least 10 listings every 30 days. Lapsed creators can be suspended from publishing until reinstated.
+          </p>
+          {standingLoading ? (
+            <p style={{ fontSize: 13, color: 'var(--mid-grey)' }}>Checking creator standing...</p>
+          ) : (
+            <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--page-bg)' }}>
+                    {['Creator', 'Listings (30d)', 'Standing', 'Status', 'Actions'].map(h => (
+                      <th key={h} style={{ padding: '10px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-tertiary)', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {standing.map((c, i) => {
+                    const statusMeta: Record<string, { label: string; color: string }> = {
+                      ok: { label: 'On track', color: '#1A8966' },
+                      warning: { label: 'At risk', color: '#D97010' },
+                      lapsed: { label: 'Lapsed', color: '#C23B2A' },
+                      not_marketplace: { label: '—', color: '#A09DA8' },
+                    }
+                    const sm = statusMeta[c.status] ?? statusMeta.ok
+                    return (
+                      <tr key={c.userId} style={{ borderTop: i > 0 ? '0.5px solid var(--border)' : 'none' }}>
+                        <td style={{ padding: '11px 14px' }}>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>{c.name}</p>
+                          <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{c.email}{c.slug ? ` · /${c.slug}` : ''}</p>
+                        </td>
+                        <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--near-black)' }}>
+                          {c.creations} / {c.required}
+                        </td>
+                        <td style={{ padding: '11px 14px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: sm.color, background: `${sm.color}15`, padding: '3px 8px', borderRadius: 20 }}>{sm.label}</span>
+                        </td>
+                        <td style={{ padding: '11px 14px' }}>
+                          {c.suspended ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#C23B2A', background: '#FDECEA', padding: '3px 8px', borderRadius: 20 }}>Suspended</span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Active</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '11px 14px' }}>
+                          {c.suspended ? (
+                            <button onClick={() => toggleSuspend(c.userId, false)} style={{ height: 28, padding: '0 12px', borderRadius: 6, border: 'none', background: 'var(--teal)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Reinstate</button>
+                          ) : (
+                            <button onClick={() => toggleSuspend(c.userId, true)} style={{ height: 28, padding: '0 12px', borderRadius: 6, border: 'none', background: 'var(--coral-light)', color: 'var(--coral)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Suspend</button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {standing.length === 0 && (
+                    <tr><td colSpan={5} style={{ padding: '32px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>No marketplace-route creators yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'assisted' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Proactive offer */}
+          <div style={{ background: 'var(--white)', borderRadius: 12, boxShadow: 'var(--shadow-soft)', padding: '16px 18px' }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--near-black)', marginBottom: 4 }}>Offer assistance to a creator</p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 12 }}>Sphere reaches out first. The offer shows up on their My Sales page.</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input value={offerEmail} onChange={e => setOfferEmail(e.target.value)} placeholder="creator@email.com" style={{ flex: 1, minWidth: 180, height: 38, padding: '0 12px', borderRadius: 8, border: '0.5px solid var(--border)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              <input value={offerNote} onChange={e => setOfferNote(e.target.value)} placeholder="What are you offering to build with them?" style={{ flex: 2, minWidth: 220, height: 38, padding: '0 12px', borderRadius: 8, border: '0.5px solid var(--border)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              <button onClick={sendAssistOffer} style={{ height: 38, padding: '0 16px', borderRadius: 8, border: 'none', background: 'var(--near-black)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Send offer</button>
+            </div>
+          </div>
+
+          {/* Deals */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {assists.length === 0 && (
+              <div style={{ background: 'var(--white)', borderRadius: 12, padding: '32px', boxShadow: 'var(--shadow-soft)', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No assisted-creation requests yet.</p>
+              </div>
+            )}
+            {assists.map(a => {
+              const statusColor: Record<AssistStatus, string> = { requested: '#D97010', quoted: '#1052A3', in_progress: '#2E2886', delivered: '#1A8966', declined: '#A09DA8' }
+              return (
+                <div key={a.id} style={{ background: 'var(--white)', borderRadius: 12, padding: '14px 18px', boxShadow: 'var(--shadow-soft)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)' }}>{a.creatorName}</p>
+                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: statusColor[a.status], background: `${statusColor[a.status]}15`, padding: '2px 8px', borderRadius: 20 }}>{a.status.replace('_', ' ')}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{a.initiatedBy === 'sphere' ? 'Sphere offered' : 'Creator requested'}</span>
+                      </div>
+                      {a.brief && <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.5 }}>{a.brief}</p>}
+                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                        {new Date(a.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        {a.agreedCommissionRate != null && ` · agreed ${a.agreedCommissionRate}% commission`}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <select
+                        value={a.status}
+                        onChange={e => updateAssist(a.id, { status: e.target.value as AssistStatus })}
+                        style={{ height: 30, padding: '0 8px', borderRadius: 6, border: '0.5px solid var(--border)', fontSize: 12, fontFamily: 'inherit', background: 'var(--white)', cursor: 'pointer' }}
+                      >
+                        {(['requested', 'quoted', 'in_progress', 'delivered', 'declined'] as AssistStatus[]).map(s => (
+                          <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          const raw = window.prompt('Agreed commission rate (%)', a.agreedCommissionRate != null ? String(a.agreedCommissionRate) : '30')
+                          if (raw == null) return
+                          const rate = Number(raw)
+                          if (Number.isFinite(rate) && rate >= 0 && rate <= 100) updateAssist(a.id, { agreedCommissionRate: rate })
+                        }}
+                        style={{ height: 30, padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--amber-light)', color: '#9A5800', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                      >
+                        Set rate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -441,6 +630,7 @@ function ListingCard({ listing, onApprove, onReject }: { listing: Listing; onApp
         </div>
         {!rejecting && (
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={`/m/${listing.id}`} target="_blank" rel="noopener noreferrer" style={{ height: 30, lineHeight: '30px', padding: '0 12px', borderRadius: 7, background: 'var(--bg2)', color: 'var(--near-black)', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>Preview</a>
             <button onClick={() => setRejecting(true)} style={{ height: 30, padding: '0 12px', borderRadius: 7, border: '0.5px solid var(--border)', background: 'var(--white)', color: 'var(--mid-grey)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Reject</button>
             <button onClick={onApprove} style={{ height: 30, padding: '0 12px', borderRadius: 7, border: 'none', background: 'var(--teal)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Approve</button>
           </div>

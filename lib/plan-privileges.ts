@@ -121,6 +121,23 @@ export async function assertMarketplacePublish(): Promise<{ ok: true } | { ok: f
       error: 'Your plan does not include marketplace publishing. Upgrade to Creator Quarterly or Institution.',
     }
   }
+
+  const user = getCurrentUser()
+  const { data: userRow } = await supabase.from('users').select('subscription_tier').eq('id', user.id).maybeSingle()
+  if (userRow?.subscription_tier === 'creator_marketplace') {
+    const { data: profile } = await supabase
+      .from('creator_profiles')
+      .select('marketplace_route_active')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (profile && profile.marketplace_route_active === false) {
+      return {
+        ok: false,
+        error: 'Your marketplace creator standing was suspended for not meeting the minimum listing activity. Contact Sphere to be reinstated, or upgrade to Creator Quarterly.',
+      }
+    }
+  }
+
   return { ok: true }
 }
 

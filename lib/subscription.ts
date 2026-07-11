@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { getCachedUserId, getCurrentUser } from './auth'
 import { getActiveContext, canCreateContent } from './context'
-import { quotasForPlan, upsertCreationUsageForPlan } from './plan-upgrade'
+import { upsertCreationUsageForPlan, nextPeriodStartIfDue, quotaRenewsAt, MEMBERSHIP_QUOTAS } from './plan-upgrade'
 import {
   getEffectiveModules,
   getPlanIncludedModules,
@@ -95,30 +95,52 @@ export async function getCreationUsage(userId?: string): Promise<CreationUsage |
     .eq('user_id', uid)
     .maybeSingle()
 
-  if (data) {
-    if (planId === 'membership') {
-      return {
-        ...data,
-        assess_quota: 0,
-        engage_quota: MEMBERSHIP_ENGAGE_SESSION_QUOTA,
-        learn_quota: 0,
-        train_quota: 0,
+  let row = data
+
+  if (row) {
+    // Lazy period reset: quotas renew monthly (membership) or quarterly
+    // (creator_quarterly). Applied on read so no scheduled job is needed.
+    const freshStart = nextPeriodStartIfDue(planId, row.period_start ?? null)
+    if (freshStart) {
+      const reset = {
+        assess_used: 0,
+        engage_used: 0,
+        learn_used: 0,
+        train_used: 0,
+        period_start: freshStart.toISOString(),
       }
+      await supabase.from('creation_usage').update(reset).eq('user_id', uid)
+      row = { ...row, ...reset }
     }
-    return data
+  } else {
+    // No usage row yet: seed one from the plan defaults, then read it back.
+    const seeded = await upsertCreationUsageForPlan(supabase, uid, planId, { resetUsed: true })
+    if (!seeded.ok) return null
+    const { data: created } = await supabase
+      .from('creation_usage')
+      .select('*')
+      .eq('user_id', uid)
+      .maybeSingle()
+    if (!created) return null
+    row = created
   }
 
-  const defaults = quotasForPlan(planId)
-  const seeded = await upsertCreationUsageForPlan(supabase, uid, planId, { resetUsed: true })
-  if (!seeded.ok) return null
+  // Membership is the only per-module-quota plan (paid plans are either
+  // unlimited or pool-based). Read its quotas live from subscription_plans so
+  // an admin edit takes effect immediately for display, matching how
+  // canCreate already enforces them. Fall back to the seeded constants.
+  if (planId === 'membership') {
+    const planRow = await getUserPlan(uid)
+    return {
+      ...row,
+      assess_quota: planRow?.assess_quota ?? MEMBERSHIP_QUOTAS.assess_quota,
+      engage_quota: planRow?.engage_quota ?? MEMBERSHIP_QUOTAS.engage_quota,
+      learn_quota: planRow?.learn_quota ?? MEMBERSHIP_QUOTAS.learn_quota,
+      train_quota: planRow?.train_quota ?? MEMBERSHIP_QUOTAS.train_quota,
+    }
+  }
 
-  const { data: created } = await supabase
-    .from('creation_usage')
-    .select('*')
-    .eq('user_id', uid)
-    .maybeSingle()
-
-  return created ?? null
+  return row
 }
 
 // Whether the current user can access a module (plan allowance ∩ institution provision).
@@ -240,11 +262,25 @@ export async function canCreate(module: Module): Promise<{ allowed: boolean; rea
   if (used >= quota) {
     return {
       allowed: false,
-      reason: `You have used all ${quota} of your ${capitalize(module)} creations. Redistribute your quota or upgrade your plan.`,
+      reason: `You have used all ${quota} of your ${capitalize(module)} creations this period.${renewalPhrase(plan.id as SubscriptionTier, usage.period_start ?? null)} Redistribute your quota or upgrade your plan.`,
     }
   }
 
   return { allowed: true }
+}
+
+// " Your quota renews on 3 Aug." — or empty for unlimited plans.
+function renewalPhrase(planId: SubscriptionTier, periodStart: string | null): string {
+  const renews = quotaRenewsAt(planId, periodStart)
+  if (!renews) return ''
+  return ` Your quota renews on ${renews.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`
+}
+
+// When the current user's creation quota renews (null = unlimited plan).
+export async function getQuotaRenewalDate(): Promise<Date | null> {
+  const planId = await getEffectivePlanId()
+  const usage = await getCreationUsage()
+  return quotaRenewsAt(planId, usage?.period_start ?? null)
 }
 
 export async function incrementUsed(module: Module, userId?: string): Promise<void> {
@@ -322,7 +358,7 @@ export async function canLaunchEngageSession(): Promise<{ allowed: boolean; reas
   if (used >= quota) {
     return {
       allowed: false,
-      reason: `You have used all ${quota} Engage live sessions on your free plan. Upgrade to Creator for Assess, Learn, Train, and unlimited sessions.`,
+      reason: `You have used all ${quota} Engage live sessions this month.${renewalPhrase('membership', usage.period_start ?? null)} Upgrade to Creator for Assess, Learn, Train, and unlimited sessions.`,
     }
   }
 

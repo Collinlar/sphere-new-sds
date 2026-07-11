@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import TopBar from '@/components/brand/TopBar'
+import AcademicSetupCard from '@/components/brand/AcademicSetupCard'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser, SPHERE_PLAN_CHANGE_EVENT } from '@/lib/auth'
 import {
@@ -12,7 +13,8 @@ import {
   getPlanModuleDescription,
   parseInstitutionModules,
 } from '@/lib/institution-modules'
-import { fetchInstitutionTypeByInstitutionId } from '@/lib/institution-type'
+import { fetchInstitutionTypeByInstitutionId, changeInstitutionType } from '@/lib/institution-type'
+import { getInstitutionVerification, requestInstitutionVerification, type VerificationStatus } from '@/lib/institution-verification'
 import { formatInstitutionCalendar } from '@/lib/institution-periods'
 import { getEffectivePlanId, getCreationUsage } from '@/lib/subscription'
 import { PLAN_PRIVILEGE_SUMMARY } from '@/lib/plan-privileges'
@@ -58,6 +60,10 @@ export default function PlatformSettingsPage() {
   const [error, setError] = useState('')
   const [academicYear, setAcademicYear] = useState('')
   const [currentPeriod, setCurrentPeriod] = useState('')
+  const [calendarLabel, setCalendarLabel] = useState('Academic year')
+  const [showCalendar, setShowCalendar] = useState(true)
+  const [verifStatus, setVerifStatus] = useState<VerificationStatus>('unverified')
+  const [requestingVerif, setRequestingVerif] = useState(false)
 
   async function loadPersonalPlan() {
     const { data: sessionData } = await supabase.auth.getSession()
@@ -133,8 +139,11 @@ export default function PlatformSettingsPage() {
         setCurrentPeriod('')
         return
       }
+      getInstitutionVerification(institutionId).then(v => setVerifStatus(v.status))
       const type = await fetchInstitutionTypeByInstitutionId(institutionId)
       if (!type) return
+      setShowCalendar(type.has_academic_calendar ?? true)
+      setCalendarLabel(type.calendar_language || 'Academic year')
       const calendar = formatInstitutionCalendar(type)
       setAcademicYear(calendar.academicYear)
       setCurrentPeriod(calendar.currentPeriod)
@@ -149,14 +158,20 @@ export default function PlatformSettingsPage() {
 
     const { error: saveError } = await supabase
       .from('institutions')
-      .update({
-        name: institutionName,
-        institution_type_id: institutionTypeId || null,
-      })
+      .update({ name: institutionName })
       .eq('id', institutionId)
 
-    if (saveError) {
-      setError('Changes did not save. Try again.')
+    // Type change goes through the safe path: it preserves the outgoing
+    // type's levels as custom levels so content is never orphaned, and logs
+    // the switch. No-ops if the type is unchanged.
+    let typeError: string | undefined
+    if (institutionTypeId) {
+      const res = await changeInstitutionType(institutionId, institutionTypeId)
+      if (!res.ok) typeError = res.error
+    }
+
+    if (saveError || typeError) {
+      setError(typeError ?? 'Changes did not save. Try again.')
     } else {
       localStorage.setItem('sphere_institution', institutionName)
       setSaved(true)
@@ -248,6 +263,44 @@ export default function PlatformSettingsPage() {
               </div>
             )}
 
+            {!isPersonalAccount && (() => {
+              const v = {
+                unverified: { bg: 'var(--bg2)', color: 'var(--mid-grey)', label: 'Unverified' },
+                pending: { bg: 'var(--amber-light)', color: '#9A5800', label: 'Verification pending' },
+                verified: { bg: 'var(--teal-light)', color: 'var(--teal-dark, #085041)', label: 'Verified' },
+                rejected: { bg: '#FDECEA', color: 'var(--coral)', label: 'Verification declined' },
+              }[verifStatus]
+              return (
+                <div className="sphere-card" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)' }}>Institution verification</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: v.color, background: v.bg, padding: '2px 9px', borderRadius: 20 }}>{v.label}</span>
+                    </div>
+                    <p style={{ fontSize: 12.5, color: 'var(--mid-grey)', lineHeight: 1.5, maxWidth: 460 }}>
+                      {verifStatus === 'verified'
+                        ? 'Your institution is verified. Branded certificates and public presence are unlocked.'
+                        : 'Verify your institution to issue branded certificates and appear as a trusted institution. Everything else works while you wait.'}
+                    </p>
+                  </div>
+                  {(verifStatus === 'unverified' || verifStatus === 'rejected') && (
+                    <button
+                      onClick={async () => {
+                        setRequestingVerif(true)
+                        const res = await requestInstitutionVerification(institutionId)
+                        if (res.ok && res.status) setVerifStatus(res.status)
+                        setRequestingVerif(false)
+                      }}
+                      disabled={requestingVerif}
+                      style={{ height: 38, padding: '0 18px', borderRadius: 9, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: requestingVerif ? 'wait' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                    >
+                      {requestingVerif ? 'Sending...' : 'Request verification'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
+
             {!isPersonalAccount && (
               <div className="sphere-card" style={{ marginBottom: 20 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Institution profile</h2>
@@ -289,9 +342,9 @@ export default function PlatformSettingsPage() {
                         <option key={t.id} value={t.id}>{t.name}</option>
                       ))}
                     </select>
-                    {academicYear && (
+                    {showCalendar && academicYear && (
                       <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 8, lineHeight: 1.5 }}>
-                        Academic year {academicYear} · Current {currentPeriod.toLowerCase()}
+                        {calendarLabel} {academicYear} · Current {currentPeriod.toLowerCase()}
                       </p>
                     )}
                   </div>
@@ -307,6 +360,10 @@ export default function PlatformSettingsPage() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {!isPersonalAccount && institutionId && (
+              <AcademicSetupCard institutionId={institutionId} />
             )}
 
             <div className="sphere-card" style={{ marginBottom: 20 }}>

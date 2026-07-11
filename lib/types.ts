@@ -206,6 +206,7 @@ export interface Course {
   thumbnail_color: string
   modules: CourseModule[]
   is_published: boolean
+  issues_certificate?: boolean
   created_at: string
   roster_id?: string | null
   audience_groups?: string[] | null
@@ -266,6 +267,7 @@ export interface CreationUsage {
   engage_used: number
   learn_used: number
   train_used: number
+  period_start?: string | null
 }
 
 // =====================
@@ -284,6 +286,9 @@ export interface InstitutionType {
   period_count: number
   levels: InstitutionLevel[]
   academic_year_start_month: number
+  level_language?: string
+  calendar_language?: string
+  has_academic_calendar?: boolean
   is_custom: boolean
 }
 

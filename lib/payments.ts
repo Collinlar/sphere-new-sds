@@ -102,6 +102,11 @@ export async function createPaymentIntent(params: {
   return { ok: true }
 }
 
+// Billing period label, e.g. "2026-Q3", matching enrollment-billing.
+function currentQuarterLabel(now = new Date()): string {
+  return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
+}
+
 export async function fulfillPayment(reference: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = getSupabaseAdmin()
   if (!admin) return { ok: false, error: 'Payment fulfillment is not configured.' }
@@ -187,16 +192,29 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
       })
       .eq('id', payload.institutionId)
 
+    // Lift free-tier admins to the institution tier, but never clobber a
+    // paid personal plan: a Creator who also owns an institution keeps their
+    // personal Creator subscription. Institution capabilities flow from the
+    // institution's own plan via the active context, not the personal tier.
     await admin
       .from('users')
       .update({ subscription_tier: 'institution' })
       .eq('institution_id', payload.institutionId)
       .eq('role', 'admin')
+      .eq('subscription_tier', 'membership')
 
-    const usageSeeded = await upsertCreationUsageForPlan(admin, intent.user_id, 'institution', {
-      resetUsed: true,
-    })
-    if (!usageSeeded.ok) return usageSeeded
+    const { data: payerRow } = await admin
+      .from('users')
+      .select('subscription_tier')
+      .eq('id', intent.user_id)
+      .maybeSingle()
+
+    if (payerRow?.subscription_tier === 'institution') {
+      const usageSeeded = await upsertCreationUsageForPlan(admin, intent.user_id, 'institution', {
+        resetUsed: true,
+      })
+      if (!usageSeeded.ok) return usageSeeded
+    }
 
     await admin.from('user_subscriptions').insert({
       user_id: intent.user_id,
@@ -216,6 +234,21 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
         })
         .eq('id', payload.inquiryId)
     }
+
+    // Auto-generate the receipt for this deposit so it appears on the
+    // institution billing page and can be printed.
+    const depositGhs = Number(intent.amount_pesewas ?? 0) / 100
+    await admin.from('institution_invoices').insert({
+      institution_id: payload.institutionId,
+      invoice_type: 'deposit',
+      description: 'Institution plan onboarding deposit',
+      amount_ghs: depositGhs > 0 ? depositGhs : resolveInstitutionOnboardingDepositGhs(),
+      period: currentQuarterLabel(),
+      status: 'paid',
+      reference,
+      paid_at: now,
+      issued_by: intent.user_id,
+    })
   }
 
   await admin

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { assertCanTakeAcquired, ensureCourseEnrollment } from '@/lib/self-take'
 import { isAcquiredRow } from '@/lib/acquisition-access'
+import { issueCertificate, getMyCertificate } from '@/lib/certificates'
 import { Course, CourseModule } from '@/lib/types'
 
 const MODULE_ICONS: Record<string, string> = {
@@ -221,6 +222,7 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [completed, setCompleted] = useState<Set<string>>(new Set())
   const [isAcquired, setIsAcquired] = useState(false)
+  const [certCode, setCertCode] = useState<string | null>(null)
 
   const userId = getCurrentUser()?.id
 
@@ -233,6 +235,11 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
       if (courseRes.data) {
         setCourse(courseRes.data)
         setIsAcquired(isAcquiredRow(courseRes.data as Record<string, unknown>))
+        // Surface an already-earned certificate on revisit.
+        if (userId && (courseRes.data as Course).issues_certificate) {
+          const existing = await getMyCertificate(userId, params.id)
+          if (existing) setCertCode(existing.verificationCode)
+        }
       }
 
       if (enrollRes.data) {
@@ -263,7 +270,19 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
       progress_percentage: progress,
       ...(progress === 100 ? { completed_at: new Date().toISOString() } : {}),
     }).eq('id', enrollmentId)
-  }, [enrollmentId])
+
+    // Course completion certificate: issued once when the course awards one.
+    if (progress === 100 && course?.issues_certificate && userId) {
+      const result = await issueCertificate({
+        recipientId: userId,
+        issuerId: course.creator_id ?? null,
+        resourceType: 'course',
+        resourceId: course.id,
+        resourceTitle: course.title,
+      })
+      if (result.ok) setCertCode(result.verificationCode)
+    }
+  }, [enrollmentId, course, userId])
 
   function markComplete(id: string) {
     const next = new Set(Array.from(completed).concat(id))
@@ -304,6 +323,19 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
           <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{progress}%</span>
         </div>
       </div>
+
+      {/* Certificate earned */}
+      {certCode && (
+        <div style={{ margin: '12px 16px 0', background: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)', borderRadius: 12, padding: '14px 16px', color: '#fff' }}>
+          <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>
+            Certificate earned
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, background: 'rgba(255,255,255,0.15)', padding: '3px 9px', borderRadius: 6, letterSpacing: '0.05em' }}>{certCode}</span>
+            <a href={`/verify/${certCode}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'underline' }}>View and verify</a>
+          </div>
+        </div>
+      )}
 
       {/* Active module content */}
       {active && (() => {

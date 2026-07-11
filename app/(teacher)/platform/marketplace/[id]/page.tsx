@@ -371,6 +371,22 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
             </div>
           )}
 
+          {/* Institution license — roll a resource out to a whole department */}
+          {resource.resource_type === 'train_track' && (
+            <Link href="/platform/settings/billing/institution" style={{ textDecoration: 'none' }}>
+              <div style={{ background: 'var(--blue-light)', borderRadius: 12, padding: '14px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M3 17V8l7-4 7 4v9" stroke="var(--blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M7 17v-5h6v5" stroke="var(--blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue)' }}>Institution license</p>
+                    <p style={{ fontSize: 11, color: 'var(--blue)', opacity: 0.75 }}>Roll out to a whole department</p>
+                  </div>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', flexShrink: 0 }}>Get quote →</span>
+              </div>
+            </Link>
+          )}
+
           {error && (
             <p style={{ fontSize: 13, color: 'var(--coral)', marginBottom: 12 }}>{error}</p>
           )}
