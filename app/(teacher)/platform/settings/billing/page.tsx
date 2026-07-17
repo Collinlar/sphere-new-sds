@@ -8,9 +8,9 @@ import { supabase } from '@/lib/supabase'
 import { refreshUserProfile } from '@/lib/auth'
 import { getCreationUsage, getEffectivePlanId, updateQuotaAllocation } from '@/lib/subscription'
 import { isModuleAllowedForPlan, PLAN_PRIVILEGE_SUMMARY } from '@/lib/plan-privileges'
-import type { SubscriptionTier } from '@/lib/types'
+import { getActiveContext, onContextChange } from '@/lib/context'
+import type { CreationUsage, SubscriptionTier } from '@/lib/types'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
-import type { CreationUsage } from '@/lib/types'
 
 const MODULE_COLOR = { assess: '#C23B2A', engage: '#D97010', learn: '#1A8966', train: '#1052A3' }
 const MODULE_LABEL = { assess: 'Assess', engage: 'Engage', learn: 'Learn', train: 'Train' }
@@ -92,8 +92,10 @@ function BillingPageInner() {
   const [justUpgraded, setJustUpgraded] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [checkingOut, setCheckingOut] = useState(false)
+  const [institutionContext, setInstitutionContext] = useState<boolean | null>(null)
 
   useEffect(() => {
+    setInstitutionContext(getActiveContext().type === 'institution')
     async function load() {
       const { data: sessionData } = await supabase.auth.getSession()
       const uid = sessionData.session?.user?.id
@@ -116,6 +118,7 @@ function BillingPageInner() {
       setActiveAddOns((addOnData ?? []).map((r: { add_on_id: string }) => r.add_on_id))
     }
     load()
+    return onContextChange(ctx => setInstitutionContext(ctx.type === 'institution'))
   }, [])
 
   useEffect(() => {
@@ -275,7 +278,7 @@ function BillingPageInner() {
                 </>
               ) : (
                 <>
-                  {lockedLabel} is not on your current plan for creating new content. You can still open and use resources you imported or bought from the marketplace. Upgrade to Creator Quarterly or Institution to build your own.
+                  {lockedLabel} is not on your current plan for creating new content. You can still open and use resources you imported or bought from the marketplace. {institutionContext ? 'Upgrade this institution to build your own.' : 'Upgrade to Creator Quarterly to build your own.'}
                 </>
               )}
             </p>
@@ -375,17 +378,23 @@ function BillingPageInner() {
           </div>
         )}
 
-        {/* Plan cards — hidden for institutions. An institution's economics
-            (deposit, quarterly, seats, overage) live on the institution
-            billing page; it never "downgrades" to a personal Creator plan. */}
-        {currentTier === 'institution' ? (
+        {/* Institution workspaces only follow the Institution upgrade path. */}
+        {institutionContext === null ? null : (institutionContext || currentTier === 'institution') ? (
           <div style={{ background: 'var(--white)', borderRadius: 12, padding: '20px 24px', boxShadow: 'var(--shadow-soft)', borderLeft: '3px solid #1A8966', marginBottom: 28 }}>
-            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--near-black)', marginBottom: 4 }}>This is an institution account</p>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: currentTier === 'institution' ? '#085041' : '#9A5800', marginBottom: 5 }}>
+              {currentTier === 'institution' ? 'Institution plan active' : 'Your institution upgrade'}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
+              <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--near-black)' }}>Institution</p>
+              <p style={{ fontSize: 17, fontWeight: 700, color: '#085041' }}>GHS 1,000/quarter</p>
+            </div>
             <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6, marginBottom: 14 }}>
-              Seats, renewals, and per-head billing are managed on your institution billing page. To sell on the marketplace, switch to your personal workspace, where a Creator plan lives separately from the institution.
+              {currentTier === 'institution'
+                ? 'Assess, Engage, Learn, and Train are active with unlimited creations and 100 enrolled students included.'
+                : 'You have Free Membership today with Engage, 5 live sessions, and up to 5 students per session. Upgrade this institution to activate every module, unlimited creations, certificates, and 100 enrolled students.'}
             </p>
             <Link href="/platform/settings/billing/institution" style={{ display: 'inline-block', height: 40, lineHeight: '40px', padding: '0 20px', borderRadius: 9, background: '#1A8966', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
-              Open institution billing
+              {currentTier === 'institution' ? 'Manage institution billing' : 'See Institution upgrade'}
             </Link>
           </div>
         ) : (

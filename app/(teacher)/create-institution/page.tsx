@@ -97,7 +97,7 @@ export default function CreateInstitutionPage() {
       <div style={{ padding: '28px 32px 60px', maxWidth: 560 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Set up your institution</h1>
         <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24, lineHeight: 1.6 }}>
-          You become the owner. Your personal account and everything on it stays yours. You can switch between your personal workspace and the institution any time. New institutions start on the free plan with Engage only. Upgrade to Creator or pay the Institution deposit to unlock Assess, Learn, and Train.
+          You become the owner. Your personal account and everything on it stays yours. You can switch between your personal workspace and the institution any time. New institutions start on Free Membership with Engage only. Upgrade the institution to unlock Assess, Learn, and Train.
         </p>
 
         {error && (

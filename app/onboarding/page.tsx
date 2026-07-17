@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { autoClaimBrowserSessions } from '@/lib/guest-sessions'
+import { loadMemberships, setActiveContext } from '@/lib/context'
 
 type ModuleKey = 'engage' | 'assess' | 'learn' | 'train'
 
@@ -12,27 +13,6 @@ const MODULE_COLORS: Record<ModuleKey, string> = {
   assess: '#C23B2A',
   learn: '#1A8966',
   train: '#1052A3',
-}
-
-const MODULE_LIGHT: Record<ModuleKey, string> = {
-  engage: '#FEF0DC',
-  assess: '#FDECEA',
-  learn: '#DDFAF0',
-  train: '#E3EDFB',
-}
-
-const MODULE_PRICES: Record<ModuleKey, number> = {
-  engage: 120,
-  assess: 150,
-  learn: 150,
-  train: 200,
-}
-
-const MODULE_DESCRIPTIONS: Record<ModuleKey, string> = {
-  engage: 'Live quizzes and game-based learning',
-  assess: 'Formal exams with real-time invigilation',
-  learn: 'Structured courses, video, and assignments',
-  train: 'Compliance paths and team skill tracking',
 }
 
 interface InstitutionTypeOption {
@@ -124,7 +104,6 @@ export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [selectedType, setSelectedType] = useState<InstitutionTypeOption | null>(null)
-  const [selectedModules, setSelectedModules] = useState<ModuleKey[]>([])
 
   const [institutionName, setInstitutionName] = useState('')
   const [city, setCity] = useState('')
@@ -137,52 +116,127 @@ export default function OnboardingPage() {
 
   function handleTypeSelect(type: InstitutionTypeOption) {
     setSelectedType(type)
-    setSelectedModules(['engage'])
     setStep(2)
   }
-
-  function toggleModule(mod: ModuleKey) {
-    if (mod !== 'engage') return
-    setSelectedModules(prev =>
-      prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]
-    )
-  }
-
-  const totalPrice = selectedModules.reduce((sum, m) => sum + MODULE_PRICES[m], 0)
 
   async function handleSubmit() {
     setLoading(true)
     setError('')
 
     try {
+      // 1. Auth account first. Retries after a failed setup often already have
+      // an auth user, so fall back to sign-in with the same password.
+      let userId: string | null = null
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
         options: {
-          data: { name: adminName },
+          data: { name: adminName.trim() },
         },
       })
 
-      if (authError || !authData.user) {
-        setError(authError?.message ?? 'Could not create your account. Check your details and try again.')
+      const signupLooksDuplicate =
+        (!!authError?.message && /already|registered|exists/i.test(authError.message)) ||
+        (!!authData.user && (authData.user.identities?.length ?? 0) === 0)
+
+      if (authData.user && !signupLooksDuplicate) {
+        userId = authData.user.id
+      } else if (signupLooksDuplicate || authError) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
+        if (signInError || !signInData.user) {
+          if (signupLooksDuplicate) {
+            setError(
+              'This email already has an account from an earlier attempt. Use the same password to continue, or sign in first.'
+            )
+          } else {
+            setError(authError?.message ?? 'Could not create your account. Check your details and try again.')
+          }
+          setLoading(false)
+          return
+        }
+        userId = signInData.user.id
+      }
+
+      if (!userId) {
+        setError('Could not create your account. Check your details and try again.')
         setLoading(false)
         return
       }
 
-      const modulesObj = {
-        engage: selectedModules.includes('engage'),
-        assess: selectedModules.includes('assess'),
-        learn: selectedModules.includes('learn'),
-        train: selectedModules.includes('train'),
+      // Ensure we have an authenticated session before RLS-protected inserts.
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        const { error: sessionError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
+        if (sessionError) {
+          setError('Your login session did not start. Confirm your email if required, then try again.')
+          setLoading(false)
+          return
+        }
       }
 
+      const initials = adminName
+        .split(' ')
+        .map((n: string) => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+
+      // 2. public.users must exist before institutions.owner_user_id can reference it.
+      const { data: existingProfile } = await supabase
+        .from('users')
+        .select('id, institution_id')
+        .eq('id', userId)
+        .maybeSingle()
+
+      if (!existingProfile) {
+        const { error: userError } = await supabase.from('users').insert({
+          id: userId,
+          institution_id: null,
+          name: adminName.trim(),
+          email: email.trim(),
+          role: 'admin',
+          avatar_initials: initials,
+          subscription_tier: 'membership',
+        })
+
+        if (userError) {
+          setError(`Your account was created, but the administrator profile did not save. ${userError.message}`)
+          setLoading(false)
+          return
+        }
+      } else if (existingProfile.institution_id) {
+        setError('This account is already linked to an institution. Sign in to continue.')
+        setLoading(false)
+        return
+      } else {
+        await supabase
+          .from('users')
+          .update({
+            name: adminName.trim(),
+            email: email.trim(),
+            role: 'admin',
+            avatar_initials: initials,
+            subscription_tier: 'membership',
+          })
+          .eq('id', userId)
+      }
+
+      // 3. Create the institution now that the owner profile exists.
       const { data: institution, error: instError } = await supabase
         .from('institutions')
         .insert({
-          name: institutionName,
+          name: institutionName.trim(),
+          city: city.trim(),
           type: selectedType?.id ?? 'school',
           institution_type_id: selectedType?.id ?? null,
-          modules: modulesObj,
+          owner_user_id: userId,
+          modules: ['engage'],
           subscription_plan: 'membership',
         })
         .select()
@@ -194,25 +248,34 @@ export default function OnboardingPage() {
         return
       }
 
-      const initials = adminName
-        .split(' ')
-        .map((n: string) => n[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
+      // 4. Link the admin profile to the new institution.
+      const { error: linkError } = await supabase
+        .from('users')
+        .update({ institution_id: institution.id, role: 'admin' })
+        .eq('id', userId)
 
-      await supabase.from('users').insert({
-        id: authData.user.id,
+      if (linkError) {
+        setError(`Your institution was created, but linking your admin profile failed. ${linkError.message}`)
+        setLoading(false)
+        return
+      }
+
+      const { error: memberError } = await supabase.from('institution_members').insert({
         institution_id: institution.id,
-        name: adminName,
-        email,
-        role: 'admin',
-        avatar_initials: initials,
-        subscription_tier: 'membership',
+        user_id: userId,
+        member_role: 'owner',
+        status: 'active',
+        joined_at: new Date().toISOString(),
       })
 
-      await supabase.from('creation_usage').insert({
-        user_id: authData.user.id,
+      if (memberError) {
+        setError('Your institution was created, but ownership did not register. Contact Sphere support.')
+        setLoading(false)
+        return
+      }
+
+      await supabase.from('creation_usage').upsert({
+        user_id: userId,
         assess_quota: 0,
         engage_quota: 5,
         learn_quota: 0,
@@ -220,9 +283,9 @@ export default function OnboardingPage() {
       })
 
       const userRecord = {
-        id: authData.user.id,
-        name: adminName,
-        email,
+        id: userId,
+        name: adminName.trim(),
+        email: email.trim(),
         role: 'admin',
         institution_id: institution.id,
         avatar_initials: initials,
@@ -230,15 +293,20 @@ export default function OnboardingPage() {
       }
 
       localStorage.setItem('sphere_user', JSON.stringify(userRecord))
-      localStorage.setItem('sphere_institution', institutionName)
+      localStorage.setItem('sphere_institution', institutionName.trim())
+      await loadMemberships(userId)
+      setActiveContext({
+        type: 'institution',
+        institutionId: institution.id,
+        institutionName: institutionName.trim(),
+        memberRole: 'owner',
+      })
 
-      // Claim any guest sessions from this browser
-      await autoClaimBrowserSessions(authData.user.id)
+      await autoClaimBrowserSessions(userId)
 
-      const firstModule = selectedModules[0] ?? 'engage'
-      router.push(`/${firstModule}`)
+      router.push('/engage')
     } catch {
-      setError('Something went wrong. Try again in a moment.')
+      setError('Your institution setup did not finish. Check your connection and try again.')
       setLoading(false)
     }
   }
@@ -357,23 +425,7 @@ export default function OnboardingPage() {
                 <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', marginBottom: 4 }}>{t.name}</p>
                 <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 10 }}>{t.levelSample}</p>
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {t.defaultModules.map(m => (
-                    <span
-                      key={m}
-                      style={{
-                        fontSize: 9,
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        color: MODULE_COLORS[m],
-                        background: MODULE_LIGHT[m],
-                        padding: '2px 8px',
-                        borderRadius: 20,
-                      }}
-                    >
-                      {m}
-                    </span>
-                  ))}
+                  <span style={{ fontSize: 11, color: 'var(--mid-grey)' }}>{t.periodLabel} structure</span>
                 </div>
               </button>
             ))}
@@ -500,7 +552,7 @@ export default function OnboardingPage() {
                 marginTop: 4,
               }}
             >
-              Continue
+              Review my plan
             </button>
           </div>
 
@@ -512,7 +564,7 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {/* Step 3: Choose modules */}
+      {/* Step 3: Institution plan path */}
       {step === 3 && (
         <div style={{
           width: '100%',
@@ -528,90 +580,39 @@ export default function OnboardingPage() {
           </div>
 
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--near-black)', letterSpacing: '-0.02em', marginBottom: 5 }}>
-            Choose your modules
+            Your institution plan
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24 }}>
-            Free membership includes Engage only. Assess, Learn, and Train unlock when you upgrade to Creator or Institution.
+            Start free today, then upgrade this institution when your team is ready.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
-            {(['engage', 'assess', 'learn', 'train'] as ModuleKey[]).map(mod => {
-              const active = selectedModules.includes(mod)
-              const locked = mod !== 'engage'
-              const color = MODULE_COLORS[mod]
-              return (
-                <button
-                  key={mod}
-                  onClick={() => toggleModule(mod)}
-                  disabled={locked}
-                  style={{
-                    background: 'var(--white)',
-                    border: 'none',
-                    borderLeft: active ? `3px solid ${color}` : '3px solid transparent',
-                    borderRadius: 10,
-                    padding: '16px 18px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: locked ? 'default' : 'pointer',
-                    fontFamily: 'inherit',
-                    textAlign: 'left',
-                    boxShadow: active ? `0 0 0 1.5px ${color}` : 'var(--shadow-soft)',
-                    transition: 'box-shadow 0.15s',
-                    opacity: locked ? 0.55 : 1,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 8,
-                      background: active ? MODULE_LIGHT[mod] : 'var(--bg2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}>
-                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: active ? color : 'var(--text-tertiary)' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: active ? 'var(--near-black)' : 'var(--mid-grey)', textTransform: 'capitalize' }}>
-                        {mod}
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2 }}>
-                        {locked ? 'Creator or Institution plan' : MODULE_DESCRIPTIONS[mod]}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: locked ? 'var(--text-tertiary)' : active ? color : 'var(--text-tertiary)', flexShrink: 0, marginLeft: 12 }}>
-                    {locked ? 'Upgrade' : `GHS ${MODULE_PRICES[mod]}/mo`}
-                  </div>
-                </button>
-              )
-            })}
+          <div style={{ background: 'var(--white)', borderLeft: '3px solid #D97010', borderRadius: 10, padding: '18px 20px', boxShadow: 'var(--shadow-soft)', marginBottom: 12 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9A5800', marginBottom: 5 }}>What you have today</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 12 }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--near-black)' }}>Free Membership</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)' }}>GHS 0</p>
+            </div>
+            {['Engage live sessions', '5 live sessions included', 'Up to 5 students per session'].map(item => (
+              <p key={item} style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6 }}>✓ {item}</p>
+            ))}
           </div>
 
-          <div style={{
-            background: 'var(--white)',
-            borderRadius: 10,
-            padding: '14px 18px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
-            boxShadow: 'var(--shadow-soft)',
-          }}>
-            <span style={{ fontSize: 14, color: 'var(--mid-grey)' }}>
-              {selectedModules.length} module{selectedModules.length !== 1 ? 's' : ''} selected
-            </span>
-            <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--near-black)' }}>
-              GHS {totalPrice}/month
-            </span>
+          <div style={{ background: 'var(--white)', borderLeft: '3px solid #1A8966', borderRadius: 10, padding: '18px 20px', boxShadow: 'var(--shadow-soft)', marginBottom: 18 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#085041', marginBottom: 5 }}>Your only account upgrade</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 12 }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--near-black)' }}>Institution</p>
+              <p style={{ fontSize: 16, fontWeight: 700, color: '#085041' }}>GHS 1,000/quarter</p>
+            </div>
+            {['Assess, Engage, Learn, and Train', 'Unlimited creations', '100 enrolled students included', 'Certificates and institution templates'].map(item => (
+              <p key={item} style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.6 }}>✓ {item}</p>
+            ))}
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.6, marginTop: 10 }}>
+              You can upgrade from Institution billing after your account is ready.
+            </p>
           </div>
 
           <button
             onClick={() => setStep(4)}
-            disabled={selectedModules.length === 0}
             style={{
               width: '100%',
               height: 48,
@@ -621,12 +622,11 @@ export default function OnboardingPage() {
               borderRadius: 8,
               fontSize: 15,
               fontWeight: 600,
-              cursor: selectedModules.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: selectedModules.length === 0 ? 0.4 : 1,
+              cursor: 'pointer',
               fontFamily: 'inherit',
             }}
           >
-            Continue
+            Review my setup
           </button>
 
           <p style={{ textAlign: 'center', marginTop: 12 }}>
@@ -659,7 +659,7 @@ export default function OnboardingPage() {
             Ready to set up your account
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)', marginBottom: 24 }}>
-            Free Membership plan. No card required. Upgrade when you need more.
+            Your institution starts free. No card required.
           </p>
 
           <div style={{ background: 'var(--white)', borderRadius: 12, padding: 22, boxShadow: 'var(--shadow-soft)', marginBottom: 14 }}>
@@ -672,23 +672,19 @@ export default function OnboardingPage() {
             </div>
             <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--near-black)', marginBottom: 20 }}>{institutionName}</p>
 
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10 }}>Modules</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-              {selectedModules.map(mod => (
-                <div key={mod} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: MODULE_COLORS[mod] }} />
-                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)', textTransform: 'capitalize' }}>{mod}</span>
-                  </div>
-                  <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>GHS {MODULE_PRICES[mod]}/mo</span>
-                </div>
-              ))}
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10 }}>What is active now</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: MODULE_COLORS.engage }} />
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--near-black)' }}>Engage</span>
+              </div>
+              <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>5 free sessions</span>
             </div>
 
             <div style={{ borderTop: '0.5px solid var(--bg2)', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Starting at</p>
-                <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--near-black)' }}>GHS {totalPrice}/month</p>
+                <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Current plan</p>
+                <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--near-black)' }}>Free Membership</p>
               </div>
               <span style={{
                 fontSize: 12,
@@ -698,7 +694,7 @@ export default function OnboardingPage() {
                 padding: '6px 12px',
                 borderRadius: 20,
               }}>
-                Free to start
+                GHS 0 today
               </span>
             </div>
           </div>

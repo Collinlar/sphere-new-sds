@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { canCreate, type Module, getEffectivePlanId } from '@/lib/subscription'
 import type { CreationUsage } from '@/lib/types'
 import { getCreationUsage } from '@/lib/subscription'
+import { getActiveContext, onContextChange } from '@/lib/context'
 
 const MODULE_COLOR: Record<Module, string> = {
   assess: '#C23B2A',
@@ -33,6 +34,12 @@ const UPGRADE_PERKS: Record<string, string[]> = {
     '30% commission — keep 70%',
     'Issue certificates',
   ],
+  institution: [
+    'Assess, Engage, Learn, and Train',
+    'Unlimited creations',
+    '100 enrolled students included',
+    'Certificates and institution templates',
+  ],
 }
 
 interface Props {
@@ -46,10 +53,13 @@ export default function CreationGate({ module, children }: Props) {
   const [reason, setReason] = useState('')
   const [usage, setUsage] = useState<CreationUsage | null>(null)
   const [tier, setTier] = useState<string>('membership')
+  const [institutionContext, setInstitutionContext] = useState(false)
 
   useEffect(() => {
+    setInstitutionContext(getActiveContext().type === 'institution')
     getEffectivePlanId().then(setTier)
     getCreationUsage().then(u => setUsage(u))
+    return onContextChange(ctx => setInstitutionContext(ctx.type === 'institution'))
   }, [])
 
   const check = useCallback(async (): Promise<boolean> => {
@@ -70,8 +80,17 @@ export default function CreationGate({ module, children }: Props) {
   const quota = usage ? (usage[quotaKey] as number) : 0
 
   // Determine which upgrade is relevant
-  const nextPlan = tier === 'membership' ? 'creator_quarterly' : 'creator_marketplace'
-  const perks = UPGRADE_PERKS[tier] ?? UPGRADE_PERKS.membership
+  const nextPlan = institutionContext
+    ? 'institution'
+    : tier === 'membership'
+      ? 'creator_quarterly'
+      : 'creator_marketplace'
+  const perks = institutionContext
+    ? UPGRADE_PERKS.institution
+    : UPGRADE_PERKS[tier] ?? UPGRADE_PERKS.membership
+  const billingHref = institutionContext
+    ? '/platform/settings/billing/institution'
+    : '/platform/settings/billing'
 
   return (
     <>
@@ -177,7 +196,7 @@ export default function CreationGate({ module, children }: Props) {
                   Not now
                 </button>
                 <a
-                  href="/platform/settings/billing"
+                  href={billingHref}
                   style={{
                     flex: 2,
                     height: 42,

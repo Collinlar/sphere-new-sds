@@ -133,16 +133,34 @@ export interface ResourceFilters {
   freeOnly?: boolean
   status?: MarketplaceResourceStatus
   featured?: boolean
-  // Soft filter: when set, resources targeted at other levels are pushed
-  // down (not hidden) so the viewer sees what suits them first. Untargeted
-  // listings (no target_level_types set) always rank as suitable for everyone.
+  // Hard filter: when set, only resources for this institution type are shown.
+  // Untagged listings are excluded until "All levels" is selected.
   viewerLevelType?: string | null
+}
+
+/** Infer institution_types targets from metadata or the display level string. */
+function resolveResourceLevelTypes(resource: MarketplaceResource): string[] {
+  const fromMeta = resource.metadata?.target_level_types
+  if (fromMeta && fromMeta.length > 0) return fromMeta
+
+  const level = (resource.level ?? '').toLowerCase().trim()
+  if (!level) return []
+
+  if (level.includes('bece') || level.includes('jhs')) return ['jhs']
+  if (level.includes('wassce') || level.includes('shs')) return ['shs']
+  if (level.includes('primary') || /^p\d/.test(level) || level.startsWith('primary')) return ['primary']
+  if (level.includes('university') || level.includes('year ') || /^year\s*\d/.test(level)) return ['university']
+  if (level.includes('college') || level.includes('poly') || level.includes('level 1')) return ['college']
+  if (level.includes('training') || level.includes('cohort') || level.includes('intake')) return ['training']
+  if (level.includes('corporate') || /^q[1-4]/.test(level)) return ['corporate']
+  if (level.includes('professional') || level.includes('foundation')) return ['professional']
+  return []
 }
 
 function matchesViewerLevel(resource: MarketplaceResource, viewerLevelType?: string | null): boolean {
   if (!viewerLevelType) return true
-  const targets = resource.metadata?.target_level_types
-  if (!targets || targets.length === 0) return true
+  const targets = resolveResourceLevelTypes(resource)
+  if (targets.length === 0) return false
   return targets.includes(viewerLevelType)
 }
 
@@ -216,6 +234,9 @@ function filterDemoResources(filters: ResourceFilters): MarketplaceResource[] {
         (r.subject?.toLowerCase().includes(q) ?? false) ||
         (r.description?.toLowerCase().includes(q) ?? false)
     )
+  }
+  if (filters.viewerLevelType) {
+    items = items.filter((r) => matchesViewerLevel(r, filters.viewerLevelType))
   }
   return items
 }
@@ -315,10 +336,7 @@ export async function fetchResources(filters: ResourceFilters = {}): Promise<Mar
   if (!merged.length) merged = filterDemoResources(filters)
 
   if (filters.viewerLevelType) {
-    // Level-matched resources first, then everything else, each in recency order.
-    const matched = merged.filter((r) => matchesViewerLevel(r, filters.viewerLevelType))
-    const rest = merged.filter((r) => !matchesViewerLevel(r, filters.viewerLevelType))
-    return [...matched, ...rest]
+    return merged.filter((r) => matchesViewerLevel(r, filters.viewerLevelType))
   }
 
   return merged

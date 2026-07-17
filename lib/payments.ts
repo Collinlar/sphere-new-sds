@@ -187,6 +187,7 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
       .from('institutions')
       .update({
         subscription_plan: 'institution',
+        modules: ['engage', 'assess', 'learn', 'train'],
         onboarding_deposit_paid_at: now,
         onboarding_deposit_reference: reference,
       })

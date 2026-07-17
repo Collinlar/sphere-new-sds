@@ -146,11 +146,23 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
   const currentAccent = getAccentForPath(pathname, activeMode)
   const showLibrary = canAccessLibrary(context)
   const showAdminPlatform = canManagePlatform(context)
+  const isInstitution = context.type === 'institution'
+  const institutionPlanLocked = isInstitution && enabledModules.length <= 1
+  const upgradeHref = isInstitution
+    ? '/platform/settings/billing/institution'
+    : '/platform/settings/billing'
   const contextLabel = context.type === 'personal' ? 'Personal' : context.institutionName
   const activeInstitutionType = context.type === 'institution'
     ? memberships.find(m => m.institution_id === context.institutionId)?.institution_type_id ?? null
     : null
   const labels = memberLabels(activeInstitutionType)
+
+  // Institution nav stays calm: essentials only. Personal keeps Creator upsell rows.
+  const visibleModes = ALL_MODES.filter((m) => {
+    const enabled = enabledModules.includes(m.key as ModuleKey)
+    if (enabled) return true
+    return !isInstitution
+  })
 
   const SHARED_PLATFORM = [
     { key: 'library', label: 'My library', href: '/platform/library' },
@@ -158,10 +170,14 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
     { key: 'settings', label: 'Settings', href: '/platform/settings' },
   ]
 
-  const ADMIN_PLATFORM = [
-    { key: 'team', label: labels.teachers, href: '/platform/team' },
-    { key: 'analytics', label: 'Analytics', href: '/platform/analytics' },
-  ]
+  const ADMIN_PLATFORM = isInstitution && !institutionPlanLocked
+    ? [
+        { key: 'team', label: labels.teachers, href: '/platform/team' },
+        { key: 'analytics', label: 'Analytics', href: '/platform/analytics' },
+      ]
+    : isInstitution
+      ? [{ key: 'team', label: labels.teachers, href: '/platform/team' }]
+      : []
 
   return (
     <aside className={`app-sidebar${drawerOpen ? ' app-sidebar--open' : ''}`} style={{
@@ -302,7 +318,7 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
       <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '4px 8px 4px', marginBottom: 4 }}>
         Modes
       </p>
-      {ALL_MODES.map((m) => {
+      {visibleModes.map((m) => {
         const isActive = pathname.startsWith(m.href)
         const isEnabled = enabledModules.includes(m.key as ModuleKey)
 
@@ -310,7 +326,7 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
           return (
             <Link
               key={m.key}
-              href="/platform/settings/billing"
+              href={upgradeHref}
               title="Upgrade to unlock"
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -346,11 +362,32 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
         )
       })}
 
-      {/* Classes — only meaningful in institution context for staff */}
-      {context.type === 'institution' && context.memberRole !== 'student' && (
+      {institutionPlanLocked && (
+        <Link
+          href={upgradeHref}
+          style={{
+            display: 'block',
+            margin: '8px 4px 2px',
+            padding: '10px 12px',
+            borderRadius: 8,
+            background: '#E1F5EE',
+            textDecoration: 'none',
+          }}
+        >
+          <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#085041', marginBottom: 2 }}>
+            Unlock Assess, Learn, Train
+          </span>
+          <span style={{ display: 'block', fontSize: 11, color: '#085041', lineHeight: 1.45 }}>
+            Institution plan · GHS 1,000/quarter
+          </span>
+        </Link>
+      )}
+
+      {/* People — institution staff only */}
+      {isInstitution && context.memberRole !== 'student' && (
         <>
           <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
-            Classes
+            People
           </p>
           <Link
             href="/students"
@@ -366,16 +403,7 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
               {labels.students}
             </span>
           </Link>
-        </>
-      )}
-
-      {/* Library, marketplace, settings — all staff + personal */}
-      {showLibrary && (
-        <>
-          <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
-            Resources
-          </p>
-          {SHARED_PLATFORM.map((p) => {
+          {showAdminPlatform && ADMIN_PLATFORM.filter(p => p.key === 'team').map((p) => {
             const isActive = pathname.startsWith(p.href)
             return (
               <Link key={p.key} href={p.href} style={{
@@ -391,13 +419,26 @@ export default function Sidebar({ activeMode, institutionName, userName, drawerO
         </>
       )}
 
-      {/* Institution admin only */}
-      {showAdminPlatform && (
+      {/* Resources */}
+      {showLibrary && (
         <>
           <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-tertiary)', textTransform: 'uppercase', padding: '14px 8px 4px', marginBottom: 2 }}>
-            Institution
+            {isInstitution ? 'Workspace' : 'Resources'}
           </p>
-          {ADMIN_PLATFORM.map((p) => {
+          {SHARED_PLATFORM.map((p) => {
+            const isActive = pathname.startsWith(p.href)
+            return (
+              <Link key={p.key} href={p.href} style={{
+                display: 'flex', alignItems: 'center',
+                padding: '7px 8px', borderRadius: 7, textDecoration: 'none',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--violet)' : 'var(--mid-grey)' }}>
+                  {p.label}
+                </span>
+              </Link>
+            )
+          })}
+          {showAdminPlatform && ADMIN_PLATFORM.filter(p => p.key === 'analytics').map((p) => {
             const isActive = pathname.startsWith(p.href)
             return (
               <Link key={p.key} href={p.href} style={{

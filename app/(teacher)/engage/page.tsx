@@ -43,15 +43,32 @@ export default function EngageDashboard() {
 
       setQuizzes(data)
 
-      const { data: sessions } = await supabase
-        .from('engage_sessions')
-        .select('id, status')
-        .eq('status', 'active')
+      const userId = getCurrentUser().id
+      let activeSessions = 0
+
+      if (scope.institutionId) {
+        const quizIds = data.map((q) => q.id)
+        if (quizIds.length > 0) {
+          const { data: sessions } = await supabase
+            .from('engage_sessions')
+            .select('id')
+            .eq('status', 'active')
+            .in('quiz_id', quizIds)
+          activeSessions = sessions?.length ?? 0
+        }
+      } else if (userId) {
+        const { data: sessions } = await supabase
+          .from('engage_sessions')
+          .select('id')
+          .eq('status', 'active')
+          .eq('host_id', userId)
+        activeSessions = sessions?.length ?? 0
+      }
 
       setStats({
         totalPlays: 0,
         avgScore: 0,
-        activeSessions: sessions?.length ?? 0,
+        activeSessions,
       })
 
       setLoading(false)
