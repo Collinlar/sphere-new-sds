@@ -47,6 +47,8 @@ function InvigilatorViewInner() {
   const [toast, setToast] = useState<string | null>(null)
   const [tickets, setTickets] = useState<TicketWithStudent[]>([])
   const [sessionCap, setSessionCap] = useState<number | null>(null)
+  const [dmTarget, setDmTarget] = useState<ExamSubmission | null>(null)
+  const [dmText, setDmText] = useState('')
   const creatingRef = useRef(false)
 
   const loadData = useCallback(async () => {
@@ -200,6 +202,57 @@ function InvigilatorViewInner() {
     if (data) setSubmissions(data)
     setActionTarget(null)
     if (sub) showToast(`Exam submitted for ${sub.student_name}`)
+  }
+
+  async function addTime(seconds: number, subId?: string) {
+    if (!session) return
+    setActionTarget(subId ?? 'global')
+    if (subId) {
+      const sub = submissions.find((s) => s.id === subId)
+      const next = (sub?.extra_seconds ?? 0) + seconds
+      await supabase.from('exam_submissions').update({ extra_seconds: next }).eq('id', subId)
+      const { data } = await supabase.from('exam_submissions').select('*').eq('exam_session_id', session.id)
+      if (data) setSubmissions(data as ExamSubmission[])
+      showToast(`Added ${Math.round(seconds / 60)} min for ${sub?.student_name ?? 'student'}`)
+    } else {
+      const settings = { ...(session.settings ?? {}), extra_seconds: Number((session.settings as Record<string, unknown> | undefined)?.extra_seconds ?? 0) + seconds }
+      await supabase.from('exam_sessions').update({ settings }).eq('id', session.id)
+      setSession({ ...session, settings })
+      if (timeLeft !== null) setTimeLeft(timeLeft + seconds)
+      showToast(`Added ${Math.round(seconds / 60)} min for everyone`)
+    }
+    setActionTarget(null)
+  }
+
+  async function sendDm() {
+    if (!dmTarget || !dmText.trim()) return
+    setActionTarget(dmTarget.id)
+    await supabase.from('exam_submissions').update({
+      invigilator_message: dmText.trim(),
+      invigilator_message_at: new Date().toISOString(),
+    }).eq('id', dmTarget.id)
+    const { data } = await supabase.from('exam_submissions').select('*').eq('exam_session_id', session!.id)
+    if (data) setSubmissions(data as ExamSubmission[])
+    showToast(`Message sent to ${dmTarget.student_name}`)
+    setDmTarget(null)
+    setDmText('')
+    setActionTarget(null)
+  }
+
+  async function emergencyEnd() {
+    if (!session) return
+    const confirmed = window.confirm('End the exam now for everyone still writing? Their work will be submitted as-is.')
+    if (!confirmed) return
+    setEnding(true)
+    const now = new Date().toISOString()
+    await supabase
+      .from('exam_submissions')
+      .update({ submitted_at: now, result_note: 'Ended by invigilator' })
+      .eq('exam_session_id', session.id)
+      .is('submitted_at', null)
+    await supabase.from('exam_sessions').update({ status: 'grading' }).eq('id', session.id)
+    setEnding(false)
+    router.push(`/assess/session/${session.id}/summary`)
   }
 
   async function endSession() {
@@ -417,7 +470,7 @@ function InvigilatorViewInner() {
                   )}
 
                   {/* Teacher controls */}
-                  <div className="student-controls" style={{ display: 'flex', gap: 8, padding: '8px 16px 12px 66px', borderTop: '0.5px solid rgba(255,255,255,0.05)' }}>
+                  <div className="student-controls" style={{ display: 'flex', gap: 8, padding: '8px 16px 12px 66px', borderTop: '0.5px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' }}>
                     <button onClick={() => manualFlag(sub.id)} disabled={isBusy || alreadySubmitted} style={controlBtn('#C23B2A', isBusy || alreadySubmitted)}>
                       Flag manually
                     </button>
@@ -427,9 +480,17 @@ function InvigilatorViewInner() {
                       </button>
                     )}
                     {!alreadySubmitted && (
-                      <button onClick={() => forceSubmit(sub.id)} disabled={isBusy} style={controlBtn('rgba(255,255,255,0.08)', isBusy)}>
-                        Force submit
-                      </button>
+                      <>
+                        <button onClick={() => addTime(300, sub.id)} disabled={isBusy} style={controlBtn('rgba(255,255,255,0.08)', isBusy)}>
+                          +5 min
+                        </button>
+                        <button onClick={() => { setDmTarget(sub); setDmText('') }} disabled={isBusy} style={controlBtn('rgba(255,255,255,0.08)', isBusy)}>
+                          Message
+                        </button>
+                        <button onClick={() => forceSubmit(sub.id)} disabled={isBusy} style={controlBtn('rgba(255,255,255,0.08)', isBusy)}>
+                          Force submit
+                        </button>
+                      </>
                     )}
                     {isBusy && (
                       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', alignSelf: 'center' }}>Updating...</span>
@@ -455,8 +516,43 @@ function InvigilatorViewInner() {
         </div>
       )}
 
+      {dmTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 300,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div style={{ width: '100%', maxWidth: 400, background: '#161B2E', borderRadius: 14, padding: 22 }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginBottom: 6 }}>Message {dmTarget.student_name}</p>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 12 }}>They will see this as a banner during the exam.</p>
+            <textarea
+              value={dmText}
+              onChange={(e) => setDmText(e.target.value)}
+              rows={3}
+              placeholder="Keep it short and clear..."
+              style={{
+                width: '100%', boxSizing: 'border-box', borderRadius: 10, border: 'none',
+                background: 'rgba(255,255,255,0.08)', color: '#fff', padding: 12, fontSize: 14,
+                fontFamily: 'inherit', resize: 'vertical', marginBottom: 12, outline: 'none',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setDmTarget(null)} style={controlBtn('rgba(255,255,255,0.08)', false)}>Cancel</button>
+              <button type="button" onClick={() => void sendDm()} disabled={!dmText.trim()} style={controlBtn('#D97010', !dmText.trim())}>Send message</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
-      <div className="session-footer" style={{ padding: '16px 28px', borderTop: '0.5px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="session-footer" style={{ padding: '16px 28px', borderTop: '0.5px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => void addTime(300)} disabled={ending} style={controlBtn('rgba(255,255,255,0.08)', ending)}>
+            +5 min everyone
+          </button>
+          <button type="button" onClick={() => void emergencyEnd()} disabled={ending} style={controlBtn('#993C1D', ending)}>
+            End exam for everyone
+          </button>
+        </div>
         <button
           onClick={endSession}
           disabled={ending}

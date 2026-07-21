@@ -19,6 +19,12 @@ import {
   normalizeGeneratedQuestions,
   type AssessmentAiConfig,
 } from '@/lib/ai-assessment-generation'
+import {
+  cloneBankQuestionIntoExam,
+  listBankQuestions,
+  saveToQuestionBank,
+  type BankQuestionRow,
+} from '@/lib/question-bank'
 
 const SUBJECTS = ['Mathematics', 'English', 'Science', 'Social Studies', 'ICT', 'French', 'History', 'Geography', 'Religious Studies', 'Physical Education']
 const QUESTION_TYPES: { value: ExamQuestion['type']; label: string }[] = [
@@ -64,6 +70,12 @@ export default function ExamCreate() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [integrityAction, setIntegrityAction] = useState<'record' | 'warn' | 'auto_disqualify'>('warn')
   const [integrityThreshold, setIntegrityThreshold] = useState(3)
+  const [shuffleQuestions, setShuffleQuestions] = useState(true)
+  const [shuffleOptions, setShuffleOptions] = useState(true)
+  const [bankOpen, setBankOpen] = useState(false)
+  const [bankRows, setBankRows] = useState<BankQuestionRow[]>([])
+  const [bankLoading, setBankLoading] = useState(false)
+  const [bankMsg, setBankMsg] = useState('')
   const [issuesCertificate, setIssuesCertificate] = useState(false)
   const [certificatePassMark, setCertificatePassMark] = useState(50)
   const [mobileTab, setMobileTab] = useState<'details' | 'questions'>('details')
@@ -231,6 +243,8 @@ export default function ExamCreate() {
       settings: {
         integrity_action: integrityAction,
         integrity_threshold: integrityThreshold,
+        shuffle_questions: shuffleQuestions,
+        shuffle_options: shuffleOptions,
       },
       issues_certificate: issuesCertificate,
       certificate_pass_mark: certificatePassMark,
@@ -487,6 +501,19 @@ export default function ExamCreate() {
               </p>
             </div>
 
+            {/* Randomisation */}
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--mid-grey)', marginBottom: 6 }}>Randomisation</p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 8 }}>
+                <input type="checkbox" checked={shuffleQuestions} onChange={(e) => setShuffleQuestions(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Shuffle question order per student</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={shuffleOptions} onChange={(e) => setShuffleOptions(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Shuffle MCQ options per student</span>
+              </label>
+            </div>
+
             {/* Certificate */}
             <div>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--mid-grey)', marginBottom: 6 }}>Certificate</p>
@@ -632,6 +659,35 @@ export default function ExamCreate() {
               }}
             >
               + Add question
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setBankOpen(true)
+                setBankLoading(true)
+                const rows = await listBankQuestions({
+                  institutionId: getContentInstitutionId(),
+                  creatorId: getCurrentUser().id,
+                  subject: subject || undefined,
+                })
+                setBankRows(rows)
+                setBankLoading(false)
+              }}
+              style={{
+                width: '100%',
+                marginTop: 6,
+                padding: '8px',
+                background: 'transparent',
+                border: '0.5px dashed var(--border)',
+                borderRadius: 7,
+                fontSize: 12,
+                color: '#C23B2A',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 600,
+              }}
+            >
+              Add from question bank
             </button>
             {drawerOpen && (
               <div style={{
@@ -911,9 +967,77 @@ export default function ExamCreate() {
                   Remove question
                 </button>
               )}
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!q.text.trim()) {
+                    setBankMsg('Write the question before saving it to the bank.')
+                    return
+                  }
+                  const result = await saveToQuestionBank({
+                    institutionId: getContentInstitutionId(),
+                    creatorId: getCurrentUser().id,
+                    subject: subject || null,
+                    topic: null,
+                    difficulty: 'standard',
+                    question: q,
+                  })
+                  setBankMsg(result.ok ? 'Saved to question bank.' : result.error)
+                }}
+                style={{ background: 'transparent', border: 'none', color: '#1A8966', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: questions.length > 1 ? 0 : 'auto' }}
+              >
+                Save to bank
+              </button>
             </div>
+            {bankMsg && (
+              <p style={{ fontSize: 12, color: bankMsg.includes('Saved') ? '#1A8966' : '#C23B2A', marginTop: 10 }}>{bankMsg}</p>
+            )}
           </div>
         </div>
+
+        {bankOpen && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 80,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}>
+            <div style={{ width: '100%', maxWidth: 520, maxHeight: '80vh', overflow: 'auto', background: 'var(--white)', borderRadius: 14, padding: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <p style={{ fontSize: 16, fontWeight: 700 }}>Question bank</p>
+                <button type="button" onClick={() => setBankOpen(false)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--mid-grey)' }}>×</button>
+              </div>
+              {bankLoading ? (
+                <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>Loading bank questions...</p>
+              ) : bankRows.length === 0 ? (
+                <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>No bank questions yet. Save one from an exam first.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {bankRows.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => {
+                        const cloned = cloneBankQuestionIntoExam(row)
+                        setQuestions((prev) => [...prev, cloned])
+                        setActiveQ(questions.length)
+                        setBankOpen(false)
+                        setMobileTab('questions')
+                      }}
+                      style={{
+                        textAlign: 'left', border: '0.5px solid var(--border)', borderRadius: 10,
+                        padding: '12px 14px', background: 'var(--page-bg)', cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', marginBottom: 4 }}>{row.question.text}</p>
+                      <p style={{ fontSize: 12, color: 'var(--mid-grey)' }}>
+                        {[row.subject, row.topic, row.difficulty, row.question.type].filter(Boolean).join(' · ')}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
       )}

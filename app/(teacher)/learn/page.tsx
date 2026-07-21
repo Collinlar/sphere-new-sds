@@ -7,6 +7,7 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import Link from 'next/link'
 import { getCurrentUser } from '@/lib/auth'
+import { fetchCourseEnrollmentStats } from '@/lib/course-stats'
 
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
@@ -62,6 +63,9 @@ export default function LearnPage() {
   const [documents, setDocuments] = useState<SimpleResource[]>([])
   const [tab, setTab] = useState<ResourceTab>('courses')
   const [loading, setLoading] = useState(true)
+  const [totalEnrolled, setTotalEnrolled] = useState(0)
+  const [avgCompletion, setAvgCompletion] = useState(0)
+  const [courseStats, setCourseStats] = useState<Record<string, { enrolled: number; avgCompletion: number }>>({})
 
   useEffect(() => {
     async function fetchAll() {
@@ -77,18 +81,22 @@ export default function LearnPage() {
         supabase.from('documents').select('id, title, subject, cover_color, is_published, created_at, marketplace_listing_id').or(filter).order('created_at', { ascending: false }),
       ])
 
-      setCourses((coursesRes.data ?? []) as Course[])
+      const courseList = (coursesRes.data ?? []) as Course[]
+      setCourses(courseList)
       setGuides((guidesRes.data ?? []) as SimpleResource[])
       setNotes((notesRes.data ?? []) as SimpleResource[])
       setDocuments((docsRes.data ?? []) as SimpleResource[])
+
+      const stats = await fetchCourseEnrollmentStats(courseList.map((c) => c.id))
+      setTotalEnrolled(stats.totalEnrolled)
+      setAvgCompletion(stats.avgCompletion)
+      setCourseStats(stats.byCourse)
       setLoading(false)
     }
     fetchAll()
   }, [])
 
   const published = courses.filter(c => c.is_published).length
-  const totalEnrolled = 0
-  const avgCompletion = 0
 
   const activeTab = RESOURCE_TABS.find(t => t.key === tab)!
   const tabData: Record<ResourceTab, SimpleResource[] | Course[]> = { courses, guides, notes, documents }
@@ -184,8 +192,8 @@ export default function LearnPage() {
                   <CourseCard
                     key={course.id}
                     course={course}
-                    enrolled={0}
-                    completion={0}
+                    enrolled={courseStats[course.id]?.enrolled ?? 0}
+                    completion={courseStats[course.id]?.avgCompletion ?? 0}
                   />
                 ))}
               </div>

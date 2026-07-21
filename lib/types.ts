@@ -154,6 +154,10 @@ export interface ExamSubmission {
   integrity_flags: string[]
   result_status?: 'normal' | 'disqualified' | 'withheld' | 'voided'
   result_note?: string
+  extra_seconds?: number
+  invigilator_message?: string | null
+  invigilator_message_at?: string | null
+  presentation?: ExamQuestion[] | null
 }
 
 // Rosters (private/registered audiences for Assess + Learn)
@@ -519,6 +523,8 @@ export interface PathStep {
   content: Record<string, unknown>
   duration_minutes?: number
   is_mandatory: boolean
+  /** Optional skill tag for the Train skill matrix */
+  skill?: string
 }
 
 export interface LearningPath {

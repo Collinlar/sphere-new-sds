@@ -1,70 +1,44 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useRef, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { resolveJoinCode } from '@/lib/join-session'
 
-export default function JoinPage() {
+function JoinPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const autoTried = useRef(false)
 
-  async function handleJoin(e: React.FormEvent) {
-    e.preventDefault()
-    const trimmed = code.trim().toUpperCase()
+  async function joinWithCode(raw: string) {
+    const trimmed = raw.trim().toUpperCase()
     if (!trimmed) return
     setLoading(true)
     setError('')
-
-    // Try engage session first
-    const { data: engageSession } = await supabase
-      .from('engage_sessions')
-      .select('id, status')
-      .eq('join_code', trimmed)
-      .single()
-
-    if (engageSession) {
-      if (engageSession.status === 'ended') {
-        setError('That game has already ended. Ask your teacher for a new code.')
-        setLoading(false)
-        return
-      }
-      router.push(`/student/engage/${trimmed}`)
+    const result = await resolveJoinCode(trimmed)
+    if (result.ok) {
+      router.replace(result.href)
       return
     }
-
-    // Try assess session
-    const { data: examSession } = await supabase
-      .from('exam_sessions')
-      .select('id, status')
-      .eq('join_code', trimmed)
-      .single()
-
-    if (examSession) {
-      if (examSession.status === 'completed') {
-        setError('That exam has already closed. Check with your teacher.')
-        setLoading(false)
-        return
-      }
-      router.push(`/student/assess/${trimmed}`)
-      return
-    }
-
-    // Try personal ticket code
-    const { data: ticket } = await supabase
-      .from('exam_tickets')
-      .select('id')
-      .eq('code', trimmed)
-      .single()
-
-    if (ticket) {
-      router.push(`/student/assess/${trimmed}`)
-      return
-    }
-
     setLoading(false)
-    setError('We could not find that code. Check it and try again.')
+    setError(result.error)
+  }
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('code')
+    if (!fromUrl || autoTried.current) return
+    autoTried.current = true
+    const normalised = fromUrl.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9)
+    setCode(normalised)
+    void joinWithCode(normalised)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault()
+    await joinWithCode(code)
   }
 
   return (
@@ -92,10 +66,12 @@ export default function JoinPage() {
             </span>
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--near-black)', marginBottom: 6 }}>
-            Enter your code
+            {loading && code ? 'Opening your session' : 'Enter your code'}
           </h1>
           <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>
-            Your teacher will show this on the board
+            {loading && code
+              ? `Looking up ${code}…`
+              : 'Your teacher will show this on the board'}
           </p>
         </div>
 
@@ -104,11 +80,18 @@ export default function JoinPage() {
             <div style={{ marginBottom: 20 }}>
               <input
                 type="text"
+                name="session-code"
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
                 placeholder="e.g. XK7P2Q or MAEF-HJYY"
                 value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9))}
                 maxLength={9}
-                autoFocus
+                autoFocus={!searchParams.get('code')}
+                suppressHydrationWarning
+                disabled={loading}
                 style={{
                   width: '100%',
                   height: 64,
@@ -125,8 +108,6 @@ export default function JoinPage() {
                   outline: 'none',
                   textTransform: 'uppercase',
                 }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = '#D97010' }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = 'transparent' }}
               />
             </div>
 
@@ -147,6 +128,7 @@ export default function JoinPage() {
             <button
               type="submit"
               disabled={loading || !code.trim()}
+              suppressHydrationWarning
               style={{
                 width: '100%',
                 height: 52,
@@ -173,5 +155,17 @@ export default function JoinPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mid-grey)', fontSize: 14 }}>
+        Opening join…
+      </div>
+    }>
+      <JoinPageInner />
+    </Suspense>
   )
 }

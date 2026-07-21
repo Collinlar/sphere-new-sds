@@ -26,7 +26,7 @@ interface PublicListing {
   subject: string | null
   thumbnail_color: string
   total_purchases: number
-  creator_id: string
+  creator_id: string | null
   creator_name?: string
   creator_slug?: string
 }
@@ -80,30 +80,62 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
     let cancelled = false
     async function load() {
       setLoading(true)
-      const { data } = await supabase
+
+      // creator_id references users, not creator_profiles — embedding
+      // creator_profiles here fails the whole query and looks like a missing listing.
+      const { data, error } = await supabase
         .from('marketplace_listings')
-        .select('id, title, description, resource_type, price_ghs, is_free, subject, thumbnail_color, total_purchases, creator_id, status, creator_profiles(slug, users(name))')
+        .select('id, title, description, resource_type, price_ghs, is_free, subject, thumbnail_color, total_purchases, creator_id, status, users!marketplace_listings_creator_id_fkey(name)')
         .eq('id', params.id)
         .maybeSingle()
 
       if (cancelled) return
+
+      if (error || !data) {
+        setLoading(false)
+        return
+      }
+
+      const status = (data as { status?: string }).status
       // Approved listings are public. Anything else is only visible to Sphere
       // staff, so they can preview a pending listing before approving it.
-      if (!data) { setLoading(false); return }
-      if ((data as { status?: string }).status !== 'approved') {
+      if (status !== 'approved') {
         const { data: sessionData } = await supabase.auth.getSession()
         const uid = sessionData.session?.user?.id
         const staff = uid
           ? (await supabase.from('users').select('is_sphere_staff').eq('id', uid).maybeSingle()).data?.is_sphere_staff
           : false
-        if (!staff) { setLoading(false); return }
+        if (!staff) {
+          setLoading(false)
+          return
+        }
         if (!cancelled) setStaffPreview(true)
       }
-      const profile = (data as unknown as { creator_profiles?: { slug: string; users?: { name: string } } }).creator_profiles
+
+      const creatorName = (data as unknown as { users?: { name: string } | null }).users?.name
+      let creatorSlug: string | undefined
+      if (data.creator_id) {
+        const { data: profile } = await supabase
+          .from('creator_profiles')
+          .select('slug')
+          .eq('user_id', data.creator_id)
+          .maybeSingle()
+        creatorSlug = profile?.slug ?? undefined
+      }
+
       setListing({
-        ...(data as unknown as PublicListing),
-        creator_name: profile?.users?.name,
-        creator_slug: profile?.slug,
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        resource_type: data.resource_type,
+        price_ghs: Number(data.price_ghs ?? 0),
+        is_free: Boolean(data.is_free),
+        subject: data.subject,
+        thumbnail_color: data.thumbnail_color ?? '#1A8966',
+        total_purchases: Number(data.total_purchases ?? 0),
+        creator_id: data.creator_id,
+        creator_name: creatorName,
+        creator_slug: creatorSlug,
       })
       setLoading(false)
     }
@@ -164,8 +196,11 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
   }
 
   if (!listing) {
-    return <div style={{ minHeight: '100vh', background: 'var(--page-bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+    return <div style={{ minHeight: '100vh', background: 'var(--page-bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24, textAlign: 'center' }}>
       <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--near-black)' }}>This resource is not available.</p>
+      <p style={{ fontSize: 13, color: 'var(--mid-grey)', maxWidth: 360, lineHeight: 1.5 }}>
+        It may still be under review, or the link may be wrong. Sign in as Sphere staff to preview pending listings.
+      </p>
       <Link href="/" style={{ fontSize: 14, color: 'var(--amber)', fontWeight: 600, textDecoration: 'none' }}>Go to SphereSDS</Link>
     </div>
   }

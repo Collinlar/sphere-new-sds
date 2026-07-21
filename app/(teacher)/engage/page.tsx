@@ -10,6 +10,7 @@ import { fetchScopedContent, resolveLibraryScope } from '@/lib/library-scope'
 import { onContextChange } from '@/lib/context'
 import { canLaunchEngageSession, incrementEngageSessionLaunched, getCreationUsage, getEffectivePlanId } from '@/lib/subscription'
 import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
+import { fetchEngageStats } from '@/lib/engage-stats'
 
 interface QuizStats {
   totalPlays: number
@@ -44,10 +45,10 @@ export default function EngageDashboard() {
       setQuizzes(data)
 
       const userId = getCurrentUser().id
+      const quizIds = data.map((q) => q.id)
       let activeSessions = 0
 
       if (scope.institutionId) {
-        const quizIds = data.map((q) => q.id)
         if (quizIds.length > 0) {
           const { data: sessions } = await supabase
             .from('engage_sessions')
@@ -65,9 +66,11 @@ export default function EngageDashboard() {
         activeSessions = sessions?.length ?? 0
       }
 
+      const { totalPlays, avgScore } = await fetchEngageStats(quizIds)
+
       setStats({
-        totalPlays: 0,
-        avgScore: 0,
+        totalPlays,
+        avgScore,
         activeSessions,
       })
 
@@ -162,6 +165,8 @@ export default function EngageDashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
           {[
             { label: 'Quizzes created', value: loading ? '...' : quizzes.length },
+            { label: 'Sessions played', value: loading ? '...' : stats.totalPlays },
+            { label: 'Avg score', value: loading ? '...' : stats.avgScore },
             { label: 'Active sessions', value: loading ? '...' : stats.activeSessions },
             ...(sessionQuota
               ? [{ label: 'Live sessions used', value: `${sessionQuota.used} / ${sessionQuota.quota}` }]

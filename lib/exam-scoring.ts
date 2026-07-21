@@ -33,8 +33,11 @@ export function scoreObjectiveQuestions(
   }
 }
 
-/** Back-compat for grading page */
+/** Back-compat for grading page — prefer per-student presentation when shuffled */
 export function computeAutoScore(sub: ExamSubmission, exam: Exam | null): number {
   if (!exam) return 0
-  return computeObjectiveScore(exam.questions, sub.answers)
+  const questions = Array.isArray(sub.presentation) && sub.presentation.length > 0
+    ? sub.presentation
+    : exam.questions
+  return computeObjectiveScore(questions, sub.answers)
 }

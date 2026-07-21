@@ -296,7 +296,8 @@ async function fulfillMarketplacePurchase(
   const commissionGhs = Math.round(priceGhs * (commissionRate / 100) * 100) / 100
   const creatorEarnings = Math.round((priceGhs - commissionGhs) * 100) / 100
 
-  const copied = await importFromListing(listing as MarketplaceListingRow, buyerId, institutionId)
+  // Server fulfillment must use the admin client so RLS does not block the copy.
+  const copied = await importFromListing(listing as MarketplaceListingRow, buyerId, institutionId, admin)
   if (!copied.ok) return copied
 
   await admin.from('marketplace_purchases').insert({
@@ -311,6 +312,7 @@ async function fulfillMarketplacePurchase(
     purchased_at: new Date().toISOString(),
   })
 
+  // listing_id only — resource_id on marketplace_imports FKs marketplace_resources.
   await admin.from('marketplace_imports').insert({
     listing_id: listingId,
     institution_id: institutionId,

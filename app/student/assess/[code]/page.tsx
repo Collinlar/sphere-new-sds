@@ -5,6 +5,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { scoreObjectiveQuestions } from '@/lib/exam-scoring'
+import { loadExamAnswers, saveExamAnswers, clearExamAnswers } from '@/lib/exam-answer-cache'
+import { buildExamPresentation, remainingExamSeconds } from '@/lib/exam-presentation'
 import type { Exam, ExamSession, ExamQuestion } from '@/lib/types'
 import { IconFlag, IconInfo, IconCheck } from '@/components/icons'
 
@@ -41,10 +43,16 @@ function StudentExamInner() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [flagWarning, setFlagWarning] = useState<string | null>(null)
+  const [presentationQuestions, setPresentationQuestions] = useState<ExamQuestion[] | null>(null)
+  const [startedAt, setStartedAt] = useState<string | null>(null)
+  const [invigilatorMessage, setInvigilatorMessage] = useState<string | null>(null)
+  const [sessionExtraSeconds, setSessionExtraSeconds] = useState(0)
+  const [submissionExtraSeconds, setSubmissionExtraSeconds] = useState(0)
   const submissionIdRef = useRef<string | null>(null)
   const phaseRef = useRef<ExamPhase>('join')
   const flagCountRef = useRef(0)
   const selfServeRef = useRef(false)
+  const answersRef = useRef<Record<string, string>>({})
 
   interface TicketInfo { id: string; user_id: string; exam_session_id: string; redeemed_at: string | null; name: string }
   const [ticket, setTicket] = useState<TicketInfo | null>(null)
@@ -54,6 +62,36 @@ function StudentExamInner() {
   // Keep refs in sync so event listeners always have current values
   useEffect(() => { submissionIdRef.current = submissionId }, [submissionId])
   useEffect(() => { phaseRef.current = phase }, [phase])
+  useEffect(() => { answersRef.current = answers }, [answers])
+
+  async function persistPresentation(
+    subId: string,
+    started: string,
+    examData: Exam,
+    sessExtra = 0,
+    subExtra = 0,
+  ) {
+    const presentation = buildExamPresentation(examData.questions, examData.settings)
+    await supabase.from('exam_submissions').update({ presentation }).eq('id', subId)
+    setPresentationQuestions(presentation)
+    setStartedAt(started)
+    setTimeLeft(remainingExamSeconds({
+      startedAt: started,
+      durationMinutes: examData.duration_minutes,
+      sessionExtraSeconds: sessExtra,
+      submissionExtraSeconds: subExtra,
+    }))
+  }
+
+  function mergeResumeAnswers(
+    dbAnswers: Record<string, string>,
+    submissionIdForCache: string,
+  ): Record<string, string> {
+    const cached = loadExamAnswers(submissionIdForCache)
+    if (!cached?.answers) return dbAnswers
+    if (cached.updatedAt) return { ...dbAnswers, ...cached.answers }
+    return { ...cached.answers, ...dbAnswers }
+  }
 
   useEffect(() => {
     async function checkTicket() {
@@ -120,16 +158,44 @@ function StudentExamInner() {
       if (resumeSubmissionId) {
         const { data: existingSub } = await supabase
           .from('exam_submissions')
-          .select('id, answers')
+          .select('id, answers, started_at, presentation, extra_seconds, invigilator_message')
           .eq('id', resumeSubmissionId)
           .eq('student_id', user.id)
           .is('submitted_at', null)
           .maybeSingle()
 
         if (existingSub) {
+          const dbAnswers = (existingSub.answers as Record<string, string>) ?? {}
+          const merged = mergeResumeAnswers(dbAnswers, existingSub.id as string)
+          const presentation = (existingSub.presentation as ExamQuestion[] | null) ?? null
+          const subExtra = (existingSub.extra_seconds as number | undefined) ?? 0
+          const sessionSettings = (sessionData.settings ?? {}) as Record<string, unknown>
+          const sessExtra = typeof sessionSettings.extra_seconds === 'number' ? sessionSettings.extra_seconds : 0
+          const started = (existingSub.started_at as string) ?? new Date().toISOString()
+
           setSubmissionId(existingSub.id as string)
-          setAnswers((existingSub.answers as Record<string, string>) ?? {})
-          setTimeLeft(examData.duration_minutes * 60)
+          setAnswers(merged)
+          setPresentationQuestions(presentation)
+          setStartedAt(started)
+          setSubmissionExtraSeconds(subExtra)
+          setSessionExtraSeconds(sessExtra)
+          if (existingSub.invigilator_message) {
+            setInvigilatorMessage(existingSub.invigilator_message as string)
+          }
+
+          const cached = loadExamAnswers(existingSub.id as string)
+          const qs = presentation ?? examData.questions
+          if (cached?.activeQuestionId) {
+            const idx = qs.findIndex((q) => q.id === cached.activeQuestionId)
+            if (idx >= 0) setActiveQ(idx)
+          }
+
+          setTimeLeft(remainingExamSeconds({
+            startedAt: started,
+            durationMinutes: examData.duration_minutes,
+            sessionExtraSeconds: sessExtra,
+            submissionExtraSeconds: subExtra,
+          }))
           setJoining(false)
           setPhase('instructions')
           return
@@ -159,7 +225,7 @@ function StudentExamInner() {
 
       if (!cancelled) {
         setSubmissionId(sub.id as string)
-        setTimeLeft(examData.duration_minutes * 60)
+        await persistPresentation(sub.id as string, sub.started_at as string, examData)
         setJoining(false)
         setPhase('instructions')
       }
@@ -171,23 +237,87 @@ function StudentExamInner() {
     }
   }, [isSelfTake, checkingTicket, ticket, code, resumeSubmissionId])
 
-  // Poll for teacher force-submit: if submitted_at appears externally, transition to done
+  // Poll for teacher force-submit, extras, and invigilator messages
   useEffect(() => {
     if (phase !== 'exam' || !submissionId) return
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('exam_submissions')
-        .select('submitted_at')
+        .select('submitted_at, extra_seconds, invigilator_message')
         .eq('id', submissionId)
         .single()
+
       if (data?.submitted_at) {
         clearInterval(interval)
+        clearExamAnswers(submissionId)
         setPhase('done')
         setTimeout(() => router.push(`/student/assess/results/${submissionId}`), 2500)
+        return
+      }
+
+      let nextSubExtra = submissionExtraSeconds
+      let nextSessExtra = sessionExtraSeconds
+
+      if (typeof data?.extra_seconds === 'number') {
+        nextSubExtra = data.extra_seconds
+        if (data.extra_seconds !== submissionExtraSeconds) {
+          setSubmissionExtraSeconds(data.extra_seconds)
+        }
+      }
+
+      if (data?.invigilator_message) {
+        setInvigilatorMessage(data.invigilator_message as string)
+      }
+
+      if (session?.id) {
+        const { data: sess } = await supabase
+          .from('exam_sessions')
+          .select('settings')
+          .eq('id', session.id)
+          .single()
+        const settings = (sess?.settings ?? {}) as Record<string, unknown>
+        if (typeof settings.extra_seconds === 'number') {
+          nextSessExtra = settings.extra_seconds
+          if (settings.extra_seconds !== sessionExtraSeconds) {
+            setSessionExtraSeconds(settings.extra_seconds)
+          }
+        }
+      }
+
+      if (
+        startedAt &&
+        exam &&
+        (nextSubExtra !== submissionExtraSeconds || nextSessExtra !== sessionExtraSeconds)
+      ) {
+        setTimeLeft(remainingExamSeconds({
+          startedAt,
+          durationMinutes: exam.duration_minutes,
+          sessionExtraSeconds: nextSessExtra,
+          submissionExtraSeconds: nextSubExtra,
+        }))
       }
     }, 4000)
     return () => clearInterval(interval)
-  }, [phase, submissionId, router])
+  }, [phase, submissionId, router, session?.id, startedAt, exam, sessionExtraSeconds, submissionExtraSeconds])
+
+  // Persist answers to localStorage while in exam
+  useEffect(() => {
+    if (phase !== 'exam' || !submissionId || !exam) return
+    const qs = presentationQuestions ?? exam.questions
+    saveExamAnswers(submissionId, answers, qs[activeQ]?.id)
+  }, [answers, activeQ, phase, submissionId, presentationQuestions, exam])
+
+  // Debounced DB answer sync every 20s
+  useEffect(() => {
+    if (phase !== 'exam' || !submissionId) return
+    const interval = setInterval(() => {
+      void supabase
+        .from('exam_submissions')
+        .update({ answers: answersRef.current })
+        .eq('id', submissionId)
+    }, 20000)
+    return () => clearInterval(interval)
+  }, [phase, submissionId])
 
   const recordFlag = useCallback(async (type: FlagType) => {
     if (phaseRef.current !== 'exam' || selfServeRef.current) return
@@ -266,7 +396,8 @@ function StudentExamInner() {
     const submittedAt = new Date().toISOString()
 
     if (selfServeRef.current && exam) {
-      const scored = scoreObjectiveQuestions(exam, answers)
+      const questionsForScoring = presentationQuestions ?? exam.questions
+      const scored = scoreObjectiveQuestions({ ...exam, questions: questionsForScoring }, answers)
       await supabase.from('exam_submissions').update({
         answers,
         submitted_at: submittedAt,
@@ -284,10 +415,11 @@ function StudentExamInner() {
       }).eq('id', submissionId)
     }
 
+    clearExamAnswers(submissionId)
     setSubmitting(false)
     setPhase('done')
     setTimeout(() => router.push(`/student/assess/results/${submissionId}`), 2500)
-  }, [submitting, submissionId, answers, exam, session, router])
+  }, [submitting, submissionId, answers, exam, presentationQuestions, session, router])
 
   async function handleJoin() {
     setJoining(true)
@@ -350,7 +482,7 @@ function StudentExamInner() {
       setSession(sessionData as ExamSession)
       setExam(examData)
       setSubmissionId(sub.id)
-      setTimeLeft(examData.duration_minutes * 60)
+      await persistPresentation(sub.id as string, sub.started_at as string, examData)
       setJoining(false)
       setPhase('instructions')
       return
@@ -430,7 +562,7 @@ function StudentExamInner() {
     setSession(sessionData as ExamSession)
     setExam(examData)
     setSubmissionId(sub.id)
-    setTimeLeft(examData.duration_minutes * 60)
+    await persistPresentation(sub.id as string, sub.started_at as string, examData)
     setJoining(false)
     setPhase('instructions')
   }
@@ -441,10 +573,11 @@ function StudentExamInner() {
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  function answered(qId: string) { return !!answers[qId] }
-  function answeredCount() { return exam ? exam.questions.filter((q) => answered(q.id)).length : 0 }
+  const displayQuestions: ExamQuestion[] = exam ? (presentationQuestions ?? exam.questions) : []
+  const currentQ: ExamQuestion | undefined = displayQuestions[activeQ]
 
-  const currentQ: ExamQuestion | undefined = exam?.questions[activeQ]
+  function answered(qId: string) { return !!answers[qId] }
+  function answeredCount() { return displayQuestions.filter((q) => answered(q.id)).length }
 
   const inputStyle = {
     background: '#f9f9f9',
@@ -551,8 +684,8 @@ function StudentExamInner() {
           <div style={{ padding: '22px 20px 28px', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
               {[
-                { label: 'Questions', value: exam.questions.length, isTime: false },
-                { label: 'Total marks', value: exam.questions.reduce((s, q) => s + q.marks, 0), isTime: false },
+                { label: 'Questions', value: displayQuestions.length, isTime: false },
+                { label: 'Total marks', value: displayQuestions.reduce((s, q) => s + q.marks, 0), isTime: false },
                 { label: 'Time', value: exam.duration_minutes, isTime: true },
               ].map((s) => (
                 <div key={s.label} style={{
@@ -642,6 +775,43 @@ function StudentExamInner() {
             </div>
           )}
 
+          {/* Invigilator message */}
+          {invigilatorMessage && (
+            <div style={{
+              background: '#FEF0DC',
+              borderBottom: '0.5px solid #D97010',
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              flexShrink: 0,
+            }}>
+              <IconInfo size={14} style={{ flexShrink: 0, marginTop: 2, color: '#D97010' }} />
+              <p style={{ flex: 1, fontSize: 13, color: '#9A5800', lineHeight: 1.5, margin: 0 }}>
+                {invigilatorMessage}
+              </p>
+              <button
+                type="button"
+                onClick={() => setInvigilatorMessage(null)}
+                aria-label="Dismiss message"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#9A5800',
+                  fontSize: 18,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '0 4px',
+                  lineHeight: 1,
+                  minWidth: 28,
+                  minHeight: 28,
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {/* Top bar */}
           <div style={{
             background: 'var(--navy)',
@@ -654,7 +824,7 @@ function StudentExamInner() {
             <div>
               <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>{exam.title}</p>
               <p style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginTop: 2 }}>
-                Question {activeQ + 1} of {exam.questions.length}
+                Question {activeQ + 1} of {displayQuestions.length}
               </p>
             </div>
             <div style={{
@@ -671,16 +841,16 @@ function StudentExamInner() {
           {/* Progress strip + question pills */}
           <div style={{ background: 'var(--white)', padding: '12px 20px 14px', borderBottom: '0.5px solid var(--border)', flexShrink: 0 }}>
             <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', marginBottom: 8 }}>
-              <div style={{ width: `${Math.round(((activeQ + 1) / exam.questions.length) * 100)}%`, height: '100%', background: 'var(--coral)', borderRadius: 2, transition: 'width 0.3s' }} />
+              <div style={{ width: `${Math.round(((activeQ + 1) / displayQuestions.length) * 100)}%`, height: '100%', background: 'var(--coral)', borderRadius: 2, transition: 'width 0.3s' }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{Math.round(((activeQ + 1) / exam.questions.length) * 100)}% complete</span>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{Math.round(((activeQ + 1) / displayQuestions.length) * 100)}% complete</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
                 {currentQ.type === 'mcq' ? 'Multiple choice' : currentQ.type === 'true_false' ? 'True / False' : currentQ.type === 'short' ? 'Short answer' : 'Essay'} · {currentQ.marks} {currentQ.marks === 1 ? 'mark' : 'marks'}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 7, overflowX: 'auto' }}>
-              {exam.questions.map((q, i) => (
+              {displayQuestions.map((q, i) => (
                 <button
                   key={q.id}
                   onClick={() => setActiveQ(i)}
@@ -865,7 +1035,7 @@ function StudentExamInner() {
               <IconFlag size={12} />
               {flaggedQuestions.has(currentQ.id) ? 'Flagged' : 'Flag'}
             </button>
-            {activeQ < exam.questions.length - 1 ? (
+            {activeQ < displayQuestions.length - 1 ? (
               <button
                 onClick={() => setActiveQ((prev) => prev + 1)}
                 style={{
@@ -921,11 +1091,11 @@ function StudentExamInner() {
           <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 440 }}>
             <h3 style={{ fontSize: 20, fontWeight: 700, color: '#18171A', marginBottom: 10 }}>Submit your exam?</h3>
             <p style={{ fontSize: 14, color: '#6B6870', lineHeight: 1.65, marginBottom: 20 }}>
-              You have answered {answeredCount()} of {exam.questions.length} questions. Once you submit, you cannot make changes.
+              You have answered {answeredCount()} of {displayQuestions.length} questions. Once you submit, you cannot make changes.
             </p>
-            {answeredCount() < exam.questions.length && (
+            {answeredCount() < displayQuestions.length && (
               <div style={{ background: '#FEF0DC', border: '0.5px solid #D97010', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#D97010', marginBottom: 16 }}>
-                {exam.questions.length - answeredCount()} question{exam.questions.length - answeredCount() > 1 ? 's' : ''} left unanswered.
+                {displayQuestions.length - answeredCount()} question{displayQuestions.length - answeredCount() > 1 ? 's' : ''} left unanswered.
               </div>
             )}
             <div style={{ display: 'flex', gap: 10 }}>
@@ -987,7 +1157,7 @@ function StudentExamInner() {
             Your answers have been recorded, {name}. Your teacher will share your results when grading is complete.
           </p>
           <div style={{ background: '#fff', border: '0.5px solid #EDECE9', borderRadius: 12, padding: '16px 24px', marginTop: 8 }}>
-            <p style={{ fontSize: 13, color: '#6B6870' }}>Answered {answeredCount()} of {exam?.questions.length ?? 0} questions</p>
+            <p style={{ fontSize: 13, color: '#6B6870' }}>Answered {answeredCount()} of {displayQuestions.length || exam?.questions.length || 0} questions</p>
           </div>
         </div>
       )}

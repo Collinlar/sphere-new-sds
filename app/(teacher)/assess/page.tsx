@@ -116,11 +116,16 @@ export default function AssessDashboard() {
         mode="assess"
         title="Assess"
         right={
-          <Link href="/assess/create">
-            <button style={{ background: '#C23B2A', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              + New Exam
-            </button>
-          </Link>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Link href="/assess/bank" style={{ fontSize: 13, fontWeight: 600, color: '#C23B2A', textDecoration: 'none', padding: '8px 10px' }}>
+              Question bank
+            </Link>
+            <Link href="/assess/create">
+              <button style={{ background: '#C23B2A', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                + New Exam
+              </button>
+            </Link>
+          </div>
         }
       />
 

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { resolveCatalogPayload } from './marketplace-catalog'
 import { normalizeSteps } from './train-paths'
@@ -239,7 +240,8 @@ export async function insertListing(
 export async function importFromListing(
   listing: MarketplaceListingRow,
   userId: string,
-  institutionIdRaw: string | null
+  institutionIdRaw: string | null,
+  client: SupabaseClient = supabase
 ): Promise<{ ok: true; targetType: string; targetId: string } | { ok: false; error: string }> {
   const now = new Date().toISOString()
   const resourceId = listing.resource_id
@@ -247,9 +249,10 @@ export async function importFromListing(
   // Personal buyers have no institution; the copy lands in their own library
   // (found by creator_id). Coerce empty string to null so the FK stays valid.
   const institutionId = institutionIdRaw || null
+  const db = client
 
   if (listingType === 'quiz') {
-    const { data: source } = await supabase
+    const { data: source } = await db
       .from('quizzes')
       .select('*')
       .eq('id', resourceId)
@@ -274,7 +277,7 @@ export async function importFromListing(
       gradeLevel = listing.target_levels?.[0] ?? catalog.level
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('quizzes')
       .insert({
         institution_id: institutionId,
@@ -297,7 +300,7 @@ export async function importFromListing(
   }
 
   if (listingType === 'course') {
-    const { data: source } = await supabase
+    const { data: source } = await db
       .from('courses')
       .select('*')
       .eq('id', resourceId)
@@ -325,7 +328,7 @@ export async function importFromListing(
       thumbnailColor = (catalog.content.thumbnail_color as string) ?? '#1A8966'
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('courses')
       .insert({
         institution_id: institutionId,
@@ -348,7 +351,7 @@ export async function importFromListing(
   }
 
   if (listingType === 'training_path') {
-    const { data: source } = await supabase
+    const { data: source } = await db
       .from('learning_paths')
       .select('*')
       .eq('id', resourceId)
@@ -370,7 +373,7 @@ export async function importFromListing(
       category = (catalog.content.category as string) ?? catalog.subject ?? listing.subject
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('learning_paths')
       .insert({
         institution_id: institutionId,
@@ -390,7 +393,7 @@ export async function importFromListing(
   }
 
   if (listingType === 'exam') {
-    const { data: source } = await supabase
+    const { data: source } = await db
       .from('exams')
       .select('*')
       .eq('id', resourceId)
@@ -418,7 +421,7 @@ export async function importFromListing(
       durationMinutes = (catalog.content.duration_minutes as number) ?? 60
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('exams')
       .insert({
         institution_id: institutionId,
@@ -442,14 +445,14 @@ export async function importFromListing(
   }
 
   if (listingType === 'guide') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source, error: fetchErr } = await db
       .from('guides')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
     if (fetchErr || !source) return { ok: false, error: 'Could not load this guide for import.' }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('guides')
       .insert({
         institution_id: institutionId,
@@ -472,14 +475,14 @@ export async function importFromListing(
   }
 
   if (listingType === 'notes') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source, error: fetchErr } = await db
       .from('notes')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
     if (fetchErr || !source) return { ok: false, error: 'Could not load these notes for import.' }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('notes')
       .insert({
         institution_id: institutionId,
@@ -501,14 +504,14 @@ export async function importFromListing(
   }
 
   if (listingType === 'document') {
-    const { data: source, error: fetchErr } = await supabase
+    const { data: source, error: fetchErr } = await db
       .from('documents')
       .select('*')
       .eq('id', resourceId)
       .maybeSingle()
     if (fetchErr || !source) return { ok: false, error: 'Could not load this document for import.' }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('documents')
       .insert({
         institution_id: institutionId,

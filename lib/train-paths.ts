@@ -38,6 +38,7 @@ export function normalizeSteps(raw: unknown): PathStep[] {
         content: sanitizeStepContent(type, s.content && Object.keys(s.content).length > 0 ? s.content : defaultStepContent(type)),
       duration_minutes: s.duration_minutes ?? 10,
       is_mandatory: s.is_mandatory ?? true,
+      skill: typeof s.skill === 'string' ? s.skill : undefined,
     }
   })
 }

@@ -12,6 +12,7 @@ import {
 import { assertMarketplacePublish } from './plan-privileges'
 import { normalizeSteps } from './train-paths'
 import { getCurrentUser } from './auth'
+import { resolveAuthUserId } from './subscription'
 import { getActiveContext } from './context'
 import {
   destinationInstitutionId,
@@ -553,7 +554,9 @@ async function recordMarketplaceImport(params: {
     imported_by: params.userId,
   }
   if (params.listingId) row.listing_id = params.listingId
-  if (params.resourceId) row.resource_id = params.resourceId
+  // resource_id FK points at marketplace_resources, not exams/courses/quizzes.
+  // Listing-backed imports must only stamp listing_id.
+  if (params.resourceId && !params.listingId) row.resource_id = params.resourceId
 
   const { error } = await supabase.from('marketplace_imports').insert(row)
   if (error) {
@@ -566,6 +569,9 @@ async function recordMarketplaceImport(params: {
     }
     if (error.code === '23505') {
       return { ok: false, error: 'This resource is already in that library.' }
+    }
+    if (error.code === '23503') {
+      return { ok: false, error: 'We could not link this import to your library. Try again, or contact Sphere support.' }
     }
     return { ok: false, error: 'We could not register this in your library. Try again in a moment.' }
   }
@@ -586,6 +592,12 @@ export async function importResource(
   destination: ImportDestination
 ): Promise<{ ok: true; targetType: string; targetId: string } | { ok: false; error: string }> {
   const institutionId = destinationInstitutionId(destination)
+  const authUserId = (await resolveAuthUserId()) ?? userId
+  if (!authUserId || authUserId === '00000000-0000-0000-0000-000000000002') {
+    return { ok: false, error: 'Sign in again, then import this resource.' }
+  }
+  userId = authUserId
+
   const { data: listingRow } = await supabase
     .from('marketplace_listings')
     .select('*')
@@ -610,7 +622,6 @@ export async function importResource(
 
     const recorded = await recordMarketplaceImport({
       listingId: listing.id,
-      resourceId: listing.resource_id,
       institutionId,
       userId,
       targetType: copied.targetType,

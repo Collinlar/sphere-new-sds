@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { LessonStepFrame } from '@/components/brand/LessonStepFrame'
 import type { Document, Guide, GuideStep, Note, NoteBlock } from '@/lib/types'
 
 function youTubeEmbed(url: string): string | null {
@@ -9,57 +10,99 @@ function youTubeEmbed(url: string): string | null {
 }
 
 export function GuideViewer({ guide, accent }: { guide: Guide; accent: string }) {
-  const [activeStep, setActiveStep] = useState(0)
+  const [activeStep, setActiveStep] = useState<number | null>(null)
   const steps = guide.steps ?? []
-  const step = steps[activeStep]
 
   if (steps.length === 0) {
     return <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>This guide has no steps yet.</p>
   }
 
+  // Focused lesson card (matches Study step mock), vertical CTAs instead of Back/dots/Next.
+  if (activeStep !== null && steps[activeStep]) {
+    const step = steps[activeStep]
+    const isLast = activeStep >= steps.length - 1
+    const imageUrl = step.image_url
+
+    return (
+      <div style={{ background: '#F7F4ED', borderRadius: 16, margin: '0 -4px' }}>
+        <LessonStepFrame
+          subject={guide.subject || guide.title}
+          stepIndex={activeStep}
+          stepCount={steps.length}
+          title={step.title}
+          meta={[
+            guide.subject || guide.title,
+            guide.estimated_minutes ? `${Math.max(1, Math.round(guide.estimated_minutes / Math.max(steps.length, 1)))} min read` : null,
+          ].filter(Boolean).join(', ')}
+          media={
+            imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt="" style={{ width: '100%', borderRadius: 14, display: 'block' }} />
+            ) : undefined
+          }
+          remember={step.tip?.trim() || null}
+          primaryLabel={isLast ? 'Finish guide' : 'Continue to next step'}
+          onPrimary={() => {
+            if (isLast) setActiveStep(null)
+            else setActiveStep(activeStep + 1)
+          }}
+          tertiaryLabel={activeStep > 0 ? 'Previous step' : undefined}
+          onTertiary={activeStep > 0 ? () => setActiveStep(activeStep - 1) : undefined}
+          onSecondary={() => setActiveStep(null)}
+          secondaryLabel="Back to outline"
+        >
+          <p style={{ margin: 0, whiteSpace: 'pre-line' }}>{step.body}</p>
+        </LessonStepFrame>
+      </div>
+    )
+  }
+
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {steps.map((s: GuideStep, index: number) => (
-          <button
-            key={s.id ?? `step-${index}`}
-            onClick={() => setActiveStep(index)}
-            style={{
-              minWidth: 36, height: 36, borderRadius: 8, border: 'none',
-              background: activeStep === index ? accent : 'var(--bg2)',
-              color: activeStep === index ? '#fff' : 'var(--mid-grey)',
-              fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-            }}
-          >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--mid-grey)', marginBottom: 2 }}>
+        {steps.length} steps
+      </p>
+      {steps.map((s: GuideStep, index: number) => (
+        <button
+          key={s.id ?? `step-${index}`}
+          type="button"
+          onClick={() => setActiveStep(index)}
+          style={{
+            width: '100%',
+            minHeight: 56,
+            padding: '14px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            textAlign: 'left',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            background: '#fff',
+            border: 'none',
+            borderRadius: 14,
+            boxShadow: '0 4px 16px rgba(17, 24, 39, 0.04)',
+          }}
+        >
+          <div style={{
+            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+            background: accent,
+            color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, fontWeight: 700,
+          }}>
             {index + 1}
-          </button>
-        ))}
-      </div>
-
-      {step && (
-        <div style={{ background: 'var(--white)', borderRadius: 12, padding: 20, boxShadow: 'var(--shadow-soft)' }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent, marginBottom: 8 }}>
-            Step {activeStep + 1} of {steps.length}
-          </p>
-          <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--near-black)', marginBottom: 12 }}>{step.title}</h2>
-          <p style={{ fontSize: 15, color: 'var(--near-black)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{step.body}</p>
-          {step.tip && (
-            <div style={{ marginTop: 16, background: 'var(--amber-light)', borderRadius: 8, padding: '10px 12px' }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#9A5800', marginBottom: 4 }}>Tip</p>
-              <p style={{ fontSize: 13, color: '#633806', lineHeight: 1.55 }}>{step.tip}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16, gap: 10 }}>
-        <button type="button" disabled={activeStep === 0} onClick={() => setActiveStep(Math.max(0, activeStep - 1))} style={navBtnStyle}>
-          Previous step
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', lineHeight: 1.3, margin: 0 }}>
+              {s.title}
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2, marginBottom: 0 }}>
+              Step {index + 1} of {steps.length}
+            </p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--mid-grey)' }}>Start</span>
         </button>
-        <button type="button" disabled={activeStep >= steps.length - 1} onClick={() => setActiveStep(Math.min(steps.length - 1, activeStep + 1))} style={{ ...navBtnStyle, background: accent, color: '#fff', border: 'none' }}>
-          Next step
-        </button>
-      </div>
+      ))}
     </div>
   )
 }
@@ -220,17 +263,10 @@ export function DocumentViewer({ document }: { document: Document }) {
   }
 
   return (
-    <div style={{ background: 'var(--white)', borderRadius: 12, padding: 20, boxShadow: 'var(--shadow-soft)' }}>
-      {paragraphs.map((para, index) => (
-        <p key={index} style={{ fontSize: 15, color: 'var(--near-black)', lineHeight: 1.75, marginBottom: index < paragraphs.length - 1 ? 16 : 0, whiteSpace: 'pre-line' }}>{para}</p>
+    <div style={{ background: 'var(--white)', borderRadius: 12, padding: 20, boxShadow: 'var(--shadow-soft)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {paragraphs.map((p, i) => (
+        <p key={i} style={{ fontSize: 15, color: 'var(--near-black)', lineHeight: 1.75, whiteSpace: 'pre-line', margin: 0 }}>{p}</p>
       ))}
     </div>
   )
-}
-
-const navBtnStyle: React.CSSProperties = {
-  flex: 1, minHeight: 44, borderRadius: 10,
-  border: '0.5px solid var(--border)', background: 'var(--white)',
-  color: 'var(--near-black)', fontSize: 13, fontWeight: 600,
-  cursor: 'pointer', fontFamily: 'inherit',
 }

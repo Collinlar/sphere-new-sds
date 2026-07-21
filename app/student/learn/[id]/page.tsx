@@ -8,6 +8,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { assertCanTakeAcquired, ensureCourseEnrollment } from '@/lib/self-take'
 import { isAcquiredRow } from '@/lib/acquisition-access'
 import { issueCertificate, getMyCertificate } from '@/lib/certificates'
+import { LessonMediaPlaceholder, LessonStepFrame } from '@/components/brand/LessonStepFrame'
 import { Course, CourseModule } from '@/lib/types'
 
 const MODULE_ICONS: Record<string, string> = {
@@ -53,10 +54,39 @@ function VideoModule({ content }: { content: Record<string, unknown> }) {
 
 function ReadingModule({ content }: { content: Record<string, unknown> }) {
   return (
-    <div style={{ fontSize: 15, lineHeight: 1.75, color: 'var(--near-black)', whiteSpace: 'pre-line', maxHeight: 360, overflowY: 'auto', padding: '4px 0' }}>
+    <div style={{ whiteSpace: 'pre-line' }}>
       {(content.body as string) || <span style={{ color: 'var(--mid-grey)' }}>No content yet.</span>}
     </div>
   )
+}
+
+function moduleMetaLine(course: Course, mod: CourseModule) {
+  const mins = mod.duration_minutes
+  const unit = mod.type === 'video' ? 'min watch' : mod.type === 'quiz' ? 'min quiz' : mod.type === 'assignment' ? 'min task' : 'min read'
+  const subject = course.subject || course.title
+  return mins ? `${subject}, ${mins} ${unit}` : subject
+}
+
+function moduleRemember(mod: CourseModule, quizFollows: boolean) {
+  const tip = (mod.content?.tip as string | undefined) || (mod.content?.remember as string | undefined)
+  if (tip?.trim()) return tip.trim()
+  if (quizFollows) return 'A short quiz follows this module. Take notes as you go.'
+  return null
+}
+
+function ModuleMedia({ mod }: { mod: CourseModule }) {
+  if (mod.type === 'video') return <VideoModule content={mod.content} />
+  const imageUrl = (mod.content?.image_url as string | undefined) || (mod.content?.diagram_url as string | undefined)
+  if (imageUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={imageUrl} alt="" style={{ width: '100%', borderRadius: 14, display: 'block' }} />
+    )
+  }
+  if (mod.type === 'reading' && !(mod.content?.body as string)?.trim()) {
+    return <LessonMediaPlaceholder label="[ diagram or reading visual ]" />
+  }
+  return null
 }
 
 function QuizModule({ content, onSubmit }: { content: Record<string, unknown>; onSubmit: (score: number) => void }) {
@@ -287,46 +317,119 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
   function markComplete(id: string) {
     const next = new Set(Array.from(completed).concat(id))
     setCompleted(next)
-    setActiveModule(null)
-    if (course) persistProgress(next, course.modules)
+    if (course) {
+      persistProgress(next, course.modules)
+      const idx = course.modules.findIndex((m) => m.id === id)
+      const nextModule = idx >= 0 && idx < course.modules.length - 1 ? course.modules[idx + 1] : null
+      setActiveModule(nextModule?.id ?? null)
+    } else {
+      setActiveModule(null)
+    }
   }
 
   if (loading) return <div style={{ padding: 24, color: 'var(--mid-grey)', fontSize: 14 }}>Loading your course...</div>
   if (!course) return <div style={{ padding: 24, color: '#C23B2A', fontSize: 14 }}>Course not found.</div>
 
   const progress = course.modules.length > 0 ? Math.round((completed.size / course.modules.length) * 100) : 0
-  const active = course.modules.find((m: CourseModule) => m.id === activeModule)
+  const activeIdx = activeModule ? course.modules.findIndex((m) => m.id === activeModule) : -1
+  const active = activeIdx >= 0 ? course.modules[activeIdx] : null
+  const nextModule = activeIdx >= 0 && activeIdx < course.modules.length - 1 ? course.modules[activeIdx + 1] : null
+  const prevModule = activeIdx > 0 ? course.modules[activeIdx - 1] : null
+  const quizFollows = activeIdx >= 0 && course.modules[activeIdx + 1]?.type === 'quiz'
+  const isActiveComplete = active ? completed.has(active.id) : false
+
+  // Focused lesson view: matches the Study step card, with vertical CTAs (no Back/dots/Next slider).
+  if (active) {
+    const needsOwnSubmit = active.type === 'quiz' || active.type === 'assignment'
+    let primaryLabel: string | undefined
+    let onPrimary: (() => void) | undefined
+
+    if (!needsOwnSubmit && !isActiveComplete) {
+      primaryLabel = nextModule ? 'Continue to next step' : 'Mark complete'
+      onPrimary = () => markComplete(active.id)
+    } else if (isActiveComplete && nextModule) {
+      primaryLabel = 'Continue to next step'
+      onPrimary = () => setActiveModule(nextModule.id)
+    } else if (isActiveComplete && !nextModule) {
+      primaryLabel = 'Back to outline'
+      onPrimary = () => setActiveModule(null)
+    }
+
+    return (
+      <div style={{ minHeight: '100vh', background: '#F7F4ED', width: '100%' }}>
+        {(fromLibrary || isAcquired) && (
+          <div style={{ padding: '12px 16px 0', maxWidth: 560, margin: '0 auto' }}>
+            <Link
+              href="/platform/library"
+              style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', textDecoration: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}
+            >
+              Back to library
+            </Link>
+          </div>
+        )}
+
+        <LessonStepFrame
+          subject={course.subject || 'Course'}
+          stepIndex={activeIdx}
+          stepCount={course.modules.length}
+          title={active.title}
+          meta={moduleMetaLine(course, active)}
+          media={<ModuleMedia mod={active} />}
+          remember={moduleRemember(active, !!quizFollows)}
+          primaryLabel={primaryLabel}
+          onPrimary={onPrimary}
+          tertiaryLabel={prevModule ? 'Previous step' : undefined}
+          onTertiary={prevModule ? () => setActiveModule(prevModule.id) : undefined}
+          onSecondary={() => setActiveModule(null)}
+          secondaryLabel="Back to outline"
+        >
+          {active.type === 'reading' && <ReadingModule content={active.content} />}
+          {active.type === 'video' && (
+            <p style={{ margin: 0, color: '#4B5563', fontSize: 15 }}>
+              Watch the lesson above, then continue when you are ready.
+            </p>
+          )}
+          {active.type === 'quiz' && <QuizModule content={active.content} onSubmit={() => markComplete(active.id)} />}
+          {active.type === 'flashcards' && <FlashcardsModule content={active.content} />}
+          {active.type === 'assignment' && enrollmentId && (
+            <AssignmentModule content={active.content} moduleId={active.id} enrollmentId={enrollmentId} onSubmit={() => markComplete(active.id)} />
+          )}
+          {active.type === 'assignment' && !enrollmentId && (
+            <p style={{ margin: 0, color: 'var(--mid-grey)' }}>Enrol to submit this assignment.</p>
+          )}
+        </LessonStepFrame>
+      </div>
+    )
+  }
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', background: 'var(--page-bg)' }}>
+    <div style={{ maxWidth: 560, margin: '0 auto', minHeight: '100vh', background: '#F7F4ED', width: '100%' }}>
       {(fromLibrary || isAcquired) && (
         <div style={{ padding: '12px 16px 0' }}>
           <Link
             href="/platform/library"
-            style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', textDecoration: 'none' }}
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)', textDecoration: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}
           >
             Back to library
           </Link>
         </div>
       )}
-      {/* Header */}
+
       <div style={{ background: course.thumbnail_color, padding: '28px 20px 20px' }}>
         <div style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.75)', marginBottom: 6, letterSpacing: '0.06em' }}>
-          {course.subject} · {course.grade_level}
+          {[course.subject, course.grade_level].filter(Boolean).join(' · ')}
         </div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 16 }}>{course.title}</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 16, lineHeight: 1.25 }}>{course.title}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.25)', borderRadius: 3 }}>
-            <div style={{ width: `${progress}%`, height: '100%', background: '#fff', borderRadius: 3 }} />
+          <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.25)', borderRadius: 999 }}>
+            <div style={{ width: `${progress}%`, height: '100%', background: '#fff', borderRadius: 999, transition: 'width 0.25s ease' }} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)' }}>{completed.size} of {course.modules.length}</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{progress}%</span>
         </div>
       </div>
 
-      {/* Certificate earned */}
       {certCode && (
-        <div style={{ margin: '12px 16px 0', background: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)', borderRadius: 12, padding: '14px 16px', color: '#fff' }}>
+        <div style={{ margin: '12px 16px 0', background: '#1A8966', borderRadius: 12, padding: '14px 16px', color: '#fff' }}>
           <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>
             Certificate earned
           </p>
@@ -337,104 +440,66 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
         </div>
       )}
 
-      {/* Active module content */}
-      {active && (() => {
-        const activeIdx = course.modules.findIndex((m: CourseModule) => m.id === active.id)
-        const prevModule = activeIdx > 0 ? course.modules[activeIdx - 1] : null
-        const nextModule = activeIdx < course.modules.length - 1 ? course.modules[activeIdx + 1] : null
-        const quizFollows = nextModule?.type === 'quiz'
-
-        return (
-          <div style={{ background: 'var(--white)', margin: '12px 16px', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--shadow-soft)' }}>
-            <div style={{ background: course.thumbnail_color, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button onClick={() => setActiveModule(null)} style={{ background: 'none', border: 'none', fontSize: 22, fontWeight: 300, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: 0 }}>‹</button>
-              <div>
-                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>{course.subject} · {active.title}</p>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Lesson {activeIdx + 1} of {course.modules.length}</p>
-              </div>
-            </div>
-
-            <div style={{ padding: '18px' }}>
-              {active.type === 'video' && <VideoModule content={active.content} />}
-              {active.type === 'reading' && <ReadingModule content={active.content} />}
-              {active.type === 'quiz' && <QuizModule content={active.content} onSubmit={() => markComplete(active.id)} />}
-              {active.type === 'flashcards' && <FlashcardsModule content={active.content} />}
-              {active.type === 'assignment' && enrollmentId && (
-                <AssignmentModule content={active.content} moduleId={active.id} enrollmentId={enrollmentId} onSubmit={() => markComplete(active.id)} />
-              )}
-
-              {quizFollows && (
-                <div style={{ background: 'var(--teal-light)', borderRadius: 10, padding: '12px 14px', marginTop: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontSize: 13 }}>!</div>
-                  <p style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 500 }}>A short quiz follows this lesson. Take notes as you watch.</p>
-                </div>
-              )}
-
-              {active.type !== 'quiz' && active.type !== 'assignment' && !completed.has(active.id) && (
-                <button onClick={() => markComplete(active.id)} style={{ background: '#1A8966', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 20, width: '100%', fontFamily: 'inherit' }}>
-                  Mark complete
-                </button>
-              )}
-              {completed.has(active.id) && (
-                <div style={{ marginTop: 16, background: '#DDFAF0', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A8966', textAlign: 'center' }}>
-                  Module complete
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                <button
-                  onClick={() => prevModule && setActiveModule(prevModule.id)}
-                  disabled={!prevModule}
-                  style={{ flex: 1, height: 44, background: 'var(--bg2)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, color: prevModule ? 'var(--mid-grey)' : '#D1CBC0', cursor: prevModule ? 'pointer' : 'default', fontFamily: 'inherit' }}
-                >
-                  ‹ Previous
-                </button>
-                <button
-                  onClick={() => nextModule && setActiveModule(nextModule.id)}
-                  disabled={!nextModule}
-                  style={{ flex: 2, height: 44, background: nextModule ? course.thumbnail_color : 'var(--bg2)', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: nextModule ? '#fff' : '#D1CBC0', cursor: nextModule ? 'pointer' : 'default', fontFamily: 'inherit' }}
-                >
-                  {nextModule ? 'Next lesson →' : 'Last lesson'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* Module list */}
-      <div style={{ padding: '16px 16px 32px' }}>
-        <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 12, letterSpacing: '0.1em', textTransform: 'uppercase', paddingLeft: 4 }}>
+      <div style={{ padding: '16px 16px 40px' }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--mid-grey)', marginBottom: 12 }}>
           {course.modules.length} modules
         </p>
+
         {course.modules.length === 0 && (
           <div style={{ color: 'var(--mid-grey)', fontSize: 14, textAlign: 'center', padding: '32px 0' }}>
             No modules published yet. Check back soon.
           </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {course.modules.map((mod: CourseModule, idx: number) => {
             const isComplete = completed.has(mod.id)
-            const isActive = mod.id === activeModule
             return (
-              <button key={mod.id} onClick={() => setActiveModule(isActive ? null : mod.id)}
+              <button
+                key={mod.id}
+                type="button"
+                onClick={() => setActiveModule(mod.id)}
                 style={{
-                  background: 'var(--white)',
-                  boxShadow: isActive ? '0 0 0 1.5px var(--teal), 0 2px 8px rgba(26,137,102,.14)' : 'var(--shadow-soft)',
-                  borderRadius: 10, padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', width: '100%',
+                  width: '100%',
+                  minHeight: 64,
+                  padding: '14px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  background: '#fff',
+                  border: 'none',
+                  borderRadius: 14,
+                  boxShadow: '0 4px 16px rgba(17, 24, 39, 0.04)',
+                }}
+              >
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: isComplete ? '#1A8966' : '#F3F4F6',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: isComplete ? 16 : 18, flexShrink: 0,
+                  color: isComplete ? '#fff' : 'var(--near-black)',
                 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: isComplete ? 'var(--teal)' : 'var(--bg2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isComplete ? 16 : 18, flexShrink: 0, color: isComplete ? '#fff' : 'var(--near-black)' }}>
                   {isComplete ? '✓' : MODULE_ICONS[mod.type]}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: isActive ? 600 : 500, color: 'var(--near-black)' }}>{idx + 1}. {mod.title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2, textTransform: 'capitalize' }}>{mod.type} · {mod.duration_minutes} min</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)', lineHeight: 1.3 }}>
+                    {idx + 1}. {mod.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 3, textTransform: 'capitalize' }}>
+                    {mod.type} · {mod.duration_minutes} min
+                  </div>
                 </div>
-                {isComplete ? (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--teal)', background: 'var(--teal-light)', padding: '3px 9px', borderRadius: 20 }}>Done</span>
-                ) : isActive && (
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--teal)' }}>Start</span>
-                )}
+                <span style={{
+                  fontSize: 12, fontWeight: 600, flexShrink: 0,
+                  color: isComplete ? '#1A8966' : 'var(--mid-grey)',
+                  background: isComplete ? '#DDFAF0' : 'transparent',
+                  padding: '4px 10px', borderRadius: 20,
+                }}>
+                  {isComplete ? 'Done' : 'Start'}
+                </span>
               </button>
             )
           })}

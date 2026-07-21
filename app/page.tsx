@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import MarketingNav from '@/components/marketing/MarketingNav'
 import MarketingFooter from '@/components/marketing/MarketingFooter'
+import { resolveJoinCode } from '@/lib/join-session'
 
 const MODES = [
   { key: 'engage', label: 'Engage', color: '#D97010', desc: 'Live quizzes and game-based learning.' },
@@ -16,22 +17,37 @@ const MODES = [
 export default function LandingPage() {
   const router = useRouter()
   const [joinCode, setJoinCode] = useState('')
+  const [joinBusy, setJoinBusy] = useState(false)
+  const [joinError, setJoinError] = useState('')
+  const [joinReady, setJoinReady] = useState(false)
 
+  // Render the join form only after mount so password-manager extensions
+  // cannot inject attributes into server HTML before hydration.
   useEffect(() => {
+    setJoinReady(true)
     try {
       const code = new URLSearchParams(window.location.search).get('code')
-      if (code) setJoinCode(code.toUpperCase().slice(0, 9))
+      if (code) setJoinCode(code.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9))
     } catch { /* noop */ }
   }, [])
 
   function onJoinChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setJoinError('')
     setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9))
   }
 
-  function doJoin() {
+  async function doJoin() {
     const code = joinCode.trim()
-    if (!code) return
-    router.push('/join?code=' + encodeURIComponent(code))
+    if (!code || joinBusy) return
+    setJoinBusy(true)
+    setJoinError('')
+    const result = await resolveJoinCode(code)
+    if (result.ok) {
+      router.push(result.href)
+      return
+    }
+    setJoinBusy(false)
+    setJoinError(result.error)
   }
 
   return (
@@ -42,17 +58,13 @@ export default function LandingPage() {
       <section className="hero-sec sec" style={{ padding: '72px 48px 84px', maxWidth: 1200, margin: '0 auto' }}>
         <div className="hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: 64, alignItems: 'center' }}>
           <div>
-            <p className="mkt-anim-1" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#D97010', background: '#FEF0DC', padding: '5px 14px', borderRadius: 20, marginBottom: 26 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#D97010', display: 'inline-block', flexShrink: 0 }} />
-              Africa&apos;s learning and assessment platform
-            </p>
             <h1 className="mkt-anim-2 hero-h1" style={{ fontSize: 56, fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.07, color: '#18171A', marginBottom: 22, maxWidth: 530 }}>
               One platform for every learning scenario.
             </h1>
             <p className="mkt-anim-3" style={{ fontSize: 17, color: '#6B6870', lineHeight: 1.72, marginBottom: 36, maxWidth: 460 }}>
               SphereSDS gives schools, companies, and educators four purpose-built tools in one place. Use one. Use all four. Pay for exactly what you need.
             </p>
-            <div className="mkt-anim-4 cta-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
+            <div className="mkt-anim-4 cta-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <Link href="/signup" className="cta-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '14px 28px', borderRadius: 10, background: '#D97010', color: '#fff', fontSize: 15, fontWeight: 600, textDecoration: 'none' }}>
                 Get started free
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -61,46 +73,79 @@ export default function LandingPage() {
                 Sign in
               </Link>
             </div>
-            <div className="mkt-anim-4" style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-              {['No credit card', 'MTN MoMo billing', 'Cancel any time'].map(t => (
-                <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.5l3 3 6-6" stroke="#1A8966" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  <span style={{ fontSize: 13, color: '#6B6870' }}>{t}</span>
-                </div>
-              ))}
-            </div>
           </div>
 
-          {/* Join card */}
+          {/* Join card — burnt orange identity for live session entry */}
           <div className="hero-right" style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 400 }}>
-            <div style={{ background: '#fff', borderRadius: 18, padding: 28, boxShadow: '0 4px 48px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.06)' }}>
+            <div style={{
+              background: '#D97010',
+              borderRadius: 18,
+              padding: 28,
+              boxShadow: '0 12px 40px rgba(217, 112, 16, 0.32)',
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#D97010', flexShrink: 0 }} />
-                <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#D97010' }}>Join a session</p>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', flexShrink: 0 }} />
+                <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#fff' }}>Join a session</p>
               </div>
-              <p style={{ fontSize: 14, color: '#A09DA8', lineHeight: 1.55, marginBottom: 18 }}>Got a code from your teacher? Enter it to join instantly.</p>
-              <input
-                type="text"
-                placeholder="e.g. XK7P2Q"
-                value={joinCode}
-                onChange={onJoinChange}
-                onKeyDown={e => { if (e.key === 'Enter') doJoin() }}
-                maxLength={9}
-                style={{ width: '100%', height: 58, padding: '0 16px', borderRadius: 10, border: '1.5px solid #E2E0DC', background: '#F9F8F6', fontSize: 26, fontWeight: 700, letterSpacing: '0.18em', textAlign: 'center', color: '#18171A', outline: 'none', textTransform: 'uppercase', fontFamily: "'Outfit',sans-serif" }}
-                onFocus={e => { e.currentTarget.style.borderColor = '#D97010'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(217,112,16,0.12)' }}
-                onBlur={e => { e.currentTarget.style.borderColor = '#E2E0DC'; e.currentTarget.style.background = '#F9F8F6'; e.currentTarget.style.boxShadow = 'none' }}
-              />
-              <button onClick={doJoin} className="join-btn-inner" style={{ width: '100%', height: 50, marginTop: 11, borderRadius: 9, background: '#D97010', color: '#fff', border: 'none', fontSize: 15, fontWeight: 600, cursor: 'pointer', fontFamily: "'Outfit',sans-serif", letterSpacing: '-0.01em' }}>
-                Join now →
-              </button>
+              <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.55, marginBottom: 18 }}>
+                Got a code from your teacher? Enter it to go straight into the room.
+              </p>
+              {joinReady ? (
+                <>
+                  <input
+                    type="text"
+                    name="session-code"
+                    autoComplete="off"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-form-type="other"
+                    placeholder="e.g. XK7P2Q"
+                    value={joinCode}
+                    onChange={onJoinChange}
+                    onKeyDown={e => { if (e.key === 'Enter') void doJoin() }}
+                    maxLength={9}
+                    disabled={joinBusy}
+                    suppressHydrationWarning
+                    style={{
+                      width: '100%', height: 58, padding: '0 16px', borderRadius: 10,
+                      border: 'none',
+                      background: '#fff',
+                      fontSize: 26, fontWeight: 700, letterSpacing: '0.18em', textAlign: 'center',
+                      color: '#18171A', outline: 'none', textTransform: 'uppercase',
+                      fontFamily: "'Outfit',sans-serif",
+                    }}
+                  />
+                  {joinError && (
+                    <p style={{ marginTop: 10, fontSize: 13, color: '#FEF0DC', lineHeight: 1.45, fontWeight: 500 }}>{joinError}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void doJoin()}
+                    disabled={joinBusy || !joinCode.trim()}
+                    suppressHydrationWarning
+                    className="join-btn-inner"
+                    style={{
+                      width: '100%', height: 50, marginTop: 11, borderRadius: 9,
+                      background: '#18171A', color: '#fff', border: 'none',
+                      fontSize: 15, fontWeight: 700, cursor: joinBusy || !joinCode.trim() ? 'not-allowed' : 'pointer',
+                      opacity: joinBusy || !joinCode.trim() ? 0.65 : 1,
+                      fontFamily: "'Outfit',sans-serif", letterSpacing: '-0.01em',
+                    }}
+                  >
+                    {joinBusy ? 'Opening session…' : 'Join now →'}
+                  </button>
+                </>
+              ) : (
+                <div style={{ height: 119, borderRadius: 10, background: 'rgba(255,255,255,0.18)' }} aria-hidden />
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0' }}>
-                <div style={{ flex: 1, height: 0.5, background: '#EDECE9' }} />
-                <span style={{ fontSize: 12, color: '#C4C0BB', fontWeight: 500 }}>or</span>
-                <div style={{ flex: 1, height: 0.5, background: '#EDECE9' }} />
+                <div style={{ flex: 1, height: 0.5, background: 'rgba(255,255,255,0.28)' }} />
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>or</span>
+                <div style={{ flex: 1, height: 0.5, background: 'rgba(255,255,255,0.28)' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <Link href="/login" className="signin-link" style={{ display: 'block', textAlign: 'center', padding: 12, borderRadius: 8, border: '1px solid #E2E0DC', fontSize: 14, fontWeight: 500, color: '#18171A', textDecoration: 'none', background: 'transparent' }}>Sign in to your account</Link>
-                <Link href="/onboarding" style={{ display: 'block', textAlign: 'center', padding: 10, fontSize: 14, color: '#6B6870', textDecoration: 'none' }}>New institution? <span style={{ color: '#D97010', fontWeight: 600 }}>Set up free →</span></Link>
+                <Link href="/login" className="signin-link" style={{ display: 'block', textAlign: 'center', padding: 12, borderRadius: 8, border: '1.5px solid rgba(255,255,255,0.45)', fontSize: 14, fontWeight: 500, color: '#fff', textDecoration: 'none', background: 'transparent' }}>Sign in to your account</Link>
+                <Link href="/onboarding" style={{ display: 'block', textAlign: 'center', padding: 10, fontSize: 14, color: 'rgba(255,255,255,0.78)', textDecoration: 'none' }}>New institution? <span style={{ color: '#fff', fontWeight: 700 }}>Set up free →</span></Link>
               </div>
             </div>
           </div>

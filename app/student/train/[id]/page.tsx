@@ -541,9 +541,42 @@ function AssessmentStep({ content }: { content: Record<string, unknown> }) {
   )
 }
 
-function CertificateScreen({ name, pathTitle }: { name: string; pathTitle: string }) {
+function CertificateScreen({
+  name,
+  pathTitle,
+  pathId,
+  employeeId,
+}: {
+  name: string
+  pathTitle: string
+  pathId: string
+  employeeId: string
+}) {
   const certNumber = `CERT-${Date.now().toString(36).toUpperCase()}`
   const date = new Date().toLocaleDateString('en-GH', { day: 'numeric', month: 'long', year: 'numeric' })
+  const [rating, setRating] = useState(0)
+  const [feedback, setFeedback] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
+
+  async function sendPulse() {
+    if (!rating || sending) return
+    setSending(true)
+    setError('')
+    const { error: insertError } = await supabase.from('pulse_responses').insert({
+      path_id: pathId,
+      employee_id: employeeId,
+      rating,
+      feedback: feedback.trim() || null,
+    })
+    setSending(false)
+    if (insertError) {
+      setError('We could not send that feedback. Try again in a moment.')
+      return
+    }
+    setSent(true)
+  }
 
   return (
     <div style={{ padding: '32px 20px' }}>
@@ -572,37 +605,52 @@ function CertificateScreen({ name, pathTitle }: { name: string; pathTitle: strin
 
       <div style={{ marginTop: 24, background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '16px 20px' }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', marginBottom: 12 }}>How was this training?</div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, justifyContent: 'center' }}>
-          {[1, 2, 3, 4, 5].map(star => (
-            <StarButton key={star} value={star} />
-          ))}
-        </div>
-        <textarea
-          placeholder="Any feedback for the training team? (optional)"
-          rows={3}
-          style={{ width: '100%', background: 'var(--bg2)', border: 'none', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'none', boxSizing: 'border-box', marginBottom: 12 }}
-        />
-        <button
-          type="button"
-          style={{ background: BLUE, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          Send feedback
-        </button>
+        {sent ? (
+          <p style={{ fontSize: 14, color: '#1A8966', fontWeight: 600 }}>Thanks. Your feedback helps the training team improve.</p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, justifyContent: 'center' }}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={() => setRating(star)}
+                  style={{ background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', color: rating >= star ? '#D97010' : '#EDECE9', padding: 2 }}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="Any feedback for the training team? (optional)"
+              rows={3}
+              style={{ width: '100%', background: 'var(--bg2)', border: 'none', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'none', boxSizing: 'border-box', marginBottom: 12 }}
+            />
+            {error && <p style={{ fontSize: 13, color: '#C23B2A', marginBottom: 10 }}>{error}</p>}
+            <button
+              type="button"
+              disabled={!rating || sending}
+              onClick={() => void sendPulse()}
+              style={{
+                background: rating ? BLUE : 'var(--bg2)',
+                color: rating ? '#fff' : 'var(--mid-grey)',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 20px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: rating ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
+              }}
+            >
+              {sending ? 'Sending feedback...' : 'Send feedback'}
+            </button>
+          </>
+        )}
       </div>
     </div>
-  )
-}
-
-function StarButton({ value }: { value: number }) {
-  const [rating, setRating] = useState(0)
-  return (
-    <button
-      type="button"
-      onClick={() => setRating(value)}
-      style={{ background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', color: rating >= value ? '#D97010' : '#EDECE9', padding: 2 }}
-    >
-      ★
-    </button>
   )
 }
 
@@ -736,7 +784,7 @@ function EmployeeTrainPageInner({ params: paramsPromise }: { params: Promise<{ i
         </div>
       )
     }
-    return <CertificateScreen name={userName} pathTitle={path.title} />
+    return <CertificateScreen name={userName} pathTitle={path.title} pathId={path.id} employeeId={userId} />
   }
 
   return (

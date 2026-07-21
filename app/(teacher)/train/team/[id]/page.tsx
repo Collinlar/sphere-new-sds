@@ -7,6 +7,7 @@ import TopBar from '@/components/brand/TopBar'
 import Button from '@/components/ui/Button'
 import { getContentInstitutionId } from '@/lib/context'
 import { normalizeSteps, syncPathEnrollments, parseAssignedDepartments } from '@/lib/train-paths'
+import { computeSkillLevels, DEFAULT_SKILL_CATEGORIES } from '@/lib/skill-matrix'
 
 interface Employee {
   id: string
@@ -20,7 +21,7 @@ interface Employee {
   skills: number[]
 }
 
-const SKILL_CATEGORIES = ['Communication', 'Data Privacy', 'Customer Service', 'Technical', 'Leadership']
+const SKILL_CATEGORIES = DEFAULT_SKILL_CATEGORIES
 
 const SKILL_COLORS: Record<number, string> = {
   5: '#1A8966',
@@ -42,24 +43,46 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
   const [loading, setLoading] = useState(true)
   const [assigning, setAssigning] = useState(false)
   const [dept, setDept] = useState('All')
-  const [tab, setTab] = useState<'progress' | 'skills'>('progress')
+  const [tab, setTab] = useState<'progress' | 'skills' | 'pulse'>('progress')
+  const [pulseAvg, setPulseAvg] = useState<number | null>(null)
+  const [pulseCount, setPulseCount] = useState(0)
+  const [pulseRows, setPulseRows] = useState<{ rating: number; feedback: string | null; created_at: string; name: string }[]>([])
 
   async function loadData() {
     setLoading(true)
-    const [pathRes, enrollRes] = await Promise.all([
+    const [pathRes, enrollRes, pulseRes] = await Promise.all([
       supabase.from('learning_paths').select('*').eq('id', params.id).single(),
       supabase.from('path_enrollments').select('*, users(id, name, department)').eq('path_id', params.id),
+      supabase.from('pulse_responses').select('rating, feedback, created_at, employee_id, users(name)').eq('path_id', params.id).order('created_at', { ascending: false }).limit(20),
     ])
 
     const path = pathRes.data
     let totalSteps = 0
+    let steps = normalizeSteps([])
+    let category: string | null = null
     if (path) {
       setPathTitle(path.title)
-      const steps = normalizeSteps(path.steps)
+      category = path.category ?? null
+      steps = normalizeSteps(path.steps)
       totalSteps = steps.length
       setStepsTotal(totalSteps)
       setAssignedDepartments(parseAssignedDepartments(path))
     }
+
+    const pulseData = pulseRes.data ?? []
+    setPulseCount(pulseData.length)
+    setPulseAvg(pulseData.length > 0
+      ? Math.round((pulseData.reduce((s, p) => s + Number(p.rating ?? 0), 0) / pulseData.length) * 10) / 10
+      : null)
+    setPulseRows(pulseData.map((p) => {
+      const u = p.users as unknown as { name?: string } | null
+      return {
+        rating: Number(p.rating ?? 0),
+        feedback: (p.feedback as string | null) ?? null,
+        created_at: p.created_at as string,
+        name: u?.name ?? 'Employee',
+      }
+    }))
 
     const data = enrollRes.data
     if (data && data.length > 0) {
@@ -82,7 +105,7 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
           steps_completed: completedSteps.length,
           steps_total: totalSteps || completedSteps.length,
           certificate: !!e.certificate_issued_at,
-          skills: [0, 0, 0, 0, 0],
+          skills: computeSkillLevels(steps, completedSteps, category),
         }
       }))
     } else {
@@ -175,7 +198,7 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
           <>
             <div style={{ display: 'flex', gap: 8, marginBottom: 24, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 8, overflow: 'hidden', marginRight: 12 }}>
-                {(['progress', 'skills'] as const).map(t => (
+                {(['progress', 'skills', 'pulse'] as const).map(t => (
                   <button
                     key={t}
                     type="button"
@@ -192,7 +215,7 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
                       textTransform: 'capitalize',
                     }}
                   >
-                    {t === 'progress' ? 'Progress' : 'Skill matrix'}
+                    {t === 'progress' ? 'Progress' : t === 'skills' ? 'Skill matrix' : 'Pulse'}
                   </button>
                 ))}
               </div>
@@ -326,6 +349,41 @@ export default function TeamProgressPage({ params: paramsPromise }: { params: Pr
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {tab === 'pulse' && (
+              <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: 20 }}>
+                <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+                  <div style={{ background: '#E3EDFB', borderRadius: 10, padding: '14px 18px', minWidth: 140 }}>
+                    <p style={{ fontSize: 11, color: '#1052A3', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Avg rating</p>
+                    <p style={{ fontSize: 28, fontWeight: 700, color: '#1052A3' }}>{pulseAvg ?? '—'}</p>
+                  </div>
+                  <div style={{ background: 'var(--page-bg)', borderRadius: 10, padding: '14px 18px', minWidth: 140 }}>
+                    <p style={{ fontSize: 11, color: 'var(--mid-grey)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Responses</p>
+                    <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--near-black)' }}>{pulseCount}</p>
+                  </div>
+                </div>
+                {pulseRows.length === 0 ? (
+                  <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>
+                    No pulse feedback yet. Employees can rate this path after they finish.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {pulseRows.map((row, i) => (
+                      <div key={`${row.created_at}-${i}`} style={{ borderTop: i === 0 ? 'none' : '0.5px solid var(--border)', paddingTop: i === 0 ? 0 : 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)' }}>{row.name}</p>
+                          <p style={{ fontSize: 13, color: '#D97010', fontWeight: 700 }}>{'★'.repeat(row.rating)}{'☆'.repeat(Math.max(0, 5 - row.rating))}</p>
+                        </div>
+                        {row.feedback && <p style={{ fontSize: 13, color: 'var(--mid-grey)', lineHeight: 1.5 }}>{row.feedback}</p>}
+                        <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                          {new Date(row.created_at).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
