@@ -76,8 +76,10 @@ export interface SessionParticipant {
   score: number
   streak: number
   joined_at: string
+  user_id?: string | null
   team_id?: string | null
   team_vote?: string | null
+  rank?: number | null
 }
 
 export interface EngageTeam {

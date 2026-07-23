@@ -9,6 +9,7 @@ import { loadExamAnswers, saveExamAnswers, clearExamAnswers } from '@/lib/exam-a
 import { buildExamPresentation, remainingExamSeconds } from '@/lib/exam-presentation'
 import type { Exam, ExamSession, ExamQuestion } from '@/lib/types'
 import { IconFlag, IconInfo, IconCheck } from '@/components/icons'
+import { resolveJoinIdentity } from '@/lib/join-identity'
 
 type ExamPhase = 'join' | 'instructions' | 'exam' | 'confirmation' | 'done'
 
@@ -58,11 +59,28 @@ function StudentExamInner() {
   const [ticket, setTicket] = useState<TicketInfo | null>(null)
   const [ticketUsed, setTicketUsed] = useState(false)
   const [checkingTicket, setCheckingTicket] = useState(true)
+  const [signedInAccount, setSignedInAccount] = useState(false)
+  const [accountName, setAccountName] = useState('')
+  const [useCustomName, setUseCustomName] = useState(false)
 
   // Keep refs in sync so event listeners always have current values
   useEffect(() => { submissionIdRef.current = submissionId }, [submissionId])
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { answersRef.current = answers }, [answers])
+
+  useEffect(() => {
+    let cancelled = false
+    resolveJoinIdentity().then((identity) => {
+      if (cancelled) return
+      setSignedInAccount(identity.signedIn)
+      setAccountName(identity.accountName)
+      if (identity.signedIn && identity.accountName) {
+        setName(identity.accountName)
+        setUseCustomName(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
 
   async function persistPresentation(
     subId: string,
@@ -641,13 +659,50 @@ function StudentExamInner() {
           ) : (
             <>
               <h1 style={{ fontSize: 26, fontWeight: 700, color: '#18171A', textAlign: 'center', lineHeight: 1.2 }}>Ready for your exam?</h1>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-                placeholder="What's your name?"
-                style={{ ...inputStyle, fontSize: 18, textAlign: 'center' }}
-              />
+              {signedInAccount && !useCustomName ? (
+                <div style={{ width: '100%', textAlign: 'left' }}>
+                  <div style={{
+                    background: '#fff', border: '1.5px solid #1A8966', borderRadius: 12,
+                    padding: '14px 16px', marginBottom: 8,
+                  }}>
+                    <p style={{ fontSize: 12, color: '#6B6870', marginBottom: 4 }}>Continue as</p>
+                    <p style={{ fontSize: 16, fontWeight: 700, color: '#18171A' }}>{accountName}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setUseCustomName(true); setName('') }}
+                    style={{
+                      background: 'none', border: 'none', padding: 0, fontSize: 13,
+                      color: '#6B6870', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                    }}
+                  >
+                    Use a different name
+                  </button>
+                </div>
+              ) : (
+                <div style={{ width: '100%' }}>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+                    placeholder="What's your name?"
+                    style={{ ...inputStyle, fontSize: 18, textAlign: 'center' }}
+                  />
+                  {signedInAccount && useCustomName && (
+                    <button
+                      type="button"
+                      onClick={() => { setUseCustomName(false); setName(accountName) }}
+                      style={{
+                        background: 'none', border: 'none', padding: '10px 0 0', fontSize: 13,
+                        color: '#6B6870', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                        width: '100%',
+                      }}
+                    >
+                      Continue as {accountName}
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
           {error && <p style={{ color: '#C23B2A', fontSize: 13 }}>{error}</p>}

@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import type { EngageSession, EngageTeam, Quiz, QuizQuestion } from '@/lib/types'
+import type { EngageSession, EngageTeam, Quiz, QuizQuestion, SessionParticipant } from '@/lib/types'
 import { assignParticipantToTeam } from '@/lib/engage-team-service'
 import { StudentTeamDiscuss, StudentTeamFinal, StudentTeamLobby, StudentTeamResult } from '@/components/engage/StudentTeamGame'
 import { IconCheck } from '@/components/icons'
 import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
+import { resolveJoinIdentity } from '@/lib/join-identity'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 
@@ -33,51 +34,145 @@ export default function StudentEngageGame() {
   const [teams, setTeams] = useState<EngageTeam[]>([])
   const [discussTimeLeft, setDiscussTimeLeft] = useState(30)
   const [teamLocked, setTeamLocked] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
+  const [accountName, setAccountName] = useState('')
+  const [accountUserId, setAccountUserId] = useState<string | null>(null)
+  const [useCustomName, setUseCustomName] = useState(false)
+  const [identityReady, setIdentityReady] = useState(false)
+  const [leaderboard, setLeaderboard] = useState<SessionParticipant[]>([])
+  const [myRank, setMyRank] = useState<number | null>(null)
+
+  const phaseRef = useRef(phase)
+  const indexRef = useRef(currentIndex)
+  const sessionRef = useRef(session)
+  phaseRef.current = phase
+  indexRef.current = currentIndex
+  sessionRef.current = session
 
   const isTeamMode = (session?.settings as { game_mode?: string })?.game_mode === 'team'
 
-  const pollSession = useCallback(async (sessionId: string) => {
-    const { data } = await supabase
-      .from('engage_sessions')
-      .select('status, current_question_index')
-      .eq('id', sessionId)
-      .single()
-
-    if (!data) return
-
-    if (data.status === 'active' && phase === 'lobby') {
-      setCurrentIndex(data.current_question_index ?? 0)
-      setSelectedAnswer(null)
-      setWasCorrect(null)
-      setTeamLocked(false)
-      const secs = (session?.settings as { discussion_seconds?: number })?.discussion_seconds ?? 30
-      setDiscussTimeLeft(secs)
-      setPhase('question')
-    } else if (data.status === 'active' && phase === 'result') {
-      const newIdx = data.current_question_index ?? 0
-      if (newIdx !== currentIndex) {
-        setCurrentIndex(newIdx)
-        setSelectedAnswer(null)
-        setWasCorrect(null)
-        setTeamLocked(false)
-        const secs = (session?.settings as { discussion_seconds?: number })?.discussion_seconds ?? 30
-        setDiscussTimeLeft(secs)
-        setPhase('question')
+  useEffect(() => {
+    let cancelled = false
+    resolveJoinIdentity().then((identity) => {
+      if (cancelled) return
+      setSignedIn(identity.signedIn)
+      setAccountName(identity.accountName)
+      setAccountUserId(identity.userId)
+      if (identity.signedIn && identity.accountName) {
+        setName(identity.accountName)
+        setUseCustomName(false)
       }
-    } else if (data.status === 'ended') {
-      if (isTeamMode) {
-        const { data: teamData } = await supabase.from('engage_teams').select('*').eq('session_id', sessionId)
-        setTeams((teamData ?? []) as EngageTeam[])
-      }
-      setPhase('final')
+      setIdentityReady(true)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  // If a player is already in-session without quiz content (RLS miss), pull it via API
+  useEffect(() => {
+    if (!code || quiz || phase === 'join') return
+    let cancelled = false
+    async function recover() {
+      const res = await fetch(`/api/engage/playable?code=${encodeURIComponent(code.toUpperCase())}`)
+      const body = await res.json().catch(() => ({}))
+      if (cancelled || !res.ok || !body.quiz) return
+      const q = body.quiz as Quiz
+      setQuiz({ ...q, questions: Array.isArray(q.questions) ? q.questions : [] })
     }
-  }, [phase, currentIndex, session, isTeamMode])
+    void recover()
+    return () => { cancelled = true }
+  }, [code, quiz, phase])
+
+  const resetForQuestion = useCallback((idx: number, discussionSeconds: number) => {
+    setCurrentIndex(idx)
+    setSelectedAnswer(null)
+    setWasCorrect(null)
+    setTeamLocked(false)
+    setDiscussTimeLeft(discussionSeconds)
+    setPhase('question')
+  }, [])
+
+  // If a player is already in-session without quiz content (RLS miss), pull it via API
+  useEffect(() => {
+    if (!code || quiz || phase === 'join') return
+    let cancelled = false
+    async function recover() {
+      const res = await fetch(`/api/engage/playable?code=${encodeURIComponent(code.toUpperCase())}`)
+      const body = await res.json().catch(() => ({}))
+      if (cancelled || !res.ok || !body.quiz) return
+      const q = body.quiz as Quiz
+      setQuiz({ ...q, questions: Array.isArray(q.questions) ? q.questions : [] })
+    }
+    void recover()
+    return () => { cancelled = true }
+  }, [code, quiz, phase])
 
   useEffect(() => {
-    if (!session || phase === 'join' || phase === 'final') return
-    const interval = setInterval(() => pollSession(session.id), 2000)
+    if (!session) return
+
+    async function tick() {
+      const currentPhase = phaseRef.current
+      if (currentPhase === 'join' || currentPhase === 'final') return
+
+      const { data } = await supabase
+        .from('engage_sessions')
+        .select('status, current_question_index, settings')
+        .eq('id', session!.id)
+        .single()
+
+      if (!data) return
+
+      const settings = (data.settings ?? {}) as { discussion_seconds?: number; game_mode?: string }
+      const discussionSeconds = settings.discussion_seconds ?? 30
+      const newIdx = data.current_question_index ?? 0
+
+      if (data.status === 'ended') {
+        if (settings.game_mode === 'team') {
+          const { data: teamData } = await supabase.from('engage_teams').select('*').eq('session_id', session!.id)
+          setTeams((teamData ?? []) as EngageTeam[])
+        } else {
+          const { data: ranks } = await supabase
+            .from('session_participants')
+            .select('*')
+            .eq('session_id', session!.id)
+            .order('score', { ascending: false })
+          const rows = (ranks ?? []) as SessionParticipant[]
+          setLeaderboard(rows)
+          if (participantId) {
+            const idx = rows.findIndex((p) => p.id === participantId)
+            setMyRank(idx >= 0 ? idx + 1 : null)
+            const me = rows.find((p) => p.id === participantId)
+            if (me) setTotalScore(me.score)
+          }
+        }
+        setPhase('final')
+        return
+      }
+
+      if (data.status === 'active') {
+        const prevPhase = phaseRef.current
+        const prevIdx = indexRef.current
+        if (prevPhase === 'lobby') {
+          resetForQuestion(newIdx, discussionSeconds)
+        } else if ((prevPhase === 'result' || prevPhase === 'question') && newIdx !== prevIdx) {
+          resetForQuestion(newIdx, discussionSeconds)
+        } else if (prevPhase === 'question' && newIdx === prevIdx) {
+          // stay on current question
+        }
+      }
+
+      if (phaseRef.current === 'lobby') {
+        const { count } = await supabase
+          .from('session_participants')
+          .select('id', { count: 'exact', head: true })
+          .eq('session_id', session!.id)
+        setParticipantCount(count ?? 0)
+      }
+    }
+
+    void tick()
+    const interval = setInterval(() => { void tick() }, 1500)
     return () => clearInterval(interval)
-  }, [session, phase, pollSession])
+  }, [session?.id, participantId, resetForQuestion])
 
   useEffect(() => {
     if (!isTeamMode || phase !== 'question' || teamLocked) return
@@ -94,15 +189,21 @@ export default function StudentEngageGame() {
     setJoining(true)
     setError(null)
 
-    const { data: sessionData } = await supabase
-      .from('engage_sessions')
-      .select('*, quizzes(*)')
-      .eq('join_code', code.toUpperCase())
-      .neq('status', 'ended')
-      .single()
+    // Load session + quiz via service route so unpublished quizzes are
+    // playable for guests and players outside the host institution.
+    const playableRes = await fetch(`/api/engage/playable?code=${encodeURIComponent(code.toUpperCase())}`)
+    const playableBody = await playableRes.json().catch(() => ({}))
+    if (!playableRes.ok || !playableBody.session || !playableBody.quiz) {
+      setError(playableBody.error ?? 'That code does not match an active game. Double-check with your teacher.')
+      setJoining(false)
+      return
+    }
 
-    if (!sessionData) {
-      setError('That code does not match an active game. Double-check with your teacher.')
+    const sessionData = playableBody.session as EngageSession & { quizzes?: Quiz }
+    const quizData = playableBody.quiz as Quiz
+    const questions = Array.isArray(quizData.questions) ? quizData.questions : []
+    if (questions.length === 0) {
+      setError('This game has no questions yet. Ask the host to add questions and start again.')
       setJoining(false)
       return
     }
@@ -115,15 +216,20 @@ export default function StudentEngageGame() {
       return
     }
 
+    const insertPayload: Record<string, unknown> = {
+      session_id: sessionData.id,
+      display_name: name.trim(),
+      score: 0,
+      streak: 0,
+      joined_at: new Date().toISOString(),
+    }
+    if (accountUserId && !useCustomName) {
+      insertPayload.user_id = accountUserId
+    }
+
     const { data: participant, error: pErr } = await supabase
       .from('session_participants')
-      .insert({
-        session_id: sessionData.id,
-        display_name: name.trim(),
-        score: 0,
-        streak: 0,
-        joined_at: new Date().toISOString(),
-      })
+      .insert(insertPayload)
       .select()
       .single()
 
@@ -141,7 +247,7 @@ export default function StudentEngageGame() {
     }
 
     setSession(sessionData as EngageSession)
-    setQuiz((sessionData as { quizzes: Quiz }).quizzes)
+    setQuiz({ ...quizData, questions })
     setParticipantId(participant.id)
     setJoining(false)
 
@@ -150,7 +256,13 @@ export default function StudentEngageGame() {
       .select('id', { count: 'exact', head: true })
       .eq('session_id', sessionData.id)
     setParticipantCount(count ?? 1)
-    setPhase('lobby')
+
+    if (sessionData.status === 'active') {
+      const secs = (sessionData.settings as { discussion_seconds?: number })?.discussion_seconds ?? 30
+      resetForQuestion(sessionData.current_question_index ?? 0, secs)
+    } else {
+      setPhase('lobby')
+    }
   }
 
   async function handleAnswer(label: string) {
@@ -159,13 +271,14 @@ export default function StudentEngageGame() {
     const q: QuizQuestion = quiz.questions[currentIndex]
     const correct = q.correct === label
     const pts = correct ? q.points : 0
+    const nextScore = totalScore + pts
 
     setSelectedAnswer(label)
     setWasCorrect(correct)
     setPointsEarned(pts)
-    setTotalScore(prev => prev + pts)
+    setTotalScore(nextScore)
 
-    await supabase.from('session_participants').update({ score: totalScore + pts }).eq('id', participantId)
+    await supabase.from('session_participants').update({ score: nextScore }).eq('id', participantId)
     await supabase.from('session_responses').insert({
       session_id: session.id,
       participant_id: participantId,
@@ -204,7 +317,14 @@ export default function StudentEngageGame() {
   }, [phase, isTeamMode, team?.id])
 
   const currentQ: QuizQuestion | undefined = quiz?.questions[currentIndex]
-  const darkBg = phase !== 'join' && (isTeamMode || phase !== 'lobby')
+
+  if (!identityReady && phase === 'join') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--page-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>Getting your session ready...</p>
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -218,6 +338,8 @@ export default function StudentEngageGame() {
       fontFamily: 'var(--font)',
       maxWidth: 480,
       margin: '0 auto',
+      width: '100%',
+      boxSizing: 'border-box',
     }}>
 
       {phase === 'join' && (
@@ -225,21 +347,59 @@ export default function StudentEngageGame() {
           <p style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--mid-grey)', marginBottom: 8 }}>
             Game code: {code?.toUpperCase()}
           </p>
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--near-black)', marginBottom: 32, lineHeight: 1.2 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--near-black)', marginBottom: 24, lineHeight: 1.2 }}>
             Ready to play?
           </h1>
-          <input
-            value={name}
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleJoin()}
-            placeholder="What's your name?"
-            maxLength={30}
-            style={{
-              width: '100%', background: 'var(--bg2)', border: 'none', borderRadius: 12,
-              padding: '16px 18px', fontSize: 18, color: 'var(--near-black)', fontFamily: 'inherit',
-              textAlign: 'center', boxSizing: 'border-box', marginBottom: 14, minHeight: 56,
-            }}
-          />
+
+          {signedIn && !useCustomName ? (
+            <div style={{ textAlign: 'left', marginBottom: 16 }}>
+              <div style={{
+                background: 'var(--white)', border: '1.5px solid var(--teal)', borderRadius: 12,
+                padding: '16px 18px', marginBottom: 10,
+              }}>
+                <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 4 }}>Continue as</p>
+                <p style={{ fontSize: 17, fontWeight: 700, color: 'var(--near-black)' }}>{accountName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setUseCustomName(true); setName('') }}
+                style={{
+                  background: 'none', border: 'none', padding: 0, fontSize: 13,
+                  color: 'var(--mid-grey)', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                }}
+              >
+                Use a different name
+              </button>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleJoin()}
+                placeholder="What's your name?"
+                maxLength={30}
+                style={{
+                  width: '100%', background: 'var(--bg2)', border: 'none', borderRadius: 12,
+                  padding: '16px 18px', fontSize: 18, color: 'var(--near-black)', fontFamily: 'inherit',
+                  textAlign: 'center', boxSizing: 'border-box', minHeight: 56,
+                }}
+              />
+              {signedIn && useCustomName && (
+                <button
+                  type="button"
+                  onClick={() => { setUseCustomName(false); setName(accountName) }}
+                  style={{
+                    background: 'none', border: 'none', padding: '10px 0 0', fontSize: 13,
+                    color: 'var(--mid-grey)', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline',
+                  }}
+                >
+                  Continue as {accountName}
+                </button>
+              )}
+            </div>
+          )}
+
           {error && <p style={{ color: '#C23B2A', fontSize: 13, marginBottom: 12 }}>{error}</p>}
           <button
             onClick={handleJoin}
@@ -250,7 +410,7 @@ export default function StudentEngageGame() {
               cursor: joining ? 'wait' : 'pointer', minHeight: 56, fontFamily: 'inherit',
             }}
           >
-            {joining ? 'Joining...' : 'Join game'}
+            {joining ? 'Joining the game...' : 'Join game'}
           </button>
         </div>
       )}
@@ -263,6 +423,12 @@ export default function StudentEngageGame() {
           participantName={name}
           code={code ?? ''}
         />
+      )}
+
+      {phase === 'lobby' && isTeamMode && !team && (
+        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' }}>
+          Assigning your team...
+        </p>
       )}
 
       {phase === 'lobby' && !isTeamMode && (
@@ -345,6 +511,38 @@ export default function StudentEngageGame() {
         </div>
       )}
 
+      {phase === 'question' && !currentQ && (
+        <div style={{ textAlign: 'center', maxWidth: 320 }}>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15, marginBottom: 10, lineHeight: 1.5 }}>
+            {quiz ? 'Waiting for the next question...' : 'Loading the questions for this game...'}
+          </p>
+          {!quiz && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!code) return
+                const res = await fetch(`/api/engage/playable?code=${encodeURIComponent(code.toUpperCase())}`)
+                const body = await res.json().catch(() => ({}))
+                if (res.ok && body.quiz) {
+                  const q = body.quiz as Quiz
+                  setQuiz({ ...q, questions: Array.isArray(q.questions) ? q.questions : [] })
+                } else {
+                  setError(body.error ?? 'Could not load the questions. Ask the host to restart.')
+                }
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.1)', border: '0.5px solid rgba(255,255,255,0.2)',
+                borderRadius: 10, padding: '10px 18px', fontSize: 13, fontWeight: 600,
+                color: '#fff', cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Retry loading questions
+            </button>
+          )}
+          {error && <p style={{ color: '#C23B2A', fontSize: 13, marginTop: 12 }}>{error}</p>}
+        </div>
+      )}
+
       {phase === 'result' && isTeamMode && team && (
         <StudentTeamResult
           team={team}
@@ -386,14 +584,48 @@ export default function StudentEngageGame() {
             <IconCheck size={36} />
           </div>
           <h2 style={{ fontSize: 26, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Game over!</h2>
-          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginBottom: 32 }}>Great job, {name}.</p>
+          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginBottom: 24 }}>
+            Great job, {name}{myRank ? ` · Rank #${myRank}` : ''}.
+          </p>
           <div style={{
             background: 'rgba(239,159,39,0.15)', border: '0.5px solid #D97010',
-            borderRadius: 16, padding: '28px 40px', marginBottom: 20,
+            borderRadius: 16, padding: '22px 32px', marginBottom: 20,
           }}>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>Your final score</p>
-            <p style={{ fontSize: 52, fontWeight: 700, color: '#D97010' }}>{totalScore}</p>
+            <p style={{ fontSize: 48, fontWeight: 700, color: '#D97010' }}>{totalScore}</p>
           </div>
+
+          {leaderboard.length > 0 && (
+            <div style={{ textAlign: 'left', marginBottom: 20 }}>
+              <p style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.4)', marginBottom: 10,
+              }}>
+                Leaderboard
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {leaderboard.map((p, i) => (
+                  <div
+                    key={p.id}
+                    style={{
+                      background: p.id === participantId ? 'rgba(239,159,39,0.18)' : 'rgba(255,255,255,0.06)',
+                      border: `0.5px solid ${p.id === participantId ? '#D97010' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: 10,
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <span style={{ width: 22, fontWeight: 800, color: i === 0 ? '#D97010' : 'rgba(255,255,255,0.4)' }}>{i + 1}</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#fff' }}>{p.display_name}</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: i === 0 ? '#D97010' : 'rgba(255,255,255,0.7)' }}>{p.score}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {participantId && <GuestClaimBanner sessionType="engage" submissionId={participantId} />}
         </div>
       )}

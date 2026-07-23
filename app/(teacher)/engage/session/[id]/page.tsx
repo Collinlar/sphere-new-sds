@@ -32,6 +32,38 @@ export default function EngageSessionHost() {
 
   const isTeamMode = (session?.settings as { game_mode?: string })?.game_mode === 'team'
 
+  const refreshParticipants = useCallback(async (orderByScore = false) => {
+    let query = supabase.from('session_participants').select('*').eq('session_id', id)
+    query = orderByScore
+      ? query.order('score', { ascending: false })
+      : query.order('joined_at', { ascending: true })
+    const { data } = await query
+    if (data) setParticipants(data as SessionParticipant[])
+    return data as SessionParticipant[] | null
+  }, [id])
+
+  const writeLivePhase = useCallback(async (
+    livePhase: HostPhase | 'ended',
+    extra: Record<string, unknown> = {},
+  ) => {
+    const { data: row } = await supabase
+      .from('engage_sessions')
+      .select('settings')
+      .eq('id', id)
+      .maybeSingle()
+    const base = ((row?.settings ?? session?.settings ?? {}) as Record<string, unknown>)
+    const nextSettings = { ...base, live_phase: livePhase }
+    await supabase.from('engage_sessions').update({
+      ...extra,
+      settings: nextSettings,
+    }).eq('id', id)
+    setSession((prev) => prev ? {
+      ...prev,
+      ...extra,
+      settings: nextSettings,
+    } as EngageSession : prev)
+  }, [id, session?.settings])
+
   useEffect(() => {
     getHostSessionCap(getCurrentUser().id).then(setSessionCap)
   }, [])
@@ -52,11 +84,18 @@ export default function EngageSessionHost() {
 
       setSession(data as EngageSession)
       setQuiz((data as { quizzes: Quiz }).quizzes)
-      setParticipants((data as { session_participants: SessionParticipant[] }).session_participants ?? [])
-      const settings = (data as EngageSession).settings as { game_mode?: string }
+      const parts = (data as { session_participants: SessionParticipant[] }).session_participants ?? []
+      setParticipants([...parts].sort((a, b) => a.joined_at.localeCompare(b.joined_at)))
+      const settings = (data as EngageSession).settings as { game_mode?: string; live_phase?: string }
       if (settings?.game_mode === 'team') {
         const teamRows = await ensureTeamsForSession(id)
         setTeams(teamRows)
+      }
+      if ((data as EngageSession).status === 'ended' || settings?.live_phase === 'ended') {
+        setPhase('end')
+      } else if ((data as EngageSession).status === 'active') {
+        setQuestionIndex((data as EngageSession).current_question_index ?? 0)
+        setPhase(settings?.live_phase === 'reveal' ? 'reveal' : 'question')
       }
       setLoading(false)
     }
@@ -66,14 +105,20 @@ export default function EngageSessionHost() {
     const channel = supabase
       .channel(`session-${id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${id}` }, () => {
-        supabase.from('session_participants').select('*').eq('session_id', id).then(({ data }) => {
-          if (data) setParticipants(data)
-        })
+        void refreshParticipants(false)
       })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [id])
+  }, [id, refreshParticipants])
+
+  // Poll participants so lobby / answer counts update even when Realtime is unavailable
+  useEffect(() => {
+    if (!id || phase === 'end') return
+    void refreshParticipants(false)
+    const interval = setInterval(() => { void refreshParticipants(false) }, 2000)
+    return () => clearInterval(interval)
+  }, [id, phase, refreshParticipants])
 
   useEffect(() => {
     if (!id || (phase !== 'question' && phase !== 'reveal')) return
@@ -103,17 +148,22 @@ export default function EngageSessionHost() {
       if (timerActive && timeLeft <= 0) {
         setTimerActive(false)
         setPhase('reveal')
+        void writeLivePhase('reveal')
       }
       return
     }
     const t = setTimeout(() => setTimeLeft((prev) => prev - 1), 1000)
     return () => clearTimeout(t)
-  }, [timerActive, timeLeft])
+  }, [timerActive, timeLeft, writeLivePhase])
 
   const timePerQuestion = (session?.settings as { time_per_question?: number } | undefined)?.time_per_question
 
   const startGame = useCallback(async () => {
-    await supabase.from('engage_sessions').update({ status: 'active', started_at: new Date().toISOString() }).eq('id', id)
+    await writeLivePhase('question', {
+      status: 'active',
+      started_at: new Date().toISOString(),
+      current_question_index: 0,
+    })
     const q = quiz?.questions[0]
     if (q) {
       setTimeLeft(timePerQuestion ?? q.time_seconds)
@@ -121,11 +171,12 @@ export default function EngageSessionHost() {
     }
     setPhase('question')
     setQuestionIndex(0)
-  }, [id, quiz, timePerQuestion])
+  }, [quiz, timePerQuestion, writeLivePhase])
 
   const revealAnswer = useCallback(async () => {
     setTimerActive(false)
     setPhase('reveal')
+    await writeLivePhase('reveal')
     if (isTeamMode && quiz && teams.length > 0) {
       const q = quiz.questions[questionIndex]
       const settings = session?.settings as { consensus_bonus?: boolean }
@@ -144,22 +195,27 @@ export default function EngageSessionHost() {
       const refreshed = await ensureTeamsForSession(id)
       setTeams(refreshed)
     }
-  }, [isTeamMode, quiz, teams, questionIndex, session, participants, id])
+  }, [isTeamMode, quiz, teams, questionIndex, session, participants, id, writeLivePhase])
 
   const nextQuestion = useCallback(async () => {
     const nextIdx = questionIndex + 1
     if (!quiz || nextIdx >= quiz.questions.length) {
+      await writeLivePhase('ended', { status: 'ended', ended_at: new Date().toISOString() })
+      await refreshParticipants(true)
+      if (isTeamMode) {
+        const refreshed = await ensureTeamsForSession(id)
+        setTeams(refreshed)
+      }
       setPhase('end')
-      supabase.from('engage_sessions').update({ status: 'ended', ended_at: new Date().toISOString() }).eq('id', id)
       return
     }
     setQuestionIndex(nextIdx)
-    await supabase.from('engage_sessions').update({ current_question_index: nextIdx }).eq('id', id)
+    await writeLivePhase('question', { current_question_index: nextIdx })
     const q = quiz.questions[nextIdx]
     setTimeLeft(timePerQuestion ?? q.time_seconds)
     setTimerActive(true)
     setPhase('question')
-  }, [questionIndex, quiz, id, timePerQuestion])
+  }, [questionIndex, quiz, timePerQuestion, writeLivePhase, refreshParticipants, isTeamMode, id])
 
   if (loading) {
     return (
@@ -415,7 +471,12 @@ export default function EngageSessionHost() {
             Final leaderboard
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 440 }}>
-            {sortedParticipants.slice(0, 3).map((p, i) => (
+            {sortedParticipants.length === 0 && (
+              <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', textAlign: 'center' }}>
+                No players joined this session.
+              </p>
+            )}
+            {sortedParticipants.map((p, i) => (
               <div key={p.id} style={{
                 background: i === 0 ? 'rgba(239,159,39,0.15)' : 'rgba(255,255,255,0.05)',
                 border: `0.5px solid ${i === 0 ? '#D97010' : 'rgba(255,255,255,0.1)'}`,
@@ -425,7 +486,7 @@ export default function EngageSessionHost() {
                 alignItems: 'center',
                 gap: 14,
               }}>
-                <span style={{ fontSize: 18, fontWeight: 800, color: i === 0 ? '#D97010' : 'rgba(255,255,255,0.4)', width: 24 }}>{i + 1}</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: i === 0 ? '#D97010' : 'rgba(255,255,255,0.4)', width: 28 }}>{i + 1}</span>
                 <span style={{ flex: 1, fontSize: 16, fontWeight: 600, color: '#fff' }}>{p.display_name}</span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: i === 0 ? '#D97010' : 'rgba(255,255,255,0.7)' }}>{p.score}</span>
               </div>

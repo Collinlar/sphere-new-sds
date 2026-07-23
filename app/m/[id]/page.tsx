@@ -51,6 +51,12 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
   const [signedIn, setSignedIn] = useState(false)
   const [imported, setImported] = useState(false)
   const [staffPreview, setStaffPreview] = useState(false)
+  const [outline, setOutline] = useState<{
+    summary: string
+    stats: { label: string; value: string }[]
+    items: { title: string; meta?: string }[]
+    staffNotes?: string[]
+  } | null>(null)
   const [importDestination, setImportDestination] = useImportDestination()
 
   useEffect(() => {
@@ -62,6 +68,22 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
       }
     })
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadOutline() {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      const res = await fetch(`/api/marketplace/listing-preview?id=${encodeURIComponent(params.id)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      })
+      if (!res.ok || cancelled) return
+      const body = await res.json()
+      if (!cancelled && body.outline) setOutline(body.outline)
+    }
+    loadOutline()
+    return () => { cancelled = true }
+  }, [params.id])
 
   useEffect(() => {
     const reference = searchParams.get('reference')
@@ -246,6 +268,44 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
           {listing.description && (
             <div style={{ background: 'var(--white)', borderRadius: 10, padding: '16px 18px', boxShadow: 'var(--shadow-soft)', marginBottom: 16 }}>
               <p style={{ fontSize: 14, color: 'var(--near-black)', lineHeight: 1.7 }}>{listing.description}</p>
+            </div>
+          )}
+
+          {outline && (
+            <div style={{ background: 'var(--white)', borderRadius: 10, padding: '16px 18px', boxShadow: 'var(--shadow-soft)', marginBottom: 16 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--mid-grey)', marginBottom: 8 }}>
+                What&apos;s inside
+              </p>
+              <p style={{ fontSize: 14, color: 'var(--near-black)', lineHeight: 1.6, marginBottom: outline.stats.length ? 14 : 0 }}>
+                {outline.summary}
+              </p>
+              {outline.stats.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: outline.items.length ? 14 : 0 }}>
+                  {outline.stats.map((stat) => (
+                    <div key={stat.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 12px', minWidth: 72 }}>
+                      <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginBottom: 2 }}>{stat.label}</p>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)' }}>{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {outline.items.length > 0 && (
+                <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {outline.items.map((item, i) => (
+                    <li key={`${item.title}-${i}`} style={{ fontSize: 13, color: 'var(--near-black)', lineHeight: 1.45 }}>
+                      <span style={{ fontWeight: 600 }}>{item.title}</span>
+                      {item.meta && (
+                        <span style={{ display: 'block', fontSize: 12, color: 'var(--mid-grey)', fontWeight: 400, marginTop: 2 }}>
+                          {item.meta}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {staffPreview && outline.staffNotes?.map((note) => (
+                <p key={note} style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 12, lineHeight: 1.5 }}>{note}</p>
+              ))}
             </div>
           )}
 
