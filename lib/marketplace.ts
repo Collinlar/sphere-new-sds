@@ -77,6 +77,7 @@ export type MarketplaceResourceStatus = 'draft' | 'pending_review' | 'published'
 export interface MarketplaceResourceMetadata {
   creator_name?: string
   creator_initials?: string
+  creator_slug?: string
   verified?: boolean
   featured?: boolean
   accent?: string
@@ -346,7 +347,55 @@ export async function fetchResources(filters: ResourceFilters = {}): Promise<Mar
 async function fetchListingById(id: string): Promise<MarketplaceResource | null> {
   const { data, error } = await supabase.from('marketplace_listings').select('*').eq('id', id).maybeSingle()
   if (error || !data) return null
-  return listingToResource(data as MarketplaceListingRow)
+  const resource = listingToResource(data as MarketplaceListingRow)
+  return enrichResourceCreator(resource)
+}
+
+async function resolveCreatorDisplay(creatorId: string | null): Promise<{
+  creator_name: string
+  creator_initials: string
+  creator_slug?: string
+}> {
+  if (!creatorId) {
+    return { creator_name: 'SphereSDS creator', creator_initials: 'SS' }
+  }
+
+  const [{ data: user }, { data: profile }] = await Promise.all([
+    supabase.from('users').select('name').eq('id', creatorId).maybeSingle(),
+    supabase.from('creator_profiles').select('slug').eq('user_id', creatorId).maybeSingle(),
+  ])
+
+  const name = (user?.name as string | undefined)?.trim()
+  if (!name) {
+    return {
+      creator_name: 'SphereSDS creator',
+      creator_initials: 'SS',
+      creator_slug: profile?.slug ?? undefined,
+    }
+  }
+
+  const parts = name.split(/\s+/).filter(Boolean)
+  const initials = parts.map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '??'
+  return {
+    creator_name: name,
+    creator_initials: initials,
+    creator_slug: profile?.slug ?? undefined,
+  }
+}
+
+async function enrichResourceCreator(resource: MarketplaceResource): Promise<MarketplaceResource> {
+  // Prefer live profile/name over stale seed metadata so real listings show the right creator.
+  if (!resource.creator_id) return resource
+  const display = await resolveCreatorDisplay(resource.creator_id)
+  return {
+    ...resource,
+    metadata: {
+      ...resource.metadata,
+      creator_name: display.creator_name,
+      creator_initials: display.creator_initials,
+      creator_slug: display.creator_slug,
+    },
+  }
 }
 
 export async function fetchResourceById(id: string): Promise<MarketplaceResource | null> {
@@ -355,16 +404,23 @@ export async function fetchResourceById(id: string): Promise<MarketplaceResource
 
   const { data, error } = await supabase.from('marketplace_resources').select('*').eq('id', id).maybeSingle()
   if (!error && data) {
-    const row = data as MarketplaceResource
-    return {
+    const row = data as MarketplaceResource & { listing_id?: string | null }
+    // Prefer the live listing so buy/import use an approved marketplace_listings id.
+    if (row.listing_id) {
+      const linked = await fetchListingById(row.listing_id)
+      if (linked) return linked
+    }
+    const enriched: MarketplaceResource = {
       ...row,
       metadata: enrichMetadataWithCatalog(id, row.metadata as Record<string, unknown>) as MarketplaceResourceMetadata,
     }
+    return enrichResourceCreator(enriched)
   }
 
   const demo = demoAsResources().find((r) => r.id === id)
   return demo ?? null
 }
+
 
 export async function fetchResourceReviews(resourceId: string): Promise<MarketplaceReview[]> {
   const { data } = await supabase
@@ -434,6 +490,41 @@ export async function hasImported(
 
   const { data } = await resourceQuery.maybeSingle()
   return Boolean(data)
+}
+
+/** Resolve the local library copy created from a marketplace listing/import. */
+export async function findImportedContent(
+  listingId: string,
+  destination: ImportDestination,
+  userId?: string
+): Promise<{ targetType: string; targetId: string } | null> {
+  const uid = userId ?? getCurrentUser().id
+  const institutionId = destinationInstitutionId(destination)
+
+  const tables: { table: string; targetType: string }[] = [
+    { table: 'quizzes', targetType: 'quiz' },
+    { table: 'exams', targetType: 'exam' },
+    { table: 'courses', targetType: 'course' },
+    { table: 'learning_paths', targetType: 'training_path' },
+  ]
+
+  for (const { table, targetType } of tables) {
+    let query = supabase
+      .from(table)
+      .select('id')
+      .eq('marketplace_listing_id', listingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    query = institutionId
+      ? query.eq('institution_id', institutionId)
+      : query.eq('creator_id', uid).is('institution_id', null)
+
+    const { data } = await query.maybeSingle()
+    if (data?.id) return { targetType, targetId: data.id as string }
+  }
+
+  return null
 }
 
 export async function fetchImportedListingIds(

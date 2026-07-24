@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null)
   const intentType = body?.intentType as PaymentIntentType | undefined
-  const payload = (body?.payload ?? {}) as PaymentPayload
+  let payload = (body?.payload ?? {}) as PaymentPayload
   const callbackPath = (body?.callbackPath as string) ?? '/platform/settings/billing'
 
   if (!intentType) {
@@ -60,6 +60,11 @@ export async function POST(req: NextRequest) {
   const amountResult = await resolvePaymentAmount(intentType, payload)
   if (!amountResult.ok) {
     return NextResponse.json({ error: amountResult.error }, { status: 400 })
+  }
+
+  // Catalog resource IDs may arrive as listingId; store the real approved listing id.
+  if (intentType === 'marketplace' && amountResult.resolvedListingId) {
+    payload = { ...payload, listingId: amountResult.resolvedListingId }
   }
 
   const reference = generatePaymentReference(intentType.slice(0, 4).toUpperCase())

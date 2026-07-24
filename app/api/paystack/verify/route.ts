@@ -18,5 +18,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: fulfilled.error }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, reference, status: verified.status })
+  return NextResponse.json({
+    ok: true,
+    reference,
+    status: verified.status,
+    receipt: fulfilled.receipt ?? null,
+  })
 }

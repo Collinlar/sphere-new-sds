@@ -159,13 +159,13 @@ export async function isAcquiredContent(table: ContentTable, id: string): Promis
 export function getAcquisitionUseHref(kind: AcquisitionKind, id: string): string {
   switch (kind) {
     case 'quiz':
-      return '/engage'
+      return `/platform/use/engage/${id}`
     case 'course':
-      return `/student/learn/${id}?from=library`
+      return `/platform/use/learn/${id}`
     case 'exam':
       return `/platform/use/assess/${id}`
     case 'path':
-      return `/student/train/${id}?from=library`
+      return `/platform/use/train/${id}`
   }
 }
 
@@ -197,6 +197,21 @@ export async function resolveAcquiredRouteAccess(
   if (pathname.startsWith('/platform/use/assess/')) {
     const id = pathname.split('/')[4]
     return id ? canUseAcquiredRoute('assess', id) : false
+  }
+
+  if (pathname.startsWith('/platform/use/engage/')) {
+    const id = pathname.split('/')[4]
+    return id ? canUseAcquiredRoute('engage', id) : false
+  }
+
+  if (pathname.startsWith('/platform/use/learn/')) {
+    const id = pathname.split('/')[4]
+    return id ? canUseAcquiredRoute('learn', id) : false
+  }
+
+  if (pathname.startsWith('/platform/use/train/')) {
+    const id = pathname.split('/')[4]
+    return id ? canUseAcquiredRoute('train', id) : false
   }
 
   if (pathname.startsWith('/student/learn/')) {

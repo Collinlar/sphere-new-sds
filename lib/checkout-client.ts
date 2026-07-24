@@ -1,5 +1,7 @@
 'use client'
 
+import type { MarketplacePurchaseReceipt } from './marketplace-receipt'
+
 export type CheckoutIntentType =
   | 'subscription'
   | 'addon'
@@ -50,13 +52,16 @@ export async function startCheckout(params: {
 
 export async function verifyCheckoutReference(
   reference: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; receipt?: MarketplacePurchaseReceipt | null }
+  | { ok: false; error: string }
+> {
   const res = await fetch(`/api/paystack/verify?reference=${encodeURIComponent(reference)}`)
   const body = await res.json().catch(() => null)
   if (!res.ok) {
     return { ok: false, error: body?.error ?? 'Payment verification failed.' }
   }
-  return { ok: true }
+  return { ok: true, receipt: (body?.receipt as MarketplacePurchaseReceipt | null | undefined) ?? null }
 }
 
 export async function generateWithAi(params: {

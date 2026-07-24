@@ -3,7 +3,7 @@
 import { supabase } from './supabase'
 import { generateJoinCode } from './utils'
 import { isAcquiredContent, type ContentTable } from './acquisition-access'
-import type { ExamSession } from './types'
+import type { EngageSession, ExamSession } from './types'
 
 export type SelfTakeResult =
   | { ok: true }
@@ -93,7 +93,7 @@ function isSelfServeSession(session: { settings?: Record<string, unknown> | null
 export async function getOrCreateSelfExamSession(
   examId: string,
   userId: string,
-  userName: string
+  _userName: string
 ): Promise<
   | { ok: true; session: ExamSession; joinCode: string; resumeSubmissionId: string | null }
   | { ok: false; error: string }
@@ -160,6 +160,94 @@ export async function getOrCreateSelfExamSession(
   }
 }
 
+/**
+ * Personal practice session for a marketplace-acquired quiz.
+ * Does not consume Engage live-session quota. Solo play only.
+ */
+export async function getOrCreateSelfEngageSession(
+  quizId: string,
+  userId: string,
+  userName: string
+): Promise<
+  | { ok: true; session: EngageSession; participantId: string; joinCode: string }
+  | { ok: false; error: string }
+> {
+  // Always start a fresh practice run. Close any open self-serve session first.
+  const { data: openSessions } = await supabase
+    .from('engage_sessions')
+    .select('id, settings')
+    .eq('quiz_id', quizId)
+    .eq('host_id', userId)
+    .in('status', ['lobby', 'active'])
+
+  const now = new Date().toISOString()
+  for (const row of openSessions ?? []) {
+    const settings = (row.settings ?? {}) as { self_serve?: boolean; owner_id?: string }
+    if (settings.self_serve && settings.owner_id === userId) {
+      await supabase
+        .from('engage_sessions')
+        .update({
+          status: 'ended',
+          ended_at: now,
+          settings: { ...settings, live_phase: 'ended' },
+        })
+        .eq('id', row.id)
+    }
+  }
+
+  const joinCode = generateJoinCode(6)
+
+  const { data: newSession, error } = await supabase
+    .from('engage_sessions')
+    .insert({
+      quiz_id: quizId,
+      host_id: userId,
+      join_code: joinCode,
+      status: 'active',
+      current_question_index: 0,
+      started_at: now,
+      settings: {
+        self_serve: true,
+        owner_id: userId,
+        time_per_question: 30,
+        game_mode: 'competitive',
+        live_phase: 'question',
+      },
+      created_at: now,
+    })
+    .select('*')
+    .single()
+
+  if (error || !newSession) {
+    return { ok: false, error: 'Could not start this quiz. Try again in a moment.' }
+  }
+
+  const { data: participant, error: pErr } = await supabase
+    .from('session_participants')
+    .insert({
+      session_id: newSession.id,
+      display_name: userName.trim() || 'Player',
+      user_id: userId,
+      score: 0,
+      streak: 0,
+      joined_at: now,
+    })
+    .select('id')
+    .single()
+
+  if (pErr || !participant) {
+    await supabase.from('engage_sessions').update({ status: 'ended', ended_at: now }).eq('id', newSession.id)
+    return { ok: false, error: 'Could not start this quiz. Try again in a moment.' }
+  }
+
+  return {
+    ok: true,
+    session: newSession as EngageSession,
+    participantId: participant.id as string,
+    joinCode,
+  }
+}
+
 export async function isSelfServeSubmissionForUser(
   submissionId: string,
   userId: string
@@ -173,4 +261,18 @@ export async function isSelfServeSubmissionForUser(
   if (!data || data.student_id !== userId) return false
   const session = data.exam_sessions as { settings?: Record<string, unknown> } | null
   return isSelfServeSession(session ?? {})
+}
+
+export async function isSelfServeEngageForUser(
+  sessionId: string,
+  userId: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('engage_sessions')
+    .select('settings')
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (!data) return false
+  const settings = (data.settings ?? {}) as { self_serve?: boolean; owner_id?: string }
+  return Boolean(settings.self_serve && settings.owner_id === userId)
 }

@@ -2,6 +2,7 @@ import { resolveInstitutionOnboardingDepositGhs } from './institution-deposit'
 import { applyPlanUpgrade, upsertCreationUsageForPlan } from './plan-upgrade'
 import { getSupabaseAdmin } from './supabase-admin'
 import { importFromListing, type MarketplaceListingRow } from './marketplace-bridge'
+import { usePathForImportedTarget, type MarketplacePurchaseReceipt } from './marketplace-receipt'
 import type { SubscriptionTier } from './types'
 
 export type PaymentIntentType =
@@ -107,7 +108,95 @@ function currentQuarterLabel(now = new Date()): string {
   return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
 }
 
-export async function fulfillPayment(reference: string): Promise<{ ok: true } | { ok: false; error: string }> {
+async function findBuyerCopyOfListing(
+  listingId: string,
+  buyerId: string,
+  institutionId: string | null,
+): Promise<{ targetType: string; targetId: string } | null> {
+  const admin = getSupabaseAdmin()
+  if (!admin) return null
+
+  const tables: { table: string; targetType: string }[] = [
+    { table: 'quizzes', targetType: 'quiz' },
+    { table: 'exams', targetType: 'exam' },
+    { table: 'courses', targetType: 'course' },
+    { table: 'learning_paths', targetType: 'training_path' },
+  ]
+
+  for (const { table, targetType } of tables) {
+    let query = admin
+      .from(table)
+      .select('id')
+      .eq('marketplace_listing_id', listingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    query = institutionId
+      ? query.eq('institution_id', institutionId)
+      : query.eq('creator_id', buyerId).is('institution_id', null)
+
+    const { data } = await query.maybeSingle()
+    if (data?.id) return { targetType, targetId: data.id as string }
+  }
+
+  return null
+}
+
+async function buildMarketplaceReceipt(params: {
+  reference: string
+  amountPesewas: number
+  listingId: string
+  buyerId: string
+  institutionId: string | null
+  targetType?: string | null
+  targetId?: string | null
+  listingTitle?: string | null
+  purchasedAt?: string
+}): Promise<MarketplacePurchaseReceipt> {
+  const admin = getSupabaseAdmin()
+  let listingTitle = params.listingTitle ?? 'Marketplace resource'
+  if (admin && !params.listingTitle) {
+    const { data: listing } = await admin
+      .from('marketplace_listings')
+      .select('title')
+      .eq('id', params.listingId)
+      .maybeSingle()
+    if (listing?.title) listingTitle = listing.title as string
+  }
+
+  let targetType = params.targetType ?? null
+  let targetId = params.targetId ?? null
+  if ((!targetType || !targetId) && admin) {
+    const copy = await findBuyerCopyOfListing(params.listingId, params.buyerId, params.institutionId)
+    if (copy) {
+      targetType = copy.targetType
+      targetId = copy.targetId
+    }
+  }
+
+  const use = usePathForImportedTarget(targetType, targetId)
+  const amountGhs = Math.round((Number(params.amountPesewas ?? 0) / 100) * 100) / 100
+
+  return {
+    reference: params.reference,
+    amountGhs,
+    listingId: params.listingId,
+    listingTitle,
+    purchasedAt: params.purchasedAt ?? new Date().toISOString(),
+    destinationLabel: params.institutionId ? 'Institution library' : 'My personal library',
+    targetType,
+    targetId,
+    useHref: use?.href ?? '/platform/library',
+    useLabel: use?.label ?? 'Open my library',
+  }
+}
+
+export async function fulfillPayment(
+  reference: string
+): Promise<
+  | { ok: true; receipt?: MarketplacePurchaseReceipt }
+  | { ok: false; error: string }
+> {
   const admin = getSupabaseAdmin()
   if (!admin) return { ok: false, error: 'Payment fulfillment is not configured.' }
 
@@ -118,10 +207,27 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
     .maybeSingle()
 
   if (!intent) return { ok: false, error: 'That payment reference was not found.' }
-  if (intent.status === 'fulfilled') return { ok: true }
 
   const payload = intent.payload as PaymentPayload
   const now = new Date().toISOString()
+
+  if (intent.status === 'fulfilled') {
+    if (intent.intent_type === 'marketplace' && payload.listingId) {
+      const institutionId = institutionIdFromImportPayload(payload)
+      const receipt = await buildMarketplaceReceipt({
+        reference,
+        amountPesewas: Number(intent.amount_pesewas ?? 0),
+        listingId: payload.listingId,
+        buyerId: intent.user_id as string,
+        institutionId,
+        purchasedAt: (intent.fulfilled_at as string | null) ?? now,
+      })
+      return { ok: true, receipt }
+    }
+    return { ok: true }
+  }
+
+  let marketplaceReceipt: MarketplacePurchaseReceipt | undefined
 
   if (intent.intent_type === 'subscription' && payload.planId) {
     const expiresAt = new Date()
@@ -180,6 +286,18 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
       reference
     )
     if (!result.ok) return result
+
+    marketplaceReceipt = await buildMarketplaceReceipt({
+      reference,
+      amountPesewas: Number(intent.amount_pesewas ?? 0),
+      listingId: payload.listingId,
+      buyerId: intent.user_id as string,
+      institutionId,
+      targetType: result.targetType,
+      targetId: result.targetId,
+      listingTitle: result.listingTitle,
+      purchasedAt: now,
+    })
   }
 
   if (intent.intent_type === 'institution_deposit' && payload.institutionId) {
@@ -257,7 +375,7 @@ export async function fulfillPayment(reference: string): Promise<{ ok: true } | 
     .update({ status: 'fulfilled', fulfilled_at: now })
     .eq('reference', reference)
 
-  return { ok: true }
+  return { ok: true, receipt: marketplaceReceipt }
 }
 
 async function fulfillMarketplacePurchase(
@@ -265,7 +383,10 @@ async function fulfillMarketplacePurchase(
   listingId: string,
   institutionId: string | null,
   paymentReference: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; targetType: string; targetId: string; listingTitle: string; priceGhs: number }
+  | { ok: false; error: string }
+> {
   const admin = getSupabaseAdmin()
   if (!admin) return { ok: false, error: 'Payment fulfillment is not configured.' }
 
@@ -276,12 +397,28 @@ async function fulfillMarketplacePurchase(
     .eq('status', 'approved')
     .maybeSingle()
 
-  if (!listing) return { ok: false, error: 'That listing is no longer available.' }
+  let resolvedListing = listing
+  if (!resolvedListing) {
+    const mapped = await resolveMarketplaceListingForCheckout(listingId)
+    if (mapped?.status === 'approved') {
+      const { data: again } = await admin
+        .from('marketplace_listings')
+        .select('*')
+        .eq('id', mapped.id)
+        .eq('status', 'approved')
+        .maybeSingle()
+      resolvedListing = again
+    }
+  }
+
+  if (!resolvedListing) return { ok: false, error: 'That listing is no longer available.' }
+
+  const resolvedListingId = resolvedListing.id as string
 
   const { data: creator } = await admin
     .from('users')
     .select('subscription_tier')
-    .eq('id', listing.creator_id)
+    .eq('id', resolvedListing.creator_id)
     .maybeSingle()
 
   const { data: creatorPlan } = await admin
@@ -291,17 +428,17 @@ async function fulfillMarketplacePurchase(
     .maybeSingle()
 
   const commissionRate =
-    (listing.commission_rate as number | null) ?? creatorPlan?.marketplace_commission_rate ?? 15
-  const priceGhs = Number(listing.price_ghs ?? 0)
+    (resolvedListing.commission_rate as number | null) ?? creatorPlan?.marketplace_commission_rate ?? 15
+  const priceGhs = Number(resolvedListing.price_ghs ?? 0)
   const commissionGhs = Math.round(priceGhs * (commissionRate / 100) * 100) / 100
   const creatorEarnings = Math.round((priceGhs - commissionGhs) * 100) / 100
 
   // Server fulfillment must use the admin client so RLS does not block the copy.
-  const copied = await importFromListing(listing as MarketplaceListingRow, buyerId, institutionId, admin)
+  const copied = await importFromListing(resolvedListing as MarketplaceListingRow, buyerId, institutionId, admin)
   if (!copied.ok) return copied
 
   await admin.from('marketplace_purchases').insert({
-    listing_id: listingId,
+    listing_id: resolvedListingId,
     buyer_id: buyerId,
     price_ghs: priceGhs,
     commission_rate: commissionRate,
@@ -314,7 +451,7 @@ async function fulfillMarketplacePurchase(
 
   // listing_id only — resource_id on marketplace_imports FKs marketplace_resources.
   await admin.from('marketplace_imports').insert({
-    listing_id: listingId,
+    listing_id: resolvedListingId,
     institution_id: institutionId,
     imported_by: buyerId,
   })
@@ -322,17 +459,17 @@ async function fulfillMarketplacePurchase(
   await admin
     .from('marketplace_listings')
     .update({
-      total_purchases: (listing.total_purchases ?? 0) + 1,
-      total_revenue_ghs: Number(listing.total_revenue_ghs ?? 0) + priceGhs,
+      total_purchases: (resolvedListing.total_purchases ?? 0) + 1,
+      total_revenue_ghs: Number(resolvedListing.total_revenue_ghs ?? 0) + priceGhs,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', listingId)
+    .eq('id', resolvedListingId)
 
-  if (listing.creator_id) {
+  if (resolvedListing.creator_id) {
     const { data: profile } = await admin
       .from('creator_profiles')
       .select('total_sales, total_revenue_ghs')
-      .eq('user_id', listing.creator_id)
+      .eq('user_id', resolvedListing.creator_id)
       .maybeSingle()
 
     if (profile) {
@@ -342,17 +479,73 @@ async function fulfillMarketplacePurchase(
           total_sales: (profile.total_sales ?? 0) + 1,
           total_revenue_ghs: Number(profile.total_revenue_ghs ?? 0) + creatorEarnings,
         })
-        .eq('user_id', listing.creator_id)
+        .eq('user_id', resolvedListing.creator_id)
     }
   }
 
-  return { ok: true }
+  return {
+    ok: true,
+    targetType: copied.targetType,
+    targetId: copied.targetId,
+    listingTitle: resolvedListing.title as string,
+    priceGhs,
+  }
+}
+
+
+async function resolveMarketplaceListingForCheckout(listingOrResourceId: string): Promise<{
+  id: string
+  price_ghs: number | null
+  is_free: boolean
+  status: string
+  title?: string
+} | null> {
+  const admin = getSupabaseAdmin()
+  if (!admin) return null
+
+  const { data: listing } = await admin
+    .from('marketplace_listings')
+    .select('id, price_ghs, is_free, status, title')
+    .eq('id', listingOrResourceId)
+    .maybeSingle()
+
+  if (listing) return listing
+
+  // Catalog / legacy marketplace_resources may be opened in the UI; map to the linked listing.
+  const { data: resource } = await admin
+    .from('marketplace_resources')
+    .select('id, title, listing_id, price_ghs, status')
+    .eq('id', listingOrResourceId)
+    .maybeSingle()
+
+  if (resource?.listing_id) {
+    const { data: linked } = await admin
+      .from('marketplace_listings')
+      .select('id, price_ghs, is_free, status, title')
+      .eq('id', resource.listing_id)
+      .maybeSingle()
+    if (linked) return linked
+  }
+
+  if (resource?.title) {
+    const { data: byTitle } = await admin
+      .from('marketplace_listings')
+      .select('id, price_ghs, is_free, status, title')
+      .eq('title', resource.title)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (byTitle) return byTitle
+  }
+
+  return null
 }
 
 export async function resolvePaymentAmount(
   intentType: PaymentIntentType,
   payload: PaymentPayload
-): Promise<{ ok: true; amountGhs: number; amountPesewas: number } | { ok: false; error: string }> {
+): Promise<{ ok: true; amountGhs: number; amountPesewas: number; resolvedListingId?: string } | { ok: false; error: string }> {
   const admin = getSupabaseAdmin()
   if (!admin) return { ok: false, error: 'Payments are not configured.' }
 
@@ -386,18 +579,21 @@ export async function resolvePaymentAmount(
   }
 
   if (intentType === 'marketplace' && payload.listingId) {
-    const { data: listing } = await admin
-      .from('marketplace_listings')
-      .select('price_ghs, is_free, status')
-      .eq('id', payload.listingId)
-      .single()
+    const listing = await resolveMarketplaceListingForCheckout(payload.listingId)
 
-    if (listing?.status !== 'approved') return { ok: false, error: 'That listing is not available for purchase.' }
+    if (!listing || listing.status !== 'approved') {
+      return { ok: false, error: 'That listing is not available for purchase.' }
+    }
     if (listing.is_free) return { ok: false, error: 'This resource is free. Import it instead.' }
 
     const amountGhs = Number(listing.price_ghs ?? 0)
     if (amountGhs <= 0) return { ok: false, error: 'That listing has no price set.' }
-    return { ok: true, amountGhs, amountPesewas: Math.round(amountGhs * 100) }
+    return {
+      ok: true,
+      amountGhs,
+      amountPesewas: Math.round(amountGhs * 100),
+      resolvedListingId: listing.id,
+    }
   }
 
   if (intentType === 'institution_deposit') {

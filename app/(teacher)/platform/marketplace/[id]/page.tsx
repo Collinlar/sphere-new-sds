@@ -15,6 +15,7 @@ import {
   importResource,
   hasImported,
   findImportedDestinations,
+  findImportedContent,
   formatPrice,
   isFreeResource,
   getResourceTypeLabel,
@@ -22,6 +23,11 @@ import {
   type MarketplaceReview,
 } from '@/lib/marketplace'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
+import {
+  formatReceiptAmount,
+  usePathForImportedTarget,
+  type MarketplacePurchaseReceipt,
+} from '@/lib/marketplace-receipt'
 
 const ACCENT_GRADIENTS: Record<string, string> = {
   teal: 'linear-gradient(135deg, #1A8966 0%, #0d5e3d 100%)',
@@ -52,6 +58,9 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
   const [error, setError] = useState<string | null>(null)
   const [importDestination, setImportDestination] = useImportDestination()
   const [otherShelfImports, setOtherShelfImports] = useState<ImportDestination[]>([])
+  const [receipt, setReceipt] = useState<MarketplacePurchaseReceipt | null>(null)
+  const [useNowHref, setUseNowHref] = useState<string | null>(null)
+  const [useNowLabel, setUseNowLabel] = useState<string | null>(null)
 
   useEffect(() => {
     const reference = searchParams.get('reference')
@@ -60,7 +69,14 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
     verifyCheckoutReference(reference).then(async (result) => {
       if (result.ok) {
         setImported(true)
-        setMessage('Purchase confirmed. This resource is now in your library.')
+        if (result.receipt) {
+          setReceipt(result.receipt)
+          setUseNowHref(result.receipt.useHref)
+          setUseNowLabel(result.receipt.useLabel)
+          setMessage(null)
+        } else {
+          setMessage('Purchase confirmed. This resource is now in your library.')
+        }
         window.history.replaceState({}, '', `/platform/marketplace/${params.id}`)
       } else {
         setError(result.error)
@@ -99,16 +115,27 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
       setOtherShelfImports(
         shelves.filter((s) => destinationKey(s) !== currentKey)
       )
+
+      if (done && !useNowHref) {
+        const copy = await findImportedContent(params.id, importDestination, user.id)
+        if (cancelled || !copy) return
+        const use = usePathForImportedTarget(copy.targetType, copy.targetId)
+        if (use) {
+          setUseNowHref(use.href)
+          setUseNowLabel(use.label)
+        }
+      }
     }
     checkImported()
     return () => { cancelled = true }
-  }, [params.id, destinationKey(importDestination)])
+  }, [params.id, destinationKey(importDestination), useNowHref])
 
   async function handleImport() {
     if (!resource) return
     setImporting(true)
     setError(null)
     setMessage(null)
+    setReceipt(null)
     const user = getCurrentUser()
     const result = await importResource(resource.id, user.id, importDestination)
     setImporting(false)
@@ -118,7 +145,12 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
     }
     setImported(true)
     setOtherShelfImports([])
-    setMessage(`Copied to your library as a ${result.targetType.replace('_', ' ')}.`)
+    const use = usePathForImportedTarget(result.targetType, result.targetId)
+    if (use) {
+      setUseNowHref(use.href)
+      setUseNowLabel(use.label)
+    }
+    setMessage(`Copied to ${destinationLabel(importDestination)}. Ready to use.`)
   }
 
   async function handleBuy() {
@@ -126,7 +158,6 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
     setBuying(true)
     setError(null)
     setMessage(null)
-    const user = getCurrentUser()
     const institutionId = destinationInstitutionId(importDestination)
     const result = await startCheckout({
       intentType: 'marketplace',
@@ -169,6 +200,9 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
   const gradient = ACCENT_GRADIENTS[accent] ?? ACCENT_GRADIENTS.teal
   const stats = resource.metadata?.stats ?? {}
   const includes = resource.metadata?.includes ?? []
+  const creatorName = resource.metadata?.creator_name ?? 'SphereSDS creator'
+  const creatorInitials = resource.metadata?.creator_initials ?? '??'
+  const creatorSlug = resource.metadata?.creator_slug
 
   const statCards = [
     stats.lessons != null ? { value: String(stats.lessons), label: 'Lessons' } : null,
@@ -244,12 +278,19 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
                 fontWeight: 700,
                 color: '#fff',
               }}>
-                {resource.metadata?.creator_initials ?? '??'}
+                {creatorInitials}
               </div>
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
-                {resource.metadata?.creator_name ?? 'SphereSDS creator'}
-                {resource.metadata?.verified ? ' · Verified teacher' : ''}
-              </span>
+              {creatorSlug ? (
+                <Link href={`/c/${creatorSlug}`} style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', textDecoration: 'none' }}>
+                  {creatorName}
+                  {resource.metadata?.verified ? ' · Verified teacher' : ''}
+                </Link>
+              ) : (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+                  {creatorName}
+                  {resource.metadata?.verified ? ' · Verified teacher' : ''}
+                </span>
+              )}
             </div>
             {resource.rating_count > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -371,7 +412,6 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
             </div>
           )}
 
-          {/* Institution license — roll a resource out to a whole department */}
           {resource.resource_type === 'train_track' && (
             <Link href="/platform/settings/billing/institution" style={{ textDecoration: 'none' }}>
               <div style={{ background: 'var(--blue-light)', borderRadius: 12, padding: '14px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -390,8 +430,51 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
           {error && (
             <p style={{ fontSize: 13, color: 'var(--coral)', marginBottom: 12 }}>{error}</p>
           )}
-          {message && (
+          {message && !receipt && (
             <p style={{ fontSize: 13, color: 'var(--teal)', marginBottom: 12 }}>{message}</p>
+          )}
+
+          {receipt && (
+            <div style={{
+              background: 'var(--white)',
+              borderRadius: 12,
+              padding: '16px 18px',
+              boxShadow: 'var(--shadow-soft)',
+              marginBottom: 14,
+              border: '1px solid var(--teal-light)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <IconCheck size={16} style={{ color: 'var(--teal)' }} />
+                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)' }}>Payment receipt</p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Resource</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--near-black)', textAlign: 'right' }}>{receipt.listingTitle}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Amount paid</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--near-black)' }}>{formatReceiptAmount(receipt.amountGhs)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Reference</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--near-black)', wordBreak: 'break-all', textAlign: 'right' }}>{receipt.reference}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Saved to</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--near-black)' }}>{receipt.destinationLabel}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Paid at</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--near-black)' }}>
+                    {new Date(receipt.purchasedAt).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--mid-grey)', lineHeight: 1.5 }}>
+                Paid via MTN MoMo or card through Paystack. Keep this reference for your records.
+              </p>
+            </div>
           )}
 
           {!imported && otherShelfImports.length > 0 && (
@@ -409,7 +492,48 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
             />
           )}
 
-          {free ? (
+          {imported && useNowHref && useNowLabel ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Link
+                href={useNowHref}
+                style={{
+                  width: '100%',
+                  height: 50,
+                  background: 'var(--teal)',
+                  borderRadius: 12,
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textDecoration: 'none',
+                  fontFamily: 'var(--font)',
+                }}
+              >
+                {useNowLabel} now
+              </Link>
+              <Link
+                href="/platform/library"
+                style={{
+                  width: '100%',
+                  height: 44,
+                  background: 'var(--white)',
+                  border: '0.5px solid var(--border)',
+                  borderRadius: 12,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--near-black)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textDecoration: 'none',
+                }}
+              >
+                Open my library
+              </Link>
+            </div>
+          ) : free ? (
             <button
               onClick={handleImport}
               disabled={importing || imported}
@@ -449,9 +573,11 @@ function MarketplaceResourcePageInner({ paramsPromise }: { paramsPromise: Promis
               >
                 {imported ? 'Already in your library' : buying ? 'Opening MoMo checkout...' : `Buy with MoMo — ${formatPrice(resource.price_ghs)}`}
               </button>
-              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                Paid via MTN MoMo or card through Paystack
-              </p>
+              {!imported && (
+                <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                  Paid via MTN MoMo or card through Paystack
+                </p>
+              )}
             </div>
           )}
         </div>

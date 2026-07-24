@@ -7,9 +7,14 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { loadMemberships } from '@/lib/context'
 import { destinationInstitutionId, destinationKey } from '@/lib/library-scope'
-import { importResource, formatPrice, hasImported } from '@/lib/marketplace'
+import { importResource, formatPrice, hasImported, findImportedContent } from '@/lib/marketplace'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
 import ImportDestinationPicker, { useImportDestination } from '@/components/brand/ImportDestinationPicker'
+import {
+  formatReceiptAmount,
+  usePathForImportedTarget,
+  type MarketplacePurchaseReceipt,
+} from '@/lib/marketplace-receipt'
 
 const TYPE_LABEL: Record<string, string> = {
   course: 'Course', exam: 'Exam', quiz: 'Engage game',
@@ -58,6 +63,9 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
     staffNotes?: string[]
   } | null>(null)
   const [importDestination, setImportDestination] = useImportDestination()
+  const [receipt, setReceipt] = useState<MarketplacePurchaseReceipt | null>(null)
+  const [useNowHref, setUseNowHref] = useState<string | null>(null)
+  const [useNowLabel, setUseNowLabel] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -90,7 +98,15 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
     if (!reference) return
     verifyCheckoutReference(reference).then((result) => {
       if (result.ok) {
-        setMessage('Purchase confirmed. This resource is now in your library.')
+        setImported(true)
+        if (result.receipt) {
+          setReceipt(result.receipt)
+          setUseNowHref(result.receipt.useHref)
+          setUseNowLabel(result.receipt.useLabel)
+          setMessage(null)
+        } else {
+          setMessage('Purchase confirmed. This resource is now in your library.')
+        }
         window.history.replaceState({}, '', `/m/${params.id}`)
       } else {
         setError(result.error)
@@ -171,11 +187,21 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
     async function checkImported() {
       const user = getCurrentUser()
       const done = await hasImported(params.id, importDestination, user.id)
-      if (!cancelled) setImported(done)
+      if (cancelled) return
+      setImported(done)
+      if (done && !useNowHref) {
+        const copy = await findImportedContent(params.id, importDestination, user.id)
+        if (cancelled || !copy) return
+        const use = usePathForImportedTarget(copy.targetType, copy.targetId)
+        if (use) {
+          setUseNowHref(use.href)
+          setUseNowLabel(use.label)
+        }
+      }
     }
     checkImported()
     return () => { cancelled = true }
-  }, [params.id, signedIn, destinationKey(importDestination)])
+  }, [params.id, signedIn, destinationKey(importDestination), useNowHref])
 
   async function handleGet() {
     if (!listing) return
@@ -186,6 +212,7 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
     setBusy(true)
     setError(null)
     setMessage(null)
+    setReceipt(null)
     const user = getCurrentUser()
 
     if (listing.is_free) {
@@ -193,7 +220,12 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
       setBusy(false)
       if (!result.ok) { setError(result.error); return }
       setImported(true)
-      setMessage('Added to your library. Open Sphere to use it.')
+      const use = usePathForImportedTarget(result.targetType, result.targetId)
+      if (use) {
+        setUseNowHref(use.href)
+        setUseNowLabel(use.label)
+      }
+      setMessage('Added to your library. You can use it now.')
       return
     }
 
@@ -321,7 +353,34 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
           </div>
 
           {error && <p style={{ fontSize: 13, color: 'var(--coral)', marginBottom: 12 }}>{error}</p>}
-          {message && <p style={{ fontSize: 13, color: 'var(--teal)', marginBottom: 12 }}>{message}</p>}
+          {message && !receipt && <p style={{ fontSize: 13, color: 'var(--teal)', marginBottom: 12 }}>{message}</p>}
+
+          {receipt && (
+            <div style={{
+              background: 'var(--white)',
+              borderRadius: 12,
+              padding: '16px 18px',
+              boxShadow: 'var(--shadow-soft)',
+              marginBottom: 16,
+              border: '1px solid var(--teal-light)',
+            }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)', marginBottom: 12 }}>Payment receipt</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Amount paid</span>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{formatReceiptAmount(receipt.amountGhs)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Reference</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, textAlign: 'right', wordBreak: 'break-all' }}>{receipt.reference}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Saved to</span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>{receipt.destinationLabel}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {signedIn && !imported && (
             <ImportDestinationPicker
@@ -331,27 +390,56 @@ function PublicListingInner({ paramsPromise }: { paramsPromise: Promise<{ id: st
             />
           )}
 
-          <button
-            onClick={handleGet}
-            disabled={busy || imported}
-            style={{
-              width: '100%', height: 50, borderRadius: 12, border: 'none',
-              background: imported ? 'var(--bg2)' : listing.is_free ? 'var(--teal)' : 'var(--amber)',
-              color: imported ? 'var(--mid-grey)' : '#fff', fontSize: 15, fontWeight: 700,
-              cursor: busy || imported ? 'default' : 'pointer', fontFamily: 'var(--font)',
-            }}
-          >
-            {imported
-              ? 'Already in your library'
-              : busy
-              ? 'Working...'
-              : !signedIn
-                ? (listing.is_free ? 'Sign up to get it free' : `Sign up to buy — ${formatPrice(listing.price_ghs)}`)
-                : (listing.is_free ? 'Add to my library — Free' : `Buy with MoMo — ${formatPrice(listing.price_ghs)}`)}
-          </button>
-          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 10 }}>
-            {listing.is_free ? 'A free SphereSDS account keeps it in your library.' : 'Paid via MTN MoMo or card through Paystack.'}
-          </p>
+          {imported && useNowHref && useNowLabel ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Link
+                href={useNowHref}
+                style={{
+                  width: '100%', height: 50, borderRadius: 12,
+                  background: 'var(--teal)', color: '#fff',
+                  fontSize: 15, fontWeight: 700, textDecoration: 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                {useNowLabel} now
+              </Link>
+              <Link
+                href="/platform/library"
+                style={{
+                  width: '100%', height: 44, borderRadius: 12,
+                  background: 'var(--white)', border: '0.5px solid var(--border)',
+                  color: 'var(--near-black)', fontSize: 13, fontWeight: 600,
+                  textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                Open my library
+              </Link>
+            </div>
+          ) : (
+            <button
+              onClick={handleGet}
+              disabled={busy || imported}
+              style={{
+                width: '100%', height: 50, borderRadius: 12, border: 'none',
+                background: imported ? 'var(--bg2)' : listing.is_free ? 'var(--teal)' : 'var(--amber)',
+                color: imported ? 'var(--mid-grey)' : '#fff', fontSize: 15, fontWeight: 700,
+                cursor: busy || imported ? 'default' : 'pointer', fontFamily: 'var(--font)',
+              }}
+            >
+              {imported
+                ? 'Already in your library'
+                : busy
+                ? 'Working...'
+                : !signedIn
+                  ? (listing.is_free ? 'Sign up to get it free' : `Sign up to buy — ${formatPrice(listing.price_ghs)}`)
+                  : (listing.is_free ? 'Add to my library — Free' : `Buy with MoMo — ${formatPrice(listing.price_ghs)}`)}
+            </button>
+          )}
+          {!imported && (
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 10 }}>
+              {listing.is_free ? 'A free SphereSDS account keeps it in your library.' : 'Paid via MTN MoMo or card through Paystack.'}
+            </p>
+          )}
         </div>
       </div>
     </div>

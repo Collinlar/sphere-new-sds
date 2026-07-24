@@ -133,7 +133,8 @@ export default function ContentLibraryPage() {
     const acquired = isItemAcquired(item)
     const kind = TAB_KIND[tab]
 
-    if (acquired && kind && module && !moduleAccess[module]) {
+    // Acquired content is for use first. Edit stays available via the Edit link when the module is unlocked.
+    if (acquired && kind) {
       return getAcquisitionUseHref(kind, item.id as string)
     }
 
@@ -261,7 +262,9 @@ export default function ContentLibraryPage() {
             {(data[activeTab] as Record<string, unknown>[]).map((item) => {
               const tabLocked = isTabLocked(activeTab)
               const acquired = isItemAcquired(item)
-              const useOnly = acquired && tabLocked
+              const kind = TAB_KIND[activeTab]
+              const useHref = acquired && kind ? getAcquisitionUseHref(kind, item.id as string) : null
+              const useLabel = kind ? getAcquisitionTakeLabel(kind) : 'Open'
               const itemHref = getItemHref(activeTab, item)
               const editHref = !tabLocked ? getBuilderHref(activeTab, item.id as string) : null
               return (
@@ -270,7 +273,7 @@ export default function ContentLibraryPage() {
                 boxShadow: 'var(--shadow-soft)',
                 borderRadius: 10,
                 padding: 18,
-                opacity: useOnly ? 1 : tabLocked ? 0.92 : 1,
+                opacity: tabLocked && !acquired ? 0.92 : 1,
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--near-black)', lineHeight: 1.3 }}>
@@ -281,15 +284,17 @@ export default function ContentLibraryPage() {
                   <span style={{
                     fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
                     padding: '3px 9px', borderRadius: 20, flexShrink: 0,
-                    background: useOnly ? '#DDFAF0' : tabLocked ? '#FEF0DC' : item.is_published ? '#DDFAF0' : 'var(--bg2)',
-                    color: useOnly ? '#1A8966' : tabLocked ? '#9A5800' : item.is_published ? '#1A8966' : 'var(--mid-grey)',
+                    background: acquired ? '#DDFAF0' : tabLocked ? '#FEF0DC' : item.is_published ? '#DDFAF0' : 'var(--bg2)',
+                    color: acquired ? '#1A8966' : tabLocked ? '#9A5800' : item.is_published ? '#1A8966' : 'var(--mid-grey)',
                   }}>
-                    {useOnly ? 'Ready to take' : tabLocked ? 'Saved' : item.is_published ? 'Published' : 'Draft'}
+                    {acquired ? 'From marketplace' : tabLocked ? 'Saved' : item.is_published ? 'Published' : 'Draft'}
                   </span>
                 </div>
-                {useOnly && (
+                {acquired && (
                   <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 8, lineHeight: 1.5 }}>
-                    Take this on your own. Upgrade to host it for a class or edit it.
+                    {tabLocked
+                      ? 'Take this on your own. Upgrade to host it for a class or edit it.'
+                      : 'Imported or purchased. Use it now, or edit if you want to customise it.'}
                   </p>
                 )}
                 {tabLocked && !acquired && (
@@ -303,14 +308,15 @@ export default function ContentLibraryPage() {
                   </p>
                 )}
                 <p style={{ fontSize: 11, color: 'var(--mid-grey)' }}>
-                  Created {new Date(item.created_at as string).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {acquired ? 'Added' : 'Created'}{' '}
+                  {new Date(item.created_at as string).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </p>
-                {useOnly && (
-                  <Link href={itemHref} style={{
-                    display: 'inline-block', marginTop: 10, fontSize: 12, fontWeight: 600,
+                {useHref && (
+                  <Link href={useHref} style={{
+                    display: 'inline-block', marginTop: 10, marginRight: 12, fontSize: 12, fontWeight: 700,
                     color: 'var(--teal)', textDecoration: 'none',
                   }}>
-                    {TAB_KIND[activeTab] ? getAcquisitionTakeLabel(TAB_KIND[activeTab]!) : 'Open'}
+                    {useLabel}
                   </Link>
                 )}
                 {tabLocked && !acquired && (
