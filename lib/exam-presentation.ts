@@ -31,7 +31,10 @@ export function buildExamPresentation(
   const shuffleQuestions = Boolean(settings?.shuffle_questions)
   const shuffleOptions = Boolean(settings?.shuffle_options)
 
-  let ordered = questions.map((q) => ({ ...q, options: q.options ? q.options.map((o) => ({ ...o })) : undefined }))
+  let ordered: ExamQuestion[] = questions.map((q) => ({
+    ...q,
+    options: q.options ? q.options.map((o) => ({ ...o })) : [],
+  }))
   if (shuffleQuestions) ordered = shuffleInPlace([...ordered])
   if (shuffleOptions) ordered = ordered.map(remapOptions)
   return ordered
