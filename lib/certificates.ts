@@ -4,12 +4,82 @@ import { isCertificateIssuingEnabled } from './certificate-permissions'
 
 export type CertResourceType = 'course' | 'exam' | 'training_path'
 
+export interface CertificateAchievement {
+  summary: string
+  scorePercentage?: number | null
+  grade?: string | null
+  passMark?: number | null
+}
+
 export interface IssueCertificateInput {
   recipientId: string
   issuerId: string | null
   resourceType: CertResourceType
   resourceId: string
   resourceTitle: string
+  /** Optional snapshot shown on the public verify page. */
+  achievement?: CertificateAchievement
+  /** Prefer institution or brand name when known at issue time. */
+  issuerDisplayName?: string | null
+}
+
+export function examAchievementSummary(opts: {
+  percentage: number
+  passMark: number
+  grade?: string | null
+}): string {
+  const pct = Math.round(opts.percentage)
+  const gradeBit = opts.grade ? `, grade ${opts.grade}` : ''
+  return `Passed with ${pct}%${gradeBit} (pass mark ${opts.passMark}%)`
+}
+
+export function courseAchievementSummary(): string {
+  return 'Completed the full course'
+}
+
+export function trainingPathAchievementSummary(): string {
+  return 'Completed the training path'
+}
+
+export async function resolveIssuerDisplayName(opts: {
+  issuerId: string | null
+  resourceType: CertResourceType
+  resourceId: string
+}): Promise<string | null> {
+  const table =
+    opts.resourceType === 'exam'
+      ? 'exams'
+      : opts.resourceType === 'course'
+        ? 'courses'
+        : 'learning_paths'
+
+  const { data: resource } = await supabase
+    .from(table)
+    .select('institution_id, creator_id')
+    .eq('id', opts.resourceId)
+    .maybeSingle()
+
+  const institutionId = (resource?.institution_id as string | null) ?? null
+  if (institutionId) {
+    const { data: inst } = await supabase
+      .from('institutions')
+      .select('name')
+      .eq('id', institutionId)
+      .maybeSingle()
+    if (inst?.name) return inst.name as string
+  }
+
+  const issuerId = opts.issuerId ?? (resource?.creator_id as string | null) ?? null
+  if (issuerId) {
+    const { data: user } = await supabase
+      .from('users')
+      .select('name')
+      .eq('id', issuerId)
+      .maybeSingle()
+    if (user?.name) return user.name as string
+  }
+
+  return null
 }
 
 // Idempotent: if this recipient already holds a certificate for this resource,
@@ -38,6 +108,14 @@ export async function issueCertificate(
     return { ok: false, error: 'Certificate issuing is disabled for this account.' }
   }
 
+  const issuerDisplayName =
+    input.issuerDisplayName?.trim() ||
+    (await resolveIssuerDisplayName({
+      issuerId: input.issuerId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+    }))
+
   const { data, error } = await supabase
     .from('issued_certificates')
     .insert({
@@ -47,6 +125,11 @@ export async function issueCertificate(
       resource_id: input.resourceId,
       resource_title: input.resourceTitle,
       issued_at: new Date().toISOString(),
+      issuer_display_name: issuerDisplayName,
+      achievement_summary: input.achievement?.summary ?? null,
+      score_percentage: input.achievement?.scorePercentage ?? null,
+      grade: input.achievement?.grade ?? null,
+      pass_mark: input.achievement?.passMark ?? null,
     })
     .select('verification_code')
     .single()

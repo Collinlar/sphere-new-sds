@@ -13,10 +13,12 @@ import AddOnGate from '@/components/brand/AddOnGate'
 import { useInstitutionLevels } from '@/lib/use-institution-levels'
 import { generateWithAi } from '@/lib/checkout-client'
 import AiAssessmentBuilderModal from '@/components/brand/AiAssessmentBuilderModal'
+import AiNotice from '@/components/brand/AiNotice'
 import {
   configToApiContext,
   loadingMessageForConfig,
   normalizeGeneratedQuestions,
+  mixTotal,
   type AssessmentAiConfig,
 } from '@/lib/ai-assessment-generation'
 import {
@@ -64,9 +66,11 @@ export default function ExamCreate() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
+  const [aiNotice, setAiNotice] = useState('')
   const [hintLoading, setHintLoading] = useState(false)
   const [explanationLoading, setExplanationLoading] = useState(false)
   const [bulkExplanationLoading, setBulkExplanationLoading] = useState(false)
+  const [bulkHintLoading, setBulkHintLoading] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [integrityAction, setIntegrityAction] = useState<'record' | 'warn' | 'auto_disqualify'>('warn')
   const [integrityThreshold, setIntegrityThreshold] = useState(3)
@@ -129,7 +133,7 @@ export default function ExamCreate() {
       return
     }
 
-    const generated = normalizeGeneratedQuestions(
+    const { questions: generated, flagged } = normalizeGeneratedQuestions(
       (result.data.questions as ExamQuestion[] | undefined) ?? [],
       config.typeMix
     )
@@ -152,55 +156,145 @@ export default function ExamCreate() {
       setActiveQ(0)
     }
 
+    // Tell the teacher exactly what came back. A short set or an unresolved
+    // answer key is their business, not something to paper over.
+    const shortfall = Number(result.meta?.shortfall ?? 0)
+    const notes: string[] = []
+    if (shortfall > 0) {
+      notes.push(`${generated.length} of ${mixTotal(config.typeMix)} questions came back. Draft again with append to top up.`)
+    }
+    if (flagged > 0) {
+      notes.push(`${flagged} question${flagged === 1 ? '' : 's'} need${flagged === 1 ? 's' : ''} your check, marked in the list.`)
+    }
+    setAiNotice(notes.join(' '))
+
     setAiModalOpen(false)
   }
 
+  /** Fill in missing hints. Same gap-only rules as explanations below. */
+  async function generateAllHints(checkAddOn: () => Promise<boolean>) {
+    if (!(await checkAddOn())) return
+
+    const targets = questions.filter(item => item.text.trim() && !item.hint?.trim())
+    if (targets.length === 0) {
+      setAiNotice(
+        questions.some(item => item.text.trim())
+          ? 'Every question already has a hint. Clear one to rewrite it.'
+          : 'Add some questions first.'
+      )
+      return
+    }
+
+    setBulkHintLoading(true)
+    const result = await generateWithAi({
+      addOnId: 'ai_assessment_builder',
+      task: 'bulk_hints',
+      context: {
+        subject,
+        gradeLevel,
+        questions: targets.map(item => ({ text: item.text, type: item.type, options: item.options })),
+      },
+    })
+    setBulkHintLoading(false)
+
+    if (!result.ok) {
+      setAiNotice(result.error)
+      return
+    }
+
+    const hints = (result.data.hints as string[] | undefined) ?? []
+    const byId = new Map<string, string>()
+    targets.forEach((item, i) => {
+      const text = hints[i]
+      if (typeof text === 'string' && text.trim()) byId.set(item.id, text.trim())
+    })
+
+    setQuestions(prev =>
+      prev.map(item => (byId.has(item.id) ? { ...item, hint: byId.get(item.id) } : item))
+    )
+
+    const filled = byId.size
+    setAiNotice(
+      filled < targets.length
+        ? `Wrote ${filled} of ${targets.length} missing hints. Tap again to finish the rest.`
+        : `Wrote ${filled} hint${filled === 1 ? '' : 's'}.`
+    )
+  }
+
+  /**
+   * Fill in missing explanations across the exam. Only touches questions that
+   * do not already have one, so hand-written text is never overwritten, and
+   * results are matched back by question id rather than by position.
+   */
   async function generateAllExplanations(checkAddOn: () => Promise<boolean>) {
     if (!(await checkAddOn())) return
 
-    const eligible = questions.filter(
-      (item) => item.text.trim() && (item.type === 'mcq' || item.type === 'true_false')
-    )
-    if (eligible.length === 0) {
-      window.alert('Add multiple choice or true/false questions with text first.')
+    const targets = questions.filter(item => item.text.trim() && !item.explanation?.trim())
+
+    if (targets.length === 0) {
+      setAiNotice(
+        questions.some(item => item.text.trim())
+          ? 'Every question already has an explanation. Clear one to rewrite it.'
+          : 'Add some questions first.'
+      )
       return
     }
 
     setBulkExplanationLoading(true)
     const result = await generateWithAi({
-      addOnId: 'ai_explanations',
+      addOnId: 'ai_assessment_builder',
       task: 'bulk_explanations',
       context: {
         subject,
         gradeLevel,
-        questions: eligible.map((item) => ({
+        questions: targets.map(item => ({
           text: item.text,
-          correct: item.correct,
           type: item.type,
+          correct: item.correct,
+          options: item.options,
+          marks: item.marks,
         })),
       },
     })
     setBulkExplanationLoading(false)
 
     if (!result.ok) {
-      window.alert(result.error)
+      setAiNotice(result.error)
       return
     }
 
     const explanations = (result.data.explanations as string[] | undefined) ?? []
-    let index = 0
-    setQuestions((prev) =>
-      prev.map((item) => {
-        if (!item.text.trim() || (item.type !== 'mcq' && item.type !== 'true_false')) return item
-        const explanation = explanations[index] ?? item.explanation ?? ''
-        index += 1
-        return { ...item, explanation }
-      })
+    const byId = new Map<string, string>()
+    targets.forEach((item, i) => {
+      const text = explanations[i]
+      if (typeof text === 'string' && text.trim()) byId.set(item.id, text.trim())
+    })
+
+    setQuestions(prev =>
+      prev.map(item => (byId.has(item.id) ? { ...item, explanation: byId.get(item.id) } : item))
+    )
+
+    const filled = byId.size
+    setAiNotice(
+      filled < targets.length
+        ? `Wrote ${filled} of ${targets.length} missing explanations. Tap again to finish the rest.`
+        : `Wrote ${filled} explanation${filled === 1 ? '' : 's'}.`
     )
   }
 
   function updateQ(updates: Partial<ExamQuestion>) {
-    setQuestions((prev) => prev.map((item, i) => (i === activeQ ? { ...item, ...updates } : item)))
+    setQuestions((prev) => prev.map((item, i) => {
+      if (i !== activeQ) return item
+      const next = { ...item, ...updates }
+      // Once the teacher supplies the missing answer key or mark scheme, the
+      // review flag has served its purpose.
+      if (next.needs_review) {
+        const keyFixed = 'correct' in updates && !!updates.correct
+        const rubricFixed = 'rubric' in updates && !!updates.rubric?.trim()
+        if (keyFixed || rubricFixed) next.needs_review = undefined
+      }
+      return next
+    }))
   }
 
   function updateOption(oi: number, text: string) {
@@ -342,7 +436,7 @@ export default function ExamCreate() {
               gradeLevels={gradeLevels}
               hasExistingQuestions={questions.some(q => q.text.trim())}
             />
-            <AddOnGate addOnId="ai_explanations">
+            <AddOnGate addOnId={['ai_assessment_builder', 'ai_explanations']}>
               {({ check: checkExplanationAddOn }) => (
                 <button
                   type="button"
@@ -360,7 +454,29 @@ export default function ExamCreate() {
                     fontFamily: 'inherit',
                   }}
                 >
-                  {bulkExplanationLoading ? 'Writing explanations...' : 'Explain all answers'}
+                  {bulkExplanationLoading ? 'Writing explanations...' : 'Fill missing explanations'}
+                </button>
+              )}
+            </AddOnGate>
+            <AddOnGate addOnId={['ai_assessment_builder', 'ai_hints']}>
+              {({ check: checkBulkHintAddOn }) => (
+                <button
+                  type="button"
+                  onClick={() => generateAllHints(checkBulkHintAddOn)}
+                  disabled={bulkHintLoading}
+                  style={{
+                    background: 'var(--bg2)',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '7px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'var(--near-black)',
+                    cursor: bulkHintLoading ? 'default' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {bulkHintLoading ? 'Writing hints...' : 'Fill missing hints'}
                 </button>
               )}
             </AddOnGate>
@@ -728,6 +844,8 @@ export default function ExamCreate() {
         {/* Right: question editor — show only on desktop or when questions tab active on mobile */}
         <div className={`exam-editor ${mobileTab === 'questions' ? '' : 'tab-hidden'}`} style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
           <div style={{ maxWidth: 640, margin: '0 auto' }}>
+            <AiNotice message={aiNotice} onDismiss={() => setAiNotice('')} />
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
               <span style={{
                 fontSize: 11,
@@ -742,7 +860,18 @@ export default function ExamCreate() {
                 {QUESTION_TYPES.find(t => t.value === q.type)?.label}
               </span>
               <span style={{ fontSize: 12, color: 'var(--mid-grey)' }}>Question {activeQ + 1}</span>
+              {q.needs_review && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#9A5800', background: 'var(--amber-light)', padding: '3px 9px', borderRadius: 20 }}>
+                  Needs your check
+                </span>
+              )}
             </div>
+
+            {q.needs_review && (
+              <p style={{ fontSize: 12.5, color: '#9A5800', background: 'var(--amber-light)', borderRadius: 8, padding: '9px 12px', marginBottom: 14, lineHeight: 1.5 }}>
+                {q.needs_review}
+              </p>
+            )}
 
             <textarea
               value={q.text}
@@ -825,7 +954,7 @@ export default function ExamCreate() {
                   <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
                     Hint (shown during exam)
                   </p>
-                  <AddOnGate addOnId="ai_hints">
+                  <AddOnGate addOnId={['ai_assessment_builder', 'ai_hints']}>
                     {({ check: checkHintAddOn }) => (
                       <button
                         type="button"
@@ -879,7 +1008,7 @@ export default function ExamCreate() {
                   <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
                     Explanation (shown after answer)
                   </p>
-                  <AddOnGate addOnId="ai_explanations">
+                  <AddOnGate addOnId={['ai_assessment_builder', 'ai_explanations']}>
                     {({ check: checkExplanationAddOn }) => (
                       <button
                         type="button"

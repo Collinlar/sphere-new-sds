@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { getCreditBalance, type CreditBalance } from '@/lib/ai-credits-client'
 import {
   ASSESSMENT_SUBJECTS,
   DIFFICULTY_OPTIONS,
@@ -52,11 +53,15 @@ export default function AiAssessmentBuilderModal({
     defaultAssessmentAiConfig(subject, gradeLevel)
   )
   const [error, setError] = useState('')
+  const [credits, setCredits] = useState<CreditBalance | null>(null)
 
   useEffect(() => {
     if (!open) return
     setConfig(defaultAssessmentAiConfig(subject, gradeLevel))
     setError('')
+    // Null when credits are not provisioned, so the cost line stays hidden
+    // rather than showing a misleading zero.
+    getCreditBalance().then(setCredits)
   }, [open, subject, gradeLevel])
 
   if (!open) return null
@@ -344,6 +349,35 @@ export default function AiAssessmentBuilderModal({
             })}
           </div>
 
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--mid-grey)', marginBottom: 8 }}>
+            Include for students
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: loading ? 'not-allowed' : 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={config.includeExplanations}
+                disabled={loading}
+                onChange={e => updateConfig({ includeExplanations: e.target.checked })}
+                style={{ width: 15, height: 15 }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Answer explanations, shown after submission</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: loading ? 'not-allowed' : 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={config.includeHints}
+                disabled={loading}
+                onChange={e => updateConfig({ includeHints: e.target.checked })}
+                style={{ width: 15, height: 15 }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Hints, shown during the exam</span>
+            </label>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 16, lineHeight: 1.5 }}>
+            Both are included in your builder. Mark schemes and answer keys are always written.
+          </p>
+
           {hasExistingQuestions && (
             <>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--mid-grey)', marginBottom: 8 }}>
@@ -399,6 +433,16 @@ export default function AiAssessmentBuilderModal({
                 {line}
               </p>
             ))}
+            {credits && (() => {
+              const cost = mixTotal(config.typeMix)
+              const short = credits.total < cost
+              return (
+                <p style={{ fontSize: 12, fontWeight: 600, color: short ? 'var(--coral)' : 'var(--teal)', marginTop: 8, lineHeight: 1.5 }}>
+                  Uses {cost} credit{cost === 1 ? '' : 's'} · {credits.pooled ? 'your institution has' : 'you have'} {credits.total}
+                  {short ? '. Top up from Plan and billing first.' : ''}
+                </p>
+              )
+            })()}
           </div>
         </div>
 

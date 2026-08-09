@@ -1,4 +1,5 @@
 import type { QuestionType, QuizQuestion } from './types'
+import { resolveCorrectLabel } from './ai-assessment-generation'
 
 export type EngageMixPreset = 'mcq_blitz' | 'mixed_live' | 'true_false_sprint' | 'custom'
 export type EngagePace = 'fast' | 'standard' | 'thoughtful'
@@ -10,6 +11,8 @@ export interface EngageTypeMix {
   multi_select: number
   short_answer: number
   poll: number
+  numeric: number
+  ordering: number
 }
 
 export interface EngageAiConfig {
@@ -22,6 +25,8 @@ export interface EngageAiConfig {
   typeMix: EngageTypeMix
   pace: EngagePace
   replaceMode: ReplaceMode
+  /** Reveal explanations the teacher reads out after each question. */
+  includeExplanations: boolean
 }
 
 export const ENGAGE_SUBJECTS = [
@@ -55,25 +60,25 @@ export const MIN_ENGAGE_QUESTIONS = 3
 export const MAX_ENGAGE_QUESTIONS = 25
 
 export function engageMixTotal(mix: EngageTypeMix): number {
-  return mix.mcq + mix.true_false + mix.multi_select + mix.short_answer + mix.poll
+  return mix.mcq + mix.true_false + mix.multi_select + mix.short_answer + mix.poll + mix.numeric + mix.ordering
 }
 
 export function engageMixForPreset(preset: EngageMixPreset, total: number): EngageTypeMix {
   const n = Math.max(MIN_ENGAGE_QUESTIONS, Math.min(MAX_ENGAGE_QUESTIONS, total))
   if (preset === 'mcq_blitz') {
-    return { mcq: n, true_false: 0, multi_select: 0, short_answer: 0, poll: 0 }
+    return { mcq: n, true_false: 0, multi_select: 0, short_answer: 0, poll: 0, numeric: 0, ordering: 0 }
   }
   if (preset === 'true_false_sprint') {
-    return { mcq: 0, true_false: n, multi_select: 0, short_answer: 0, poll: 0 }
+    return { mcq: 0, true_false: n, multi_select: 0, short_answer: 0, poll: 0, numeric: 0, ordering: 0 }
   }
   if (preset === 'mixed_live') {
-    if (n <= 4) return { mcq: n - 1, true_false: 1, multi_select: 0, short_answer: 0, poll: 0 }
+    if (n <= 4) return { mcq: n - 1, true_false: 1, multi_select: 0, short_answer: 0, poll: 0, numeric: 0, ordering: 0 }
     const true_false = Math.max(1, Math.round(n * 0.25))
     const multi_select = n >= 8 ? Math.max(1, Math.round(n * 0.15)) : 0
     const mcq = Math.max(1, n - true_false - multi_select)
-    return { mcq, true_false, multi_select, short_answer: 0, poll: 0 }
+    return { mcq, true_false, multi_select, short_answer: 0, poll: 0, numeric: 0, ordering: 0 }
   }
-  return { mcq: n, true_false: 0, multi_select: 0, short_answer: 0, poll: 0 }
+  return { mcq: n, true_false: 0, multi_select: 0, short_answer: 0, poll: 0, numeric: 0, ordering: 0 }
 }
 
 export function defaultEngageAiConfig(subject = '', gradeLevel = ''): EngageAiConfig {
@@ -88,6 +93,7 @@ export function defaultEngageAiConfig(subject = '', gradeLevel = ''): EngageAiCo
     typeMix: engageMixForPreset('mixed_live', totalCount),
     pace: 'standard',
     replaceMode: 'replace',
+    includeExplanations: true,
   }
 }
 
@@ -167,21 +173,43 @@ export function normalizeGeneratedEngageQuestions(
   pace: EngagePace
 ): QuizQuestion[] {
   const seconds = ENGAGE_PACE_OPTIONS.find(p => p.id === pace)?.seconds ?? 20
-  const allowed: QuestionType[] = ['mcq', 'true_false', 'multi_select', 'short_answer', 'poll']
+  const allowed: QuestionType[] = ['mcq', 'true_false', 'multi_select', 'short_answer', 'poll', 'numeric', 'ordering']
 
   return raw.map(q => {
     const type = allowed.includes(q.type) ? q.type : 'mcq'
+    const options = q.options?.length ? q.options : optionsForType(type)
+
+    // A poll has no right answer. For every other type, resolve the key
+    // against the real options rather than assuming "A", because the whole
+    // class sees the reveal.
+    // numeric and ordering carry their answer in their own fields, so there
+    // is no option label to resolve.
+    const resolved =
+      type === 'poll' || type === 'numeric' || type === 'ordering'
+        ? ''
+        : resolveCorrectLabel(q.correct, options) ?? ''
+
     return {
       id: q.id || crypto.randomUUID(),
       type,
       text: q.text ?? '',
-      options: q.options?.length ? q.options : optionsForType(type),
-      correct: q.correct ?? 'A',
+      options,
+      correct: resolved,
       correct_multiple: Array.isArray(q.correct_multiple) ? q.correct_multiple : [],
       correct_text: q.correct_text ?? '',
       time_seconds: q.time_seconds ?? seconds,
       points: q.points ?? 100,
       image_url: q.image_url,
+      // Kept so the reveal can explain, and the host can see which
+      // misconception the class actually fell for.
+      explanation: q.explanation,
+      correct_number: type === 'numeric' ? Number(q.correct_number) : undefined,
+      tolerance: type === 'numeric' && q.tolerance != null ? Number(q.tolerance) : undefined,
+      unit: type === 'numeric' ? q.unit : undefined,
+      correct_order:
+        type === 'ordering' && Array.isArray(q.correct_order)
+          ? q.correct_order.map(String)
+          : undefined,
     }
   })
 }
@@ -196,5 +224,6 @@ export function configToEngageApiContext(config: EngageAiConfig): Record<string,
     typeMix: config.typeMix,
     pace: config.pace,
     timeSeconds: pace.seconds,
+    includeExplanations: config.includeExplanations,
   }
 }

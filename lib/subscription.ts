@@ -437,12 +437,18 @@ export async function assertAddOnAccess(addOnId: AddOnId): Promise<AddOnCheckRes
 
   const { data: addOn } = await supabase
     .from('add_ons')
-    .select('name, eligible_plans')
+    .select('name, eligible_plans, is_active')
     .eq('id', addOnId)
     .single()
 
   if (!addOn) {
     return { allowed: false, reason: 'That add-on is not available.' }
+  }
+
+  // A retired add-on has been folded into the product and is open to
+  // everyone. Credits, not entitlement, decide what a generation costs.
+  if (addOn.is_active === false) {
+    return { allowed: true }
   }
 
   const eligible: string[] = addOn.eligible_plans ?? []
@@ -463,6 +469,27 @@ export async function assertAddOnAccess(addOnId: AddOnId): Promise<AddOnCheckRes
   }
 
   return { allowed: true }
+}
+
+/**
+ * Passes when the user holds ANY of the given add-ons. Hints and explanations
+ * ship with the builders now, so a feature can be reachable either through the
+ * builder that includes it or through a legacy standalone add-on the user is
+ * still subscribed to.
+ */
+export async function assertAnyAddOnAccess(addOnIds: AddOnId[]): Promise<AddOnCheckResult> {
+  if (addOnIds.length === 0) return { allowed: false, reason: 'That add-on is not available.' }
+
+  let lastResult: AddOnCheckResult = { allowed: false, reason: 'That add-on is not available.' }
+  for (const id of addOnIds) {
+    const result = await assertAddOnAccess(id)
+    if (result.allowed) return result
+    // Prefer the most actionable message: "add it from billing" beats
+    // "upgrade your plan" when at least one option is already on their plan.
+    if (!result.needsPlanUpgrade) lastResult = result
+    else if (lastResult.needsPlanUpgrade !== false) lastResult = result
+  }
+  return lastResult
 }
 
 export async function getSessionStudentCap(): Promise<number | null> {

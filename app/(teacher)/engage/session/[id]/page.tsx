@@ -5,9 +5,11 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { EngageSession, Quiz, SessionParticipant, QuizQuestion, EngageTeam } from '@/lib/types'
 import { ensureTeamsForSession, scoreTeamQuestion } from '@/lib/engage-team-service'
+import { scoringModelFromSettings } from '@/lib/engage-scoring'
 import { getHostSessionCap } from '@/lib/session-limits'
 import { getCurrentUser } from '@/lib/auth'
 import { TeamHostFinal, TeamHostLobby, TeamHostScores } from '@/components/engage/TeamHostSections'
+import OneScreenGame from '@/components/engage/OneScreenGame'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 const ANSWER_LABELS: Record<string, string> = { A: 'A', B: 'B', C: 'C', D: 'D' }
@@ -30,7 +32,11 @@ export default function EngageSessionHost() {
   const [answeredCount, setAnsweredCount] = useState(0)
   const [teams, setTeams] = useState<EngageTeam[]>([])
 
-  const isTeamMode = (session?.settings as { game_mode?: string })?.game_mode === 'team'
+  const gameMode = (session?.settings as { game_mode?: string })?.game_mode
+  // Co-op is team play with the options split across members, so it shares
+  // the team lobby, team scoring and team results throughout.
+  const isTeamMode = gameMode === 'team' || gameMode === 'co_op'
+  const isOneScreen = gameMode === 'one_screen'
 
   const refreshParticipants = useCallback(async (orderByScore = false) => {
     let query = supabase.from('session_participants').select('*').eq('session_id', id)
@@ -87,9 +93,28 @@ export default function EngageSessionHost() {
       const parts = (data as { session_participants: SessionParticipant[] }).session_participants ?? []
       setParticipants([...parts].sort((a, b) => a.joined_at.localeCompare(b.joined_at)))
       const settings = (data as EngageSession).settings as { game_mode?: string; live_phase?: string }
-      if (settings?.game_mode === 'team') {
+      if (
+        settings?.game_mode === 'team' ||
+        settings?.game_mode === 'co_op' ||
+        settings?.game_mode === 'one_screen'
+      ) {
         const teamRows = await ensureTeamsForSession(id)
         setTeams(teamRows)
+      }
+      // One-screen has no lobby to wait in: there are no student devices to
+      // wait for, so the game opens straight onto the first question.
+      if (
+        settings?.game_mode === 'one_screen' &&
+        (data as EngageSession).status === 'lobby'
+      ) {
+        await supabase
+          .from('engage_sessions')
+          .update({ status: 'active', started_at: new Date().toISOString(), current_question_index: 0 })
+          .eq('id', id)
+        setQuestionIndex(0)
+        setPhase('question')
+        setLoading(false)
+        return
       }
       if ((data as EngageSession).status === 'ended' || settings?.live_phase === 'ended') {
         setPhase('end')
@@ -159,10 +184,12 @@ export default function EngageSessionHost() {
   const timePerQuestion = (session?.settings as { time_per_question?: number } | undefined)?.time_per_question
 
   const startGame = useCallback(async () => {
+    // question_started_at is the clock every player scores against.
     await writeLivePhase('question', {
       status: 'active',
       started_at: new Date().toISOString(),
       current_question_index: 0,
+      question_started_at: new Date().toISOString(),
     })
     const q = quiz?.questions[0]
     if (q) {
@@ -186,10 +213,11 @@ export default function EngageSessionHost() {
           id,
           team.id,
           questionIndex,
-          q.correct,
-          q.points,
+          q,
           settings?.consensus_bonus ?? true,
           members.length,
+          scoringModelFromSettings(session?.settings),
+          quiz.questions.length,
         )
       }
       const refreshed = await ensureTeamsForSession(id)
@@ -210,7 +238,10 @@ export default function EngageSessionHost() {
       return
     }
     setQuestionIndex(nextIdx)
-    await writeLivePhase('question', { current_question_index: nextIdx })
+    await writeLivePhase('question', {
+      current_question_index: nextIdx,
+      question_started_at: new Date().toISOString(),
+    })
     const q = quiz.questions[nextIdx]
     setTimeLeft(timePerQuestion ?? q.time_seconds)
     setTimerActive(true)
@@ -235,6 +266,24 @@ export default function EngageSessionHost() {
 
   const currentQ: QuizQuestion | undefined = quiz.questions[questionIndex]
   const sortedParticipants = [...participants].sort((a, b) => b.score - a.score)
+
+  // One-screen mode runs the whole game from this device. No lobby, no join
+  // code, no student handsets.
+  if (isOneScreen && phase !== 'end' && currentQ) {
+    return (
+      <OneScreenGame
+        sessionId={id}
+        question={currentQ}
+        questionIndex={questionIndex}
+        totalQuestions={quiz.questions.length}
+        teams={teams}
+        model={scoringModelFromSettings(session.settings)}
+        onTeamsChanged={setTeams}
+        onNext={nextQuestion}
+        isLast={questionIndex >= quiz.questions.length - 1}
+      />
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#0C1021', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -426,6 +475,53 @@ export default function EngageSessionHost() {
               })}
             </div>
             )}
+
+            {/* What the class actually got wrong, and why. The distractors
+                carry the misconception they were written to catch, so the
+                host can reteach the specific error before moving on. */}
+            {phase === 'reveal' && currentQ.type !== 'poll' && (() => {
+              const wrong = currentQ.options
+                .filter(o => o.label !== currentQ.correct)
+                .map(o => ({ opt: o, count: responseCounts[o.label] ?? 0 }))
+                .sort((a, b) => b.count - a.count)
+              const top = wrong[0]
+              const correctCount = responseCounts[currentQ.correct] ?? 0
+              const pctCorrect = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0
+              const pctTop = answeredCount > 0 && top ? Math.round((top.count / answeredCount) * 100) : 0
+              if (!top || top.count === 0) {
+                if (!currentQ.explanation) return null
+                return (
+                  <div style={{ marginTop: 18, background: 'rgba(26,137,102,0.15)', border: '0.5px solid rgba(26,137,102,0.5)', borderRadius: 10, padding: '14px 16px' }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6EE7B7', marginBottom: 6 }}>
+                      {pctCorrect}% got it right
+                    </p>
+                    <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 }}>{currentQ.explanation}</p>
+                  </div>
+                )
+              }
+              return (
+                <div style={{ marginTop: 18, background: 'rgba(232,160,32,0.14)', border: '0.5px solid rgba(232,160,32,0.5)', borderRadius: 10, padding: '14px 16px' }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#F5C86B', marginBottom: 6 }}>
+                    Worth reteaching · {pctCorrect}% correct
+                  </p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 5 }}>
+                    {pctTop}% of the class chose {top.opt.label}.
+                  </p>
+                  {top.opt.why_wrong ? (
+                    <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 }}>{top.opt.why_wrong}</p>
+                  ) : (
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
+                      Draft this quiz with AI to see the thinking behind each wrong answer.
+                    </p>
+                  )}
+                  {currentQ.explanation && (
+                    <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid rgba(255,255,255,0.12)' }}>
+                      {currentQ.explanation}
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Footer controls */}

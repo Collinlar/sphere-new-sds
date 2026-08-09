@@ -1,5 +1,6 @@
 import { resolveInstitutionOnboardingDepositGhs } from './institution-deposit'
 import { applyPlanUpgrade, upsertCreationUsageForPlan } from './plan-upgrade'
+import { addCredits, findCreditPack, type CreditOwner } from './ai-credits'
 import { getSupabaseAdmin } from './supabase-admin'
 import { importFromListing, type MarketplaceListingRow } from './marketplace-bridge'
 import { usePathForImportedTarget, type MarketplacePurchaseReceipt } from './marketplace-receipt'
@@ -11,6 +12,7 @@ export type PaymentIntentType =
   | 'marketplace'
   | 'plan_switch'
   | 'institution_deposit'
+  | 'credit_pack'
 
 export interface PaymentPayload {
   planId?: string
@@ -19,6 +21,9 @@ export interface PaymentPayload {
   institutionId?: string
   importDestinationKind?: 'personal' | 'institution'
   inquiryId?: string
+  /** Credit top-up: which pack, and whether it lands in a pooled balance. */
+  creditPackId?: string
+  creditOwnerType?: 'user' | 'institution'
 }
 
 export function institutionIdFromImportPayload(payload: PaymentPayload): string | null {
@@ -272,6 +277,54 @@ export async function fulfillPayment(
       },
       { onConflict: 'user_id,add_on_id' }
     )
+  }
+
+  if (intent.intent_type === 'credit_pack' && payload.creditPackId) {
+    const pack = findCreditPack(payload.creditPackId)
+    if (!pack) return { ok: false, error: 'That credit pack is not available.' }
+
+    // Pooled top-ups only count when the payer really belongs to the
+    // institution, so a claimed institution id cannot redirect credits.
+    let owner: CreditOwner = { ownerType: 'user', ownerId: intent.user_id }
+    if (payload.creditOwnerType === 'institution' && payload.institutionId) {
+      const { data: membership } = await admin
+        .from('institution_members')
+        .select('id')
+        .eq('institution_id', payload.institutionId)
+        .eq('user_id', intent.user_id)
+        .eq('status', 'active')
+        .maybeSingle()
+      if (membership) {
+        owner = { ownerType: 'institution', ownerId: payload.institutionId }
+      }
+    }
+
+    const added = await addCredits(
+      admin,
+      owner,
+      pack.credits,
+      'purchase',
+      `${pack.label}: ${pack.credits} credits for GHS ${pack.priceGhs}`,
+      intent.user_id
+    )
+    if (!added.ok) {
+      return { ok: false, error: 'Your credits did not land. Contact Sphere with your payment reference.' }
+    }
+
+    // Institution top-ups get a receipt alongside their other billing.
+    if (owner.ownerType === 'institution') {
+      await admin.from('institution_invoices').insert({
+        institution_id: owner.ownerId,
+        invoice_type: 'addon',
+        description: `AI credits: ${pack.label} (${pack.credits} credits)`,
+        amount_ghs: pack.priceGhs,
+        period: currentQuarterLabel(),
+        status: 'paid',
+        reference,
+        paid_at: now,
+        issued_by: intent.user_id,
+      })
+    }
   }
 
   if (intent.intent_type === 'marketplace' && payload.listingId) {
@@ -599,6 +652,12 @@ export async function resolvePaymentAmount(
   if (intentType === 'institution_deposit') {
     const amountGhs = resolveInstitutionOnboardingDepositGhs()
     return { ok: true, amountGhs, amountPesewas: Math.round(amountGhs * 100) }
+  }
+
+  if (intentType === 'credit_pack' && payload.creditPackId) {
+    const pack = findCreditPack(payload.creditPackId)
+    if (!pack) return { ok: false, error: 'That credit pack is not available.' }
+    return { ok: true, amountGhs: pack.priceGhs, amountPesewas: Math.round(pack.priceGhs * 100) }
   }
 
   return { ok: false, error: 'Invalid checkout request.' }

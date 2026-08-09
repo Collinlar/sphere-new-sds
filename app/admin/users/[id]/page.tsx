@@ -7,6 +7,19 @@ import { USER_WITH_INSTITUTION_NAME_ID } from '@/lib/supabase-embeds'
 import { applyPlanUpgrade } from '@/lib/plan-upgrade'
 import type { CreationUsage, SubscriptionTier } from '@/lib/types'
 
+interface CreditAcctRow {
+  allowance_balance: number
+  purchased_balance: number
+  lifetime_used: number
+}
+
+interface AiUsageRow {
+  generations_used: number
+  generations_all_time: number
+  monthly_limit: number | null
+  last_generated_at: string | null
+}
+
 interface UserDetail {
   id: string
   name: string
@@ -34,6 +47,9 @@ export default function UserDetailPage({ params: paramsPromise }: { params: Prom
   const { id } = use(paramsPromise)
   const [user, setUser] = useState<UserDetail | null>(null)
   const [usage, setUsage] = useState<CreationUsage | null>(null)
+  const [aiUsage, setAiUsage] = useState<AiUsageRow | null>(null)
+  const [creditAcct, setCreditAcct] = useState<CreditAcctRow | null>(null)
+  const [creditMsg, setCreditMsg] = useState('')
   const [addOns, setAddOns] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -58,6 +74,22 @@ export default function UserDetailPage({ params: paramsPromise }: { params: Prom
 
       const { data: usageRow } = await supabase.from('creation_usage').select('*').eq('user_id', id).maybeSingle()
       setUsage(usageRow as CreationUsage | null)
+
+      // Degrades quietly before the metering migration runs.
+      const { data: aiRow } = await supabase
+        .from('ai_generation_usage')
+        .select('generations_used, generations_all_time, monthly_limit, last_generated_at')
+        .eq('user_id', id)
+        .maybeSingle()
+      setAiUsage((aiRow as AiUsageRow | null) ?? null)
+
+      const { data: creditRow } = await supabase
+        .from('ai_credit_accounts')
+        .select('allowance_balance, purchased_balance, lifetime_used')
+        .eq('owner_type', 'user')
+        .eq('owner_id', id)
+        .maybeSingle()
+      setCreditAcct((creditRow as CreditAcctRow | null) ?? null)
 
       const { data: addOnRows } = await supabase.from('user_add_ons').select('add_on_id').eq('user_id', id).eq('status', 'active')
       setAddOns((addOnRows ?? []).map((r: { add_on_id: string }) => r.add_on_id))
@@ -172,6 +204,89 @@ export default function UserDetailPage({ params: paramsPromise }: { params: Prom
             fontFamily: 'inherit',
           }}>{savingTier ? 'Saving...' : 'Apply plan change'}</button>
           {tierMsg && <p style={{ fontSize: 12, color: 'var(--teal)' }}>{tierMsg}</p>}
+        </div>
+      </div>
+
+      {/* AI credits — grant, comp, or refund. */}
+      <div style={{ background: 'var(--white)', borderRadius: 12, padding: '20px', boxShadow: 'var(--shadow-soft)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 3 }}>AI credits</p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)' }}>
+              {creditAcct
+                ? `${creditAcct.allowance_balance + creditAcct.purchased_balance} available · ${creditAcct.allowance_balance} included, ${creditAcct.purchased_balance} bought · ${creditAcct.lifetime_used} used all time`
+                : 'No credit account yet. It opens on their first generation.'}
+            </p>
+            {creditMsg && <p style={{ fontSize: 12, color: 'var(--teal)', marginTop: 4 }}>{creditMsg}</p>}
+          </div>
+          <button
+            onClick={async () => {
+              const raw = window.prompt('How many credits to add?')
+              if (raw == null) return
+              const amount = Number(raw)
+              if (!Number.isFinite(amount) || amount <= 0) return
+              const reason = window.prompt('Reason (shown in their credit history)') ?? ''
+              const res = await fetch('/api/admin/credits', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ownerType: 'user', ownerId: id, amount, reason }),
+              })
+              const data = await res.json().catch(() => null)
+              if (!res.ok) { setCreditMsg(data?.error ?? 'That did not save.'); return }
+              setCreditAcct(prev =>
+                prev
+                  ? { ...prev, purchased_balance: prev.purchased_balance + amount }
+                  : { allowance_balance: 0, purchased_balance: amount, lifetime_used: 0 }
+              )
+              setCreditMsg(`Added ${amount} credits.`)
+            }}
+            style={{
+              height: 30, padding: '0 14px', borderRadius: 20, border: 'none',
+              background: 'var(--bg2)', color: 'var(--mid-grey)',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            Add credits
+          </button>
+        </div>
+      </div>
+
+      {/* AI generation usage — bounds runaway usage and shows the trend. */}
+      <div style={{ background: 'var(--white)', borderRadius: 12, padding: '20px', boxShadow: 'var(--shadow-soft)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--near-black)', marginBottom: 3 }}>AI generations</p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)' }}>
+              {aiUsage
+                ? `${aiUsage.generations_used} this month${aiUsage.monthly_limit ? ` of ${aiUsage.monthly_limit} (custom cap)` : ''} · ${aiUsage.generations_all_time} all time`
+                : 'No AI generations yet.'}
+            </p>
+            {aiUsage?.last_generated_at && (
+              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                Last used {new Date(aiUsage.last_generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={async () => {
+              const raw = window.prompt('Monthly AI generation cap for this user (blank uses the platform default)', aiUsage?.monthly_limit ? String(aiUsage.monthly_limit) : '')
+              if (raw == null) return
+              const value = raw.trim() === '' ? null : Number(raw)
+              if (value !== null && (!Number.isFinite(value) || value <= 0)) return
+              await supabase.from('ai_generation_usage').upsert(
+                { user_id: id, monthly_limit: value },
+                { onConflict: 'user_id' }
+              )
+              setAiUsage(prev => (prev ? { ...prev, monthly_limit: value } : prev))
+            }}
+            style={{
+              height: 30, padding: '0 14px', borderRadius: 20, border: 'none',
+              background: 'var(--bg2)', color: 'var(--mid-grey)',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            Set cap
+          </button>
         </div>
       </div>
 

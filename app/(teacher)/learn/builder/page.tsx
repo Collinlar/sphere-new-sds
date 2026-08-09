@@ -11,10 +11,11 @@ import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
 import AddOnGate from '@/components/brand/AddOnGate'
 import { useInstitutionLevels } from '@/lib/use-institution-levels'
-import { generateWithAi } from '@/lib/checkout-client'
+import { generateWithAi, shortfallNotice } from '@/lib/checkout-client'
 import { Suspense } from 'react'
 import type { Roster } from '@/lib/types'
 import AiCourseBuilderModal from '@/components/brand/AiCourseBuilderModal'
+import AiNotice from '@/components/brand/AiNotice'
 import {
   configToCourseApiContext,
   loadingMessageForCourseConfig,
@@ -186,6 +187,7 @@ function CourseBuilderInner() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
+  const [aiNotice, setAiNotice] = useState('')
   const [loading, setLoading] = useState(!!editId)
   const [error, setError] = useState('')
   const savingLock = useRef(false)
@@ -296,6 +298,7 @@ function CourseBuilderInner() {
         throw new Error('No modules came back. Try a more specific topic or adjust your mix.')
       }
 
+      setAiNotice(shortfallNotice(result.meta, generated.length, 'modules'))
       if (config.subject && config.subject !== subject) setSubject(config.subject)
       if (config.gradeLevel && config.gradeLevel !== grade) setGrade(config.gradeLevel)
       if (!title.trim()) setTitle(config.topic.trim())
@@ -535,6 +538,7 @@ function CourseBuilderInner() {
 
         {/* Right panel — modules */}
         <div className={`c-right ${mobileTab === 'modules' ? '' : 'tab-hidden'}`} style={{ flex: 1 }}>
+          <AiNotice message={aiNotice} onDismiss={() => setAiNotice('')} />
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <span style={{ fontSize: 15, fontWeight: 600 }}>

@@ -132,7 +132,7 @@ export default async function PricingPage() {
         </div>
 
         <p style={{ fontSize: 13, color: '#A09DA8', textAlign: 'center', marginTop: 28, lineHeight: 1.6 }}>
-          Institutions above 100 enrolled students are billed a small per-head rate. AI add-ons (course, assessment, engagement, training builders) are available on any paid plan.
+          Institutions above 100 enrolled students are billed a small per-head rate. The AI builders are open on every plan and run on credits: each plan includes monthly credits, and you can top up from GHS 20 whenever you need more.
         </p>
       </section>
 

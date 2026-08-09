@@ -8,6 +8,7 @@ export type CheckoutIntentType =
   | 'marketplace'
   | 'plan_switch'
   | 'institution_deposit'
+  | 'credit_pack'
 
 export interface CheckoutPayload {
   planId?: string
@@ -16,6 +17,8 @@ export interface CheckoutPayload {
   institutionId?: string
   importDestinationKind?: 'personal' | 'institution'
   inquiryId?: string
+  creditPackId?: string
+  creditOwnerType?: 'user' | 'institution'
 }
 
 export async function startCheckout(params: {
@@ -64,6 +67,30 @@ export async function verifyCheckoutReference(
   return { ok: true, receipt: (body?.receipt as MarketplacePurchaseReceipt | null | undefined) ?? null }
 }
 
+/** What actually came back versus what the user asked for. */
+export interface AiGenerationMeta {
+  requested?: number
+  delivered?: number
+  shortfall?: number
+  truncated?: boolean
+  generationsUsed?: number
+  generationsLimit?: number
+}
+
+/**
+ * A plain warning when the draft came back short. Returns '' when the user
+ * got everything they asked for, so callers can render it unconditionally.
+ */
+export function shortfallNotice(
+  meta: AiGenerationMeta | undefined,
+  delivered: number,
+  noun: string
+): string {
+  const requested = Number(meta?.requested ?? 0)
+  if (!requested || delivered >= requested) return ''
+  return `${delivered} of ${requested} ${noun} came back. Draft again with append to top up.`
+}
+
 export async function generateWithAi(params: {
   addOnId: string
   task:
@@ -74,13 +101,25 @@ export async function generateWithAi(params: {
     | 'question_hint'
     | 'question_explanation'
     | 'bulk_explanations'
+    | 'bulk_hints'
   prompt?: string
   context?: Record<string, unknown>
-}): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; data: Record<string, unknown>; meta?: AiGenerationMeta }
+  | { ok: false; error: string }
+> {
+  // Institution work bills the institution's pooled credits. Sent on every
+  // call so no builder has to remember; the server verifies membership.
+  const { creditContextInstitutionId } = await import('./ai-credits-client')
+  const institutionId = creditContextInstitutionId()
+
   const res = await fetch('/api/ai/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      ...params,
+      context: { ...(params.context ?? {}), institutionId },
+    }),
   })
 
   const body = await res.json().catch(() => null)
@@ -88,5 +127,9 @@ export async function generateWithAi(params: {
     return { ok: false, error: body?.error ?? 'AI generation failed. Try again.' }
   }
 
-  return { ok: true, data: body.data as Record<string, unknown> }
+  return {
+    ok: true,
+    data: body.data as Record<string, unknown>,
+    meta: body.meta as AiGenerationMeta | undefined,
+  }
 }

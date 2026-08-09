@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { TEAM_PRESETS, assignTeamIndex } from '@/lib/engage-teams'
+import { checkAnswer, computeScore, type ScoringModel } from '@/lib/engage-scoring'
+import type { QuizQuestion } from '@/lib/types'
 import type { EngageTeam, TeamModeSettings } from '@/lib/engage-teams'
 
 export async function ensureTeamsForSession(sessionId: string): Promise<EngageTeam[]> {
@@ -70,37 +72,127 @@ export async function scoreTeamQuestion(
   sessionId: string,
   teamId: string,
   questionIndex: number,
-  correctAnswer: string,
-  basePoints: number,
+  question: QuizQuestion,
   consensusBonus: boolean,
   memberCount: number,
-): Promise<{ points: number; consensus: boolean }> {
+  model: ScoringModel,
+  totalQuestions?: number,
+): Promise<{ points: number; consensus: boolean; streak: number }> {
   const members = await getTeamMembers(sessionId, teamId)
   const votes = members.map(m => m.team_vote)
   const teamAnswer = majorityAnswer(votes)
-  const correct = teamAnswer === correctAnswer
-  const allAgree = votes.length > 0 && votes.every(v => v === teamAnswer)
-  let points = correct ? basePoints : 0
-  if (correct && consensusBonus && allAgree && memberCount > 1) points += 50
 
-  if (correct) {
-    const { data: team } = await supabase.from('engage_teams').select('score').eq('id', teamId).single()
-    await supabase.from('engage_teams').update({ score: (team?.score ?? 0) + points }).eq('id', teamId)
+  // Same answer checking as solo play, so multi_select, short_answer and
+  // poll behave identically in both modes.
+  const check = checkAnswer(question, teamAnswer)
+  const correct = check.correct && !check.unscored
+  const allAgree = votes.length > 0 && votes.every(v => v === teamAnswer)
+
+  const { data: team } = await supabase
+    .from('engage_teams')
+    .select('score, streak')
+    .eq('id', teamId)
+    .single()
+  const currentStreak = Number(team?.streak ?? 0)
+
+  // Speed is deliberately excluded for teams: rewarding a fast answer would
+  // punish the discussion this mode exists to create. Everything else that
+  // makes solo play feel like a game carries over.
+  const result = computeScore({
+    correct,
+    partial: check.partial,
+    basePoints: question.points || 100,
+    elapsedMs: 0,
+    limitMs: 1,
+    streak: currentStreak,
+    model: { ...model, speedWeight: 0, fastestFinger: false },
+    questionIndex,
+    totalQuestions,
+  })
+
+  let points = result.points
+  if (correct && consensusBonus && allAgree && memberCount > 1) {
+    points += Math.round((question.points || 100) * 0.5)
   }
+
+  await supabase
+    .from('engage_teams')
+    .update({
+      score: Number(team?.score ?? 0) + points,
+      streak: result.nextStreak,
+    })
+    .eq('id', teamId)
 
   await supabase.from('session_responses').insert({
     session_id: sessionId,
     participant_id: members[0]?.id,
     question_index: questionIndex,
     answer: teamAnswer,
-    is_correct: correct,
+    is_correct: check.unscored ? null : correct,
     points_earned: points,
     team_id: teamId,
   })
 
   await supabase.from('session_participants').update({ team_vote: null }).eq('team_id', teamId)
 
-  return { points, consensus: allAgree && correct }
+  return { points, consensus: allAgree && correct, streak: result.nextStreak }
+}
+
+/**
+ * Score one team's spoken answer in one-screen mode, where the class plays
+ * off a single device and the host taps what each team said. Recording the
+ * actual option, rather than just right or wrong, keeps the misconception
+ * panel working when no student is holding a phone.
+ */
+export async function scoreSpokenAnswer(params: {
+  sessionId: string
+  teamId: string
+  questionIndex: number
+  question: QuizQuestion
+  answerLabel: string
+  model: ScoringModel
+  totalQuestions?: number
+}): Promise<{ points: number; correct: boolean; streak: number }> {
+  const { sessionId, teamId, questionIndex, question, answerLabel, model, totalQuestions } = params
+
+  const check = checkAnswer(question, answerLabel)
+  const correct = check.correct && !check.unscored
+
+  const { data: team } = await supabase
+    .from('engage_teams')
+    .select('score, streak')
+    .eq('id', teamId)
+    .single()
+
+  // No timing exists here: the host taps after the class has spoken. Speed
+  // is excluded rather than faked.
+  const result = computeScore({
+    correct,
+    partial: check.partial,
+    basePoints: question.points || 100,
+    elapsedMs: 0,
+    limitMs: 1,
+    streak: Number(team?.streak ?? 0),
+    model: { ...model, speedWeight: 0, fastestFinger: false },
+    questionIndex,
+    totalQuestions,
+  })
+
+  await supabase
+    .from('engage_teams')
+    .update({ score: Number(team?.score ?? 0) + result.points, streak: result.nextStreak })
+    .eq('id', teamId)
+
+  await supabase.from('session_responses').insert({
+    session_id: sessionId,
+    question_index: questionIndex,
+    answer: answerLabel,
+    is_correct: check.unscored ? null : correct,
+    points_earned: result.points,
+    team_id: teamId,
+  })
+
+  return { points: result.points, correct, streak: result.nextStreak }
 }
 
 export type { TeamModeSettings } from '@/lib/engage-teams'

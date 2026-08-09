@@ -21,8 +21,9 @@ import {
   sanitizeStepContent,
   type TrainStepType,
 } from '@/lib/train-paths'
-import { generateWithAi } from '@/lib/checkout-client'
+import { generateWithAi, shortfallNotice } from '@/lib/checkout-client'
 import AiTrainingBuilderModal from '@/components/brand/AiTrainingBuilderModal'
+import AiNotice from '@/components/brand/AiNotice'
 import {
   configToTrainingApiContext,
   loadingMessageForTrainingConfig,
@@ -78,6 +79,7 @@ function TrainBuilderInner() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
+  const [aiNotice, setAiNotice] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState('')
   const savingLock = useRef(false)
@@ -248,6 +250,7 @@ function TrainBuilderInner() {
       if (generated.length === 0) {
         throw new Error('No steps came back. Try a clearer brief or adjust your mix.')
       }
+      setAiNotice(shortfallNotice(result.meta, generated.length, 'steps'))
       if (config.category && config.category !== category) setCategory(config.category)
       if (!title.trim()) setTitle(config.topic.trim())
       if (config.replaceMode === 'append') {
@@ -405,6 +408,7 @@ function TrainBuilderInner() {
         </div>
 
         <div className={`t-right ${mobileTab === 'steps' ? '' : 'tab-hidden'}`} style={{ flex: 1 }}>
+          <AiNotice message={aiNotice} onDismiss={() => setAiNotice('')} />
           <div style={{ background: 'var(--white)', boxShadow: 'var(--shadow-soft)', borderRadius: 10, padding: '20px 24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--near-black)' }}>

@@ -4,6 +4,7 @@ import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getPlatformSetting, getPlatformSettingNumber, setPlatformSetting, GUEST_TTL_KEY, DEFAULT_GUEST_TTL_DAYS } from '@/lib/platform-settings'
 import { TRUSTED_DOMAINS_KEY } from '@/lib/institution-verification'
+import { AI_LIMIT_KEY, DEFAULT_MONTHLY_GENERATION_LIMIT } from '@/lib/ai-usage'
 
 interface TypeLevel { id: string; label: string }
 
@@ -39,6 +40,8 @@ export default function ConfigPage() {
   const [savingTTL, setSavingTTL] = useState(false)
   const [trustedDomains, setTrustedDomains] = useState('')
   const [savingDomains, setSavingDomains] = useState(false)
+  const [aiLimit, setAiLimit] = useState(DEFAULT_MONTHLY_GENERATION_LIMIT)
+  const [savingAiLimit, setSavingAiLimit] = useState(false)
   const [loading, setLoading] = useState(true)
   const [staffSearch, setStaffSearch] = useState('')
   const [staffSearchResults, setStaffSearchResults] = useState<StaffUser[]>([])
@@ -78,6 +81,7 @@ export default function ConfigPage() {
       setStaff((staffData ?? []) as StaffUser[])
       setGuestTTL(await getPlatformSettingNumber(GUEST_TTL_KEY, DEFAULT_GUEST_TTL_DAYS))
       setTrustedDomains(await getPlatformSetting(TRUSTED_DOMAINS_KEY, ''))
+      setAiLimit(await getPlatformSettingNumber(AI_LIMIT_KEY, DEFAULT_MONTHLY_GENERATION_LIMIT))
       setLoading(false)
     }
     load()
@@ -88,6 +92,13 @@ export default function ConfigPage() {
     const result = await setPlatformSetting(GUEST_TTL_KEY, String(guestTTL))
     setSavingTTL(false)
     flash(result.ok ? `Guest sessions now expire after ${guestTTL} days.` : 'That did not save. Try again.')
+  }
+
+  async function saveAiLimit() {
+    setSavingAiLimit(true)
+    const result = await setPlatformSetting(AI_LIMIT_KEY, String(aiLimit))
+    setSavingAiLimit(false)
+    flash(result.ok ? `AI cap set to ${aiLimit} generations per account per month.` : 'That did not save. Try again.')
   }
 
   async function saveTrustedDomains() {
@@ -269,6 +280,30 @@ export default function ConfigPage() {
                 background: 'var(--amber)', color: '#fff', fontSize: 13, fontWeight: 600,
                 cursor: savingTTL ? 'wait' : 'pointer', fontFamily: 'inherit',
               }}>{savingTTL ? 'Saving...' : 'Save'}</button>
+            </div>
+          </section>
+
+          {/* AI generation cap */}
+          <section style={{ background: 'var(--white)', borderRadius: 12, padding: '20px', boxShadow: 'var(--shadow-soft)' }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--near-black)', marginBottom: 4 }}>AI generation cap</p>
+            <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 14, lineHeight: 1.5 }}>
+              How many AI generations one account can run per month. This bounds runaway usage, so keep it well above what a normal creator needs. Individual accounts can be given their own cap from their user page.
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input
+                type="number"
+                min={10}
+                max={10000}
+                value={aiLimit}
+                onChange={e => setAiLimit(Number(e.target.value))}
+                style={{ height: 34, width: 100, border: '0.5px solid var(--border)', borderRadius: 7, padding: '0 12px', fontSize: 13, fontFamily: 'inherit' }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--mid-grey)' }}>per account per month</span>
+              <button onClick={saveAiLimit} disabled={savingAiLimit} style={{
+                height: 34, padding: '0 16px', borderRadius: 7, border: 'none',
+                background: 'var(--amber)', color: '#fff', fontSize: 13, fontWeight: 600,
+                cursor: savingAiLimit ? 'wait' : 'pointer', fontFamily: 'inherit',
+              }}>{savingAiLimit ? 'Saving...' : 'Save'}</button>
             </div>
           </section>
 

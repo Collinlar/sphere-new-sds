@@ -22,6 +22,9 @@ export interface AssessmentAiConfig {
   typeMix: TypeMix
   difficulty: Difficulty
   replaceMode: ReplaceMode
+  /** Student-facing extras. On by default, off for sealed exam conditions. */
+  includeHints: boolean
+  includeExplanations: boolean
 }
 
 export const ASSESSMENT_SUBJECTS = [
@@ -99,6 +102,8 @@ export function defaultAssessmentAiConfig(
     typeMix: mixForPreset('bece', totalCount),
     difficulty: 'standard',
     replaceMode: 'replace',
+    includeHints: true,
+    includeExplanations: true,
   }
 }
 
@@ -177,12 +182,53 @@ export function loadingMessageForConfig(config: AssessmentAiConfig): string {
   return `Drafting ${total} question${total === 1 ? '' : 's'} on ${topic} for ${config.gradeLevel} ${config.subject}...`
 }
 
+/**
+ * Resolve a model-supplied answer key against the real option labels.
+ * Handles "A", "a", "A)", "A.", "Option A", and the full option text.
+ * Returns null when it cannot be resolved, so the caller flags the question
+ * instead of inventing a key.
+ */
+export function resolveCorrectLabel(
+  rawCorrect: unknown,
+  options: { label: string; text: string }[]
+): string | null {
+  if (rawCorrect == null || !options.length) return null
+  const raw = String(rawCorrect).trim()
+  if (!raw) return null
+
+  // Direct label match, case insensitive, ignoring trailing punctuation.
+  const stripped = raw.replace(/^option\s+/i, '').replace(/[).:\s]+$/, '').trim()
+  const byLabel = options.find(o => o.label.toLowerCase() === stripped.toLowerCase())
+  if (byLabel) return byLabel.label
+
+  // The model sometimes returns the option text rather than its label.
+  const byText = options.find(o => o.text.trim().toLowerCase() === raw.toLowerCase())
+  if (byText) return byText.label
+
+  // A 0-based or 1-based index.
+  if (/^\d+$/.test(stripped)) {
+    const n = Number(stripped)
+    if (options[n]) return options[n].label
+    if (options[n - 1]) return options[n - 1].label
+  }
+
+  return null
+}
+
+export interface NormalizedQuestions {
+  questions: ExamQuestion[]
+  /** Questions whose answer key could not be trusted, for a visible warning. */
+  flagged: number
+}
+
 export function normalizeGeneratedQuestions(
   raw: ExamQuestion[],
   mix: TypeMix
-): ExamQuestion[] {
+): NormalizedQuestions {
   const marksByType = DEFAULT_MARKS
-  return raw.map(q => {
+  let flagged = 0
+
+  const questions = raw.map(q => {
     const type = q.type ?? 'mcq'
     const base = {
       id: q.id || crypto.randomUUID(),
@@ -193,34 +239,45 @@ export function normalizeGeneratedQuestions(
       explanation: q.explanation,
       rubric: q.rubric,
     }
-    if (type === 'mcq') {
-      return {
-        ...base,
-        options: q.options?.length
-          ? q.options
-          : [
-              { label: 'A', text: '' },
-              { label: 'B', text: '' },
-              { label: 'C', text: '' },
-              { label: 'D', text: '' },
-            ],
-        correct: q.correct ?? 'A',
+
+    if (type === 'mcq' || type === 'true_false') {
+      const fallback = type === 'true_false'
+        ? [{ label: 'A', text: 'True' }, { label: 'B', text: 'False' }]
+        : [
+            { label: 'A', text: '' },
+            { label: 'B', text: '' },
+            { label: 'C', text: '' },
+            { label: 'D', text: '' },
+          ]
+      const options = q.options?.length ? q.options : fallback
+      const resolved = resolveCorrectLabel(q.correct, options)
+
+      if (!resolved) {
+        // Never invent an answer key. Flag it for the teacher instead.
+        flagged++
+        return {
+          ...base,
+          options,
+          correct: undefined,
+          needs_review: 'Confirm the correct answer for this question.',
+        }
       }
+      return { ...base, options, correct: resolved }
     }
-    if (type === 'true_false') {
-      return {
-        ...base,
-        options: q.options?.length
-          ? q.options
-          : [
-              { label: 'A', text: 'True' },
-              { label: 'B', text: 'False' },
-            ],
-        correct: q.correct ?? 'A',
-      }
+
+    // Written answers carry a rubric instead of a key. Missing rubric on a
+    // marked essay is real work handed back, so flag it.
+    const needsRubric = type === 'essay' && !q.rubric?.trim()
+    if (needsRubric) flagged++
+    return {
+      ...base,
+      options: undefined,
+      correct: q.correct,
+      needs_review: needsRubric ? 'Add a mark scheme for this essay.' : undefined,
     }
-    return { ...base, options: undefined, correct: q.correct }
   })
+
+  return { questions, flagged }
 }
 
 export function configToApiContext(config: AssessmentAiConfig): Record<string, unknown> {
@@ -232,5 +289,7 @@ export function configToApiContext(config: AssessmentAiConfig): Record<string, u
     typeMix: config.typeMix,
     difficulty: config.difficulty,
     marksPerType: DEFAULT_MARKS,
+    includeHints: config.includeHints,
+    includeExplanations: config.includeExplanations,
   }
 }

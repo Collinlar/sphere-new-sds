@@ -10,6 +10,7 @@ import { fetchScopedContent, resolveLibraryScope } from '@/lib/library-scope'
 import { onContextChange } from '@/lib/context'
 import { canLaunchEngageSession, incrementEngageSessionLaunched, getCreationUsage, getEffectivePlanId } from '@/lib/subscription'
 import PublishToMarketplaceModal from '@/components/brand/PublishToMarketplaceModal'
+import { SCORING_PRESETS } from '@/lib/engage-scoring'
 import { fetchEngageStats } from '@/lib/engage-stats'
 
 interface QuizStats {
@@ -25,7 +26,8 @@ export default function EngageDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState<Quiz | null>(null)
   const [timePerQuestion, setTimePerQuestion] = useState(30)
-  const [gameMode, setGameMode] = useState<'competitive' | 'team'>('competitive')
+  const [gameMode, setGameMode] = useState<'competitive' | 'team' | 'co_op' | 'one_screen'>('competitive')
+  const [scoringPreset, setScoringPreset] = useState<keyof typeof SCORING_PRESETS>('balanced')
   const [teamFormation, setTeamFormation] = useState<'auto' | 'pick'>('auto')
   const [teamSize, setTeamSize] = useState<'2' | '3-4' | '5+'>('3-4')
   const [consensusBonus, setConsensusBonus] = useState(true)
@@ -122,6 +124,7 @@ export default function EngageDashboard() {
           team_size: teamSize,
           consensus_bonus: consensusBonus,
           discussion_seconds: discussionSeconds,
+          scoring_preset: scoringPreset,
         },
       })
       .select()
@@ -376,11 +379,37 @@ export default function EngageDashboard() {
               </div>
 
               <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 7 }}>How points are won</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(Object.keys(SCORING_PRESETS) as (keyof typeof SCORING_PRESETS)[]).map(key => (
+                    <button
+                      key={key}
+                      onClick={() => setScoringPreset(key)}
+                      style={{
+                        height: 38, flex: 1, borderRadius: 8, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                        background: scoringPreset === key ? 'var(--amber)' : 'var(--white)',
+                        color: scoringPreset === key ? '#fff' : 'var(--mid-grey)',
+                        fontSize: 13, fontWeight: scoringPreset === key ? 600 : 500,
+                        boxShadow: scoringPreset === key ? 'none' : 'var(--shadow-soft)',
+                      }}
+                    >
+                      {SCORING_PRESETS[key].label}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
+                  {SCORING_PRESETS[scoringPreset].hint}
+                </p>
+              </div>
+
+              <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--mid-grey)', marginBottom: 7 }}>Game mode</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {([
                     { key: 'competitive', label: 'Competitive' },
                     { key: 'team', label: 'Team' },
+                    { key: 'co_op', label: 'Co-op' },
+                    { key: 'one_screen', label: 'One screen' },
                   ] as const).map(opt => (
                     <button
                       key={opt.key}
@@ -397,6 +426,16 @@ export default function EngageDashboard() {
                     </button>
                   ))}
                 </div>
+                {gameMode === 'one_screen' && (
+                  <p style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
+                    Play the whole game from this device. Split the class into teams in the room, read each question out, and tap what each team answers. No student phones and no join code needed.
+                  </p>
+                )}
+                {gameMode === 'co_op' && (
+                  <p style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
+                    Each team member sees only some of the answers, and only one of them holds the right one. Nobody can answer alone, so the team has to talk it through. Best with teams of three or four.
+                  </p>
+                )}
                 {gameMode === 'team' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
                     <div>

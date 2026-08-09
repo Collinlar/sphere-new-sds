@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { assertCanTakeAcquired, ensureCourseEnrollment } from '@/lib/self-take'
 import { isAcquiredRow } from '@/lib/acquisition-access'
-import { issueCertificate, getMyCertificate } from '@/lib/certificates'
+import { courseAchievementSummary, issueCertificate, getMyCertificate } from '@/lib/certificates'
 import { LessonMediaPlaceholder, LessonStepFrame } from '@/components/brand/LessonStepFrame'
 import { Course, CourseModule } from '@/lib/types'
 
@@ -309,6 +309,7 @@ function StudentCoursePageInner({ params: paramsPromise }: { params: Promise<{ i
         resourceType: 'course',
         resourceId: course.id,
         resourceTitle: course.title,
+        achievement: { summary: courseAchievementSummary() },
       })
       if (result.ok) setCertCode(result.verificationCode)
     }

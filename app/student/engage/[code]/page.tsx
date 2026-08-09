@@ -8,7 +8,18 @@ import { assignParticipantToTeam } from '@/lib/engage-team-service'
 import { StudentTeamDiscuss, StudentTeamFinal, StudentTeamLobby, StudentTeamResult } from '@/components/engage/StudentTeamGame'
 import { IconCheck } from '@/components/icons'
 import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
+import NumericAnswer from '@/components/engage/NumericAnswer'
+import OrderingAnswer from '@/components/engage/OrderingAnswer'
+import SplitCoOpAnswer from '@/components/engage/SplitCoOpAnswer'
+import { dealOptions } from '@/lib/engage-split'
 import { resolveJoinIdentity } from '@/lib/join-identity'
+import {
+  checkAnswer,
+  computeScore,
+  scoringModelFromSettings,
+  SCORING_PRESETS,
+  type ScoreResult,
+} from '@/lib/engage-scoring'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 
@@ -42,14 +53,40 @@ export default function StudentEngageGame() {
   const [leaderboard, setLeaderboard] = useState<SessionParticipant[]>([])
   const [myRank, setMyRank] = useState<number | null>(null)
 
+  const [streak, setStreak] = useState(0)
+  const [scoreBreakdown, setScoreBreakdown] = useState<ScoreResult | null>(null)
+  const [teamMemberIds, setTeamMemberIds] = useState<string[]>([])
+
   const phaseRef = useRef(phase)
   const indexRef = useRef(currentIndex)
   const sessionRef = useRef(session)
+  // Host clock anchor and scoring rules, refreshed on every sync tick.
+  const questionStartedAtRef = useRef<number | null>(null)
+  const scoringModelRef = useRef(SCORING_PRESETS.balanced.model)
   phaseRef.current = phase
   indexRef.current = currentIndex
   sessionRef.current = session
 
-  const isTeamMode = (session?.settings as { game_mode?: string })?.game_mode === 'team'
+  const engageMode = (session?.settings as { game_mode?: string })?.game_mode
+  // Co-op runs on the team machinery: teams, votes and team scoring are all
+  // shared. The only difference is that each member sees a slice of the
+  // options rather than all of them.
+  const isCoOp = engageMode === 'co_op'
+  const isTeamMode = engageMode === 'team' || isCoOp
+
+  // Which options this player holds. Derived identically on every device from
+  // the session, question and sorted member list, so teammates never disagree
+  // about who is holding what.
+  const currentQuestion = quiz?.questions[currentIndex]
+  const myCoOpLabels =
+    isCoOp && session && currentQuestion && participantId && teamMemberIds.length > 0
+      ? dealOptions({
+          sessionId: session.id,
+          questionIndex: currentIndex,
+          memberIds: teamMemberIds,
+          question: currentQuestion,
+        }).byMember[participantId] ?? []
+      : []
 
   useEffect(() => {
     let cancelled = false
@@ -115,7 +152,7 @@ export default function StudentEngageGame() {
 
       const { data } = await supabase
         .from('engage_sessions')
-        .select('status, current_question_index, settings')
+        .select('status, current_question_index, settings, question_started_at')
         .eq('id', session!.id)
         .single()
 
@@ -124,6 +161,13 @@ export default function StudentEngageGame() {
       const settings = (data.settings ?? {}) as { discussion_seconds?: number; game_mode?: string }
       const discussionSeconds = settings.discussion_seconds ?? 30
       const newIdx = data.current_question_index ?? 0
+
+      // Everyone times against the host's clock, so a slow phone or a late
+      // render never costs a student points.
+      if (data.question_started_at) {
+        questionStartedAtRef.current = new Date(data.question_started_at as string).getTime()
+      }
+      scoringModelRef.current = scoringModelFromSettings(data.settings)
 
       if (data.status === 'ended') {
         if (settings.game_mode === 'team') {
@@ -173,6 +217,22 @@ export default function StudentEngageGame() {
     const interval = setInterval(() => { void tick() }, 1500)
     return () => clearInterval(interval)
   }, [session?.id, participantId, resetForQuestion])
+
+  // Co-op needs the roster of this team to work out the deal. Refreshed as
+  // the question changes so a latecomer is included from their first question.
+  useEffect(() => {
+    if (!isCoOp || !session || !team) return
+    let cancelled = false
+    supabase
+      .from('session_participants')
+      .select('id')
+      .eq('session_id', session.id)
+      .eq('team_id', team.id)
+      .then(({ data }) => {
+        if (!cancelled) setTeamMemberIds((data ?? []).map(r => r.id as string))
+      })
+    return () => { cancelled = true }
+  }, [isCoOp, session?.id, team?.id, currentIndex])
 
   useEffect(() => {
     if (!isTeamMode || phase !== 'question' || teamLocked) return
@@ -269,23 +329,63 @@ export default function StudentEngageGame() {
     if (selectedAnswer || !quiz || !session || !participantId) return
 
     const q: QuizQuestion = quiz.questions[currentIndex]
-    const correct = q.correct === label
-    const pts = correct ? q.points : 0
-    const nextScore = totalScore + pts
+    const check = checkAnswer(q, label)
+
+    // Time from the host's question_started_at, clamped to the question's
+    // own window so clock skew or a late write cannot mint points.
+    const startedAt = questionStartedAtRef.current
+    const limitMs = Math.max(1, (q.time_seconds || 20) * 1000)
+    const elapsedMs = startedAt ? Date.now() - startedAt : limitMs
+
+    // Fastest finger needs to know whether anyone has already got it right.
+    let isFirstCorrect = false
+    const model = scoringModelRef.current
+    if (check.correct && !check.unscored && model.fastestFinger) {
+      const { count } = await supabase
+        .from('session_responses')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', session.id)
+        .eq('question_index', currentIndex)
+        .eq('is_correct', true)
+      isFirstCorrect = (count ?? 0) === 0
+    }
+
+    const result = check.unscored
+      ? { points: Math.round((q.points || 100) / 2), speedBonus: 0, streakBonus: 0, firstBonus: 0, nextStreak: streak }
+      : computeScore({
+          correct: check.correct,
+          partial: check.partial,
+          basePoints: q.points || 100,
+          elapsedMs,
+          limitMs,
+          streak,
+          model,
+          isFirstCorrect,
+          questionIndex: currentIndex,
+          totalQuestions: quiz.questions.length,
+        })
+
+    const nextScore = totalScore + result.points
 
     setSelectedAnswer(label)
-    setWasCorrect(correct)
-    setPointsEarned(pts)
+    setWasCorrect(check.unscored ? null : check.correct)
+    setPointsEarned(result.points)
+    setScoreBreakdown(result)
     setTotalScore(nextScore)
+    setStreak(result.nextStreak)
 
-    await supabase.from('session_participants').update({ score: nextScore }).eq('id', participantId)
+    await supabase
+      .from('session_participants')
+      .update({ score: nextScore, streak: result.nextStreak })
+      .eq('id', participantId)
     await supabase.from('session_responses').insert({
       session_id: session.id,
       participant_id: participantId,
       question_index: currentIndex,
       answer: label,
-      is_correct: correct,
-      points_earned: pts,
+      is_correct: check.unscored ? null : check.correct,
+      response_time_ms: Math.round(Math.min(elapsedMs, limitMs)),
+      points_earned: result.points,
     })
 
     setTimeout(() => setPhase('result'), 1200)
@@ -453,7 +553,17 @@ export default function StudentEngageGame() {
         </div>
       )}
 
-      {phase === 'question' && currentQ && isTeamMode && team && session && participantId && (
+      {phase === 'question' && currentQ && isCoOp && team && session && participantId && (
+        <SplitCoOpAnswer
+          question={currentQ}
+          myLabels={myCoOpLabels}
+          locked={teamLocked}
+          selected={selectedAnswer}
+          onAnswer={handleTeamVote}
+        />
+      )}
+
+      {phase === 'question' && currentQ && isTeamMode && !isCoOp && team && session && participantId && (
         <StudentTeamDiscuss
           sessionId={session.id}
           team={team}
@@ -483,6 +593,19 @@ export default function StudentEngageGame() {
           }}>
             <p style={{ fontSize: 20, fontWeight: 600, color: '#fff', lineHeight: 1.4 }}>{currentQ.text}</p>
           </div>
+          {currentQ.type === 'numeric' ? (
+            <NumericAnswer
+              unit={currentQ.unit}
+              disabled={!!selectedAnswer}
+              onSubmit={value => handleAnswer(value)}
+            />
+          ) : currentQ.type === 'ordering' ? (
+            <OrderingAnswer
+              options={currentQ.options}
+              disabled={!!selectedAnswer}
+              onSubmit={labels => handleAnswer(labels.join(','))}
+            />
+          ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {currentQ.options.map(opt => (
               <button
@@ -508,6 +631,7 @@ export default function StudentEngageGame() {
               </button>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -563,9 +687,45 @@ export default function StudentEngageGame() {
             {wasCorrect ? <IconCheck size={44} /> : <span style={{ fontSize: 32, fontWeight: 700 }}>✕</span>}
           </div>
           <p style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
-            {wasCorrect ? 'Correct!' : 'Wrong answer'}
+            {wasCorrect === null ? 'Answer locked in' : wasCorrect ? 'Correct!' : 'Wrong answer'}
           </p>
-          {wasCorrect && <p style={{ fontSize: 32, fontWeight: 700, color: '#D97010' }}>+{pointsEarned} pts</p>}
+          {pointsEarned > 0 && <p style={{ fontSize: 32, fontWeight: 700, color: '#D97010' }}>+{pointsEarned} pts</p>}
+
+          {/* Where the points came from, so speed and streaks feel earned. */}
+          {scoreBreakdown && pointsEarned > 0 && (scoreBreakdown.streakBonus > 0 || scoreBreakdown.firstBonus > 0 || scoreBreakdown.speedBonus < 0) && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+              {scoreBreakdown.firstBonus > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#FDE68A', background: 'rgba(232,160,32,0.2)', padding: '4px 10px', borderRadius: 20 }}>
+                  Fastest finger +{scoreBreakdown.firstBonus}
+                </span>
+              )}
+              {scoreBreakdown.streakBonus > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#6EE7B7', background: 'rgba(26,137,102,0.2)', padding: '4px 10px', borderRadius: 20 }}>
+                  {streak} in a row +{scoreBreakdown.streakBonus}
+                </span>
+              )}
+              {scoreBreakdown.speedBonus < 0 && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.08)', padding: '4px 10px', borderRadius: 20 }}>
+                  Answer sooner for more
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Why, not just whether. This is the part that teaches. */}
+          {(() => {
+            const q = quiz?.questions[currentIndex]
+            if (!q) return null
+            const chosen = q.options?.find(o => o.label === selectedAnswer)
+            const detail = wasCorrect === false && chosen?.why_wrong ? chosen.why_wrong : q.explanation
+            if (!detail) return null
+            return (
+              <div style={{ marginTop: 20, background: 'rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 16px', textAlign: 'left', maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
+                <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 }}>{detail}</p>
+              </div>
+            )
+          })()}
+
           <p style={{ marginTop: 24, fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Waiting for the next question...</p>
         </div>
       )}

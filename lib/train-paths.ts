@@ -197,24 +197,23 @@ export async function issuePathCertificate(
     return { ok: false, error: 'Certificate could not be issued. Try again.' }
   }
 
-  const { data: issued, error: certError } = await supabase
-    .from('issued_certificates')
-    .insert({
-      recipient_id: employeeId,
-      issuer_id: path.creator_id,
-      resource_type: 'training_path',
-      resource_id: pathId,
-      resource_title: path.title,
-      issued_at: new Date().toISOString(),
-    })
-    .select('verification_code')
-    .single()
+  const { issueCertificate, trainingPathAchievementSummary } = await import('./certificates')
+  const issued = await issueCertificate({
+    recipientId: employeeId,
+    issuerId: path.creator_id ?? null,
+    resourceType: 'training_path',
+    resourceId: pathId,
+    resourceTitle: path.title as string,
+    achievement: { summary: trainingPathAchievementSummary() },
+  })
 
-  if (certError) {
+  if (!issued.ok) {
+    // Enrollment was already marked complete; keep that success even if the
+    // public certificate row could not be written (plan gate, etc.).
     return { ok: true }
   }
 
-  return { ok: true, verificationCode: issued?.verification_code as string | undefined }
+  return { ok: true, verificationCode: issued.verificationCode }
 }
 
 export function parseAssignedDepartments(path: LearningPath & { assigned_departments?: string[] }): string[] {

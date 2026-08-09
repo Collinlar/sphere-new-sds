@@ -38,6 +38,8 @@ const TYPE_LABELS: Record<EngageQuestionTypeKey, string> = {
   multi_select: 'Multi-select',
   short_answer: 'Short answer',
   poll: 'Poll',
+  numeric: 'Number answer',
+  ordering: 'Put in order',
 }
 
 const ACCENT = '#D97010'
@@ -354,6 +356,20 @@ export default function AiEngageBuilderModal({
               )
             })}
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: loading ? 'not-allowed' : 'pointer', marginBottom: 6 }}>
+            <input
+              type="checkbox"
+              checked={config.includeExplanations}
+              disabled={loading}
+              onChange={e => updateConfig({ includeExplanations: e.target.checked })}
+              style={{ width: 15, height: 15 }}
+            />
+            <span style={{ fontSize: 13, color: 'var(--near-black)' }}>Write reveal explanations for each question</span>
+          </label>
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 16, lineHeight: 1.5 }}>
+            Included in your builder. One line you read out when the answer shows.
+          </p>
 
           {hasExistingQuestions && (
             <>

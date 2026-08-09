@@ -7,7 +7,7 @@ import type { ExamSubmission, Exam, ExamSession } from '@/lib/types'
 import { IconCheck, IconXCircle, IconInfo } from '@/components/icons'
 import { shouldOfferAccountSetup } from '@/lib/assess-account'
 import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
-import { issueCertificate } from '@/lib/certificates'
+import { examAchievementSummary, issueCertificate } from '@/lib/certificates'
 
 const GRADE_COLORS: Record<string, { text: string; bg: string }> = {
   A: { text: 'var(--teal)', bg: 'var(--teal-light)' },
@@ -77,12 +77,24 @@ export default function StudentResultsPage({ params: paramsPromise }: { params: 
         data.student_id &&
         (submissionData.percentage ?? 0) >= (examData.certificate_pass_mark ?? 50)
       ) {
+        const passMark = examData.certificate_pass_mark ?? 50
+        const percentage = submissionData.percentage ?? 0
         const result = await issueCertificate({
           recipientId: data.student_id,
           issuerId: examData.creator_id ?? null,
           resourceType: 'exam',
           resourceId: examData.id,
           resourceTitle: examData.title,
+          achievement: {
+            summary: examAchievementSummary({
+              percentage,
+              passMark,
+              grade: submissionData.grade ?? null,
+            }),
+            scorePercentage: percentage,
+            grade: submissionData.grade ?? null,
+            passMark,
+          },
         })
         if (result.ok) setCertCode(result.verificationCode)
       }

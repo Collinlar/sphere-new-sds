@@ -11,6 +11,8 @@ import { isModuleAllowedForPlan, PLAN_PRIVILEGE_SUMMARY } from '@/lib/plan-privi
 import { getActiveContext, onContextChange } from '@/lib/context'
 import type { CreationUsage, SubscriptionTier } from '@/lib/types'
 import { startCheckout, verifyCheckoutReference } from '@/lib/checkout-client'
+import { CREDIT_PACKS } from '@/lib/ai-credits'
+import { getCreditBalance, creditContextInstitutionId, type CreditBalance } from '@/lib/ai-credits-client'
 
 const MODULE_COLOR = { assess: '#C23B2A', engage: '#D97010', learn: '#1A8966', train: '#1052A3' }
 const MODULE_LABEL = { assess: 'Assess', engage: 'Engage', learn: 'Learn', train: 'Train' }
@@ -59,13 +61,22 @@ const PLANS = [
   },
 ]
 
-const ADD_ONS = [
-  { id: 'ai_course_builder', name: 'AI Course Builder', desc: 'Generate full courses from a topic prompt.', price: 'GHS 150/mo' },
-  { id: 'ai_assessment_builder', name: 'AI Assessment Builder', desc: 'Generate exams and question sets from a syllabus.', price: 'GHS 100/mo' },
-  { id: 'ai_engagement_builder', name: 'AI Engage Builder', desc: 'Generate a live quiz game from a topic prompt.', price: 'GHS 100/mo' },
-  { id: 'ai_hints', name: 'AI Hints', desc: 'Auto-generate contextual hints for exam questions.', price: 'GHS 50/mo' },
-  { id: 'ai_explanations', name: 'AI Explanations', desc: 'Auto-generate answer explanations after submission.', price: 'GHS 50/mo' },
-  { id: 'ai_training_builder', name: 'AI Training Builder', desc: 'Generate structured training paths from a brief.', price: 'GHS 150/mo' },
+// Every AI add-on is retired. The builders are open to all plans and paid for
+// with credits, so there is nothing left to subscribe to. These rows appear
+// only for creators still holding a legacy subscription, so they can see it
+// is now included and cancel in their own time.
+// See supabase/migrations/20260802_retire_ai_addons.sql.
+const ADD_ONS: { id: string; name: string; desc: string; price: string }[] = []
+
+const RETIRED_NOTE = 'Now included with your plan and paid for with credits. Your old subscription still bills, so cancel it when you are ready.'
+
+const RETIRED_ADD_ONS = [
+  { id: 'ai_course_builder', name: 'AI Course Builder', desc: RETIRED_NOTE, price: 'GHS 150/mo' },
+  { id: 'ai_assessment_builder', name: 'AI Assessment Builder', desc: RETIRED_NOTE, price: 'GHS 150/mo' },
+  { id: 'ai_engagement_builder', name: 'AI Engage Builder', desc: RETIRED_NOTE, price: 'GHS 150/mo' },
+  { id: 'ai_training_builder', name: 'AI Training Builder', desc: RETIRED_NOTE, price: 'GHS 150/mo' },
+  { id: 'ai_hints', name: 'AI Hints', desc: RETIRED_NOTE, price: 'GHS 50/mo' },
+  { id: 'ai_explanations', name: 'AI Explanations', desc: RETIRED_NOTE, price: 'GHS 50/mo' },
 ]
 
 export default function BillingPage() {
@@ -90,6 +101,9 @@ function BillingPageInner() {
   const [allocMsg, setAllocMsg] = useState('')
   const [checkoutMsg, setCheckoutMsg] = useState('')
   const [justUpgraded, setJustUpgraded] = useState(false)
+  const [credits, setCredits] = useState<CreditBalance | null>(null)
+  const [buyingPack, setBuyingPack] = useState<string | null>(null)
+  const [creditMsg, setCreditMsg] = useState('')
   const [checkoutError, setCheckoutError] = useState('')
   const [checkingOut, setCheckingOut] = useState(false)
   const [institutionContext, setInstitutionContext] = useState<boolean | null>(null)
@@ -114,6 +128,8 @@ function BillingPageInner() {
         setPoolTrain(u.train_quota)
       }
 
+      setCredits(await getCreditBalance())
+
       const { data: addOnData } = await supabase.from('user_add_ons').select('add_on_id').eq('user_id', uid).eq('status', 'active')
       setActiveAddOns((addOnData ?? []).map((r: { add_on_id: string }) => r.add_on_id))
     }
@@ -128,6 +144,7 @@ function BillingPageInner() {
     verifyCheckoutReference(reference).then(async (result) => {
       if (result.ok) {
         setJustUpgraded(true)
+        getCreditBalance().then(setCredits)
         window.history.replaceState({}, '', '/platform/settings/billing')
         await refreshUserProfile(userId ?? undefined)
         if (userId) {
@@ -150,6 +167,23 @@ function BillingPageInner() {
       }
     })
   }, [searchParams, userId])
+
+  async function buyCredits(packId: string) {
+    setBuyingPack(packId)
+    setCreditMsg('')
+    const institutionId = creditContextInstitutionId()
+    const result = await startCheckout({
+      intentType: 'credit_pack',
+      payload: {
+        creditPackId: packId,
+        creditOwnerType: institutionId ? 'institution' : 'user',
+        institutionId,
+      },
+      callbackPath: '/platform/settings/billing',
+    })
+    setBuyingPack(null)
+    if (!result.ok) setCreditMsg(result.error)
+  }
 
   async function handlePlanCheckout(planId: string) {
     if (planId === 'institution') {
@@ -441,17 +475,69 @@ function BillingPageInner() {
         </>
         )}
 
-        {/* AI Add-ons */}
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>AI add-ons</p>
-        {currentTier === 'membership' && (
-          <div style={{ background: 'var(--amber-light)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
-            <p style={{ fontSize: 13, color: '#9A5800' }}>AI add-ons are available on Creator and Institution plans.</p>
+        {/* AI credits */}
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>AI credits</p>
+        <div className="sphere-card" style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+            <div>
+              <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--near-black)', lineHeight: 1, letterSpacing: '-0.02em' }}>
+                {credits ? credits.total : '—'}
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--mid-grey)', marginLeft: 8 }}>credits left</span>
+              </p>
+              {credits && (
+                <p style={{ fontSize: 12.5, color: 'var(--mid-grey)', marginTop: 6, lineHeight: 1.5 }}>
+                  {credits.allowance} included this month, {credits.purchased} bought.
+                  {credits.pooled ? ' Shared across your institution.' : ''}
+                </p>
+              )}
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                One credit writes one question, module, or step. Included credits refresh monthly. Credits you buy never expire.
+              </p>
+            </div>
           </div>
-        )}
+
+          {creditMsg && (
+            <p style={{ fontSize: 13, color: 'var(--teal)', background: 'var(--teal-light)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>{creditMsg}</p>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+            {CREDIT_PACKS.map(pack => (
+              <button
+                key={pack.id}
+                onClick={() => buyCredits(pack.id)}
+                disabled={buyingPack !== null}
+                style={{
+                  background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10,
+                  padding: '14px 12px', textAlign: 'left', cursor: buyingPack ? 'wait' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: 5 }}>{pack.label}</p>
+                <p style={{ fontSize: 19, fontWeight: 800, color: 'var(--near-black)', letterSpacing: '-0.02em' }}>{pack.credits}</p>
+                <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginTop: 2 }}>
+                  {buyingPack === pack.id ? 'Opening payment...' : `GHS ${pack.priceGhs}`}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Legacy AI add-ons. Hidden entirely once nobody holds one. */}
+        {(() => {
+          const legacy = RETIRED_ADD_ONS.filter(a => activeAddOns.includes(a.id))
+          if (ADD_ONS.length === 0 && legacy.length === 0) return null
+          return (
+        <>
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 12 }}>Your old AI subscriptions</p>
+        <div style={{ background: 'var(--teal-light)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+          <p style={{ fontSize: 13, color: 'var(--teal-dark, #085041)', lineHeight: 1.5 }}>
+            AI builders no longer need a subscription. They are open on every plan and paid for with credits, so you can cancel these whenever you like.
+          </p>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {ADD_ONS.map(addon => {
+          {[...ADD_ONS, ...legacy].map(addon => {
             const isActive = activeAddOns.includes(addon.id)
-            const locked = currentTier === 'membership'
+            const locked = false
             const comingSoon = addon.price === 'Coming soon'
             return (
               <div key={addon.id} style={{
@@ -486,6 +572,9 @@ function BillingPageInner() {
             )
           })}
         </div>
+        </>
+          )
+        })()}
 
         <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 28, textAlign: 'center' }}>
           Questions? Email <a href="mailto:hello@spheresds.com" style={{ color: 'var(--amber)', textDecoration: 'none' }}>hello@spheresds.com</a>

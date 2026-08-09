@@ -10,9 +10,10 @@ import { getContentInstitutionId } from '@/lib/context'
 import { incrementUsed } from '@/lib/subscription'
 import CreationGate from '@/components/brand/CreationGate'
 import AddOnGate from '@/components/brand/AddOnGate'
-import { generateWithAi } from '@/lib/checkout-client'
+import { generateWithAi, shortfallNotice } from '@/lib/checkout-client'
 import { useInstitutionLevels } from '@/lib/use-institution-levels'
 import AiEngageBuilderModal from '@/components/brand/AiEngageBuilderModal'
+import AiNotice from '@/components/brand/AiNotice'
 import {
   configToEngageApiContext,
   loadingMessageForEngageConfig,
@@ -30,6 +31,8 @@ const QUESTION_TYPES: { key: QuestionType; label: string; desc: string }[] = [
   { key: 'multi_select', label: 'Multi-select', desc: 'Multiple correct answers' },
   { key: 'short_answer', label: 'Short answer', desc: 'Typed text response' },
   { key: 'poll', label: 'Poll', desc: 'No correct answer' },
+  { key: 'numeric', label: 'Number answer', desc: 'Type a number, closest scores most' },
+  { key: 'ordering', label: 'Put in order', desc: 'Arrange steps into a sequence' },
 ]
 
 function emptyQuestion(type: QuestionType = 'mcq'): QuizQuestion {
@@ -48,7 +51,8 @@ function emptyQuestion(type: QuestionType = 'mcq'): QuizQuestion {
 
 function optionsForType(type: QuestionType) {
   if (type === 'true_false') return [{ label: 'A', text: 'True' }, { label: 'B', text: 'False' }]
-  if (type === 'short_answer' || type === 'poll') return [{ label: 'A', text: '' }, { label: 'B', text: '' }, { label: 'C', text: '' }, { label: 'D', text: '' }]
+  // A number answer is typed, so it carries no options at all.
+  if (type === 'numeric') return []
   return [{ label: 'A', text: '' }, { label: 'B', text: '' }, { label: 'C', text: '' }, { label: 'D', text: '' }]
 }
 
@@ -78,6 +82,7 @@ function QuizBuilderInner() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiLoadingMessage, setAiLoadingMessage] = useState('')
+  const [aiNotice, setAiNotice] = useState('')
   const savingLock = useRef(false)
   const [savedId, setSavedId] = useState<string | null>(editId)
 
@@ -114,14 +119,24 @@ function QuizBuilderInner() {
       type,
       options: type === 'true_false'
         ? [{ label: 'A', text: 'True' }, { label: 'B', text: 'False' }]
-        : type === 'short_answer'
+        : type === 'short_answer' || type === 'numeric'
         ? []
+        : type === 'ordering'
+        // Authored top to bottom in the right order; students see them shuffled.
+        ? (q.options.length >= 4 ? q.options : [
+            { label: 'A', text: '' }, { label: 'B', text: '' },
+            { label: 'C', text: '' }, { label: 'D', text: '' },
+          ])
         : q.options.length === 2
         ? [...q.options, { label: 'C', text: '' }, { label: 'D', text: '' }]
         : q.options,
       correct: type === 'true_false' ? 'A' : base.correct,
       correct_multiple: [],
       correct_text: '',
+      correct_number: type === 'numeric' ? base.correct_number : undefined,
+      tolerance: type === 'numeric' ? base.tolerance : undefined,
+      unit: type === 'numeric' ? base.unit : undefined,
+      correct_order: undefined,
     }))
     setShowTypeMenu(false)
   }
@@ -156,13 +171,24 @@ function QuizBuilderInner() {
     }
     savingLock.current = true
     setSaving(true)
+
+    // Ordering questions are authored top to bottom in the right sequence, so
+    // the answer is simply the option labels as written. Derived at save time
+    // rather than asked for, since making a teacher restate it invites a
+    // mismatch between what they wrote and what gets marked.
+    const questionsToSave = questions.map(q =>
+      q.type === 'ordering'
+        ? { ...q, correct_order: q.options.map(o => o.label) }
+        : q
+    )
+
     const payload = {
       institution_id: getContentInstitutionId(),
       creator_id: getCurrentUser().id,
       title: title.trim(),
       subject: subject || null,
       grade_level: gradeLevel || null,
-      questions,
+      questions: questionsToSave,
       settings: {},
       is_published: publish,
       updated_at: new Date().toISOString(),
@@ -218,6 +244,7 @@ function QuizBuilderInner() {
       if (generated.length === 0) {
         throw new Error('No questions came back. Try a more specific topic or adjust your mix.')
       }
+      setAiNotice(shortfallNotice(result.meta, generated.length, 'questions'))
       if (config.subject && config.subject !== subject) setSubject(config.subject)
       if (config.gradeLevel && config.gradeLevel !== gradeLevel) setGradeLevel(config.gradeLevel)
       if (!title.trim()) setTitle(config.topic.trim())
@@ -352,6 +379,7 @@ function QuizBuilderInner() {
         {/* Right panel: question editor */}
         <div className={`q-editor ${mobileTab === 'edit' ? '' : 'tab-hidden'}`} style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
           <div style={{ maxWidth: 640, margin: '0 auto' }}>
+            <AiNotice message={aiNotice} onDismiss={() => setAiNotice('')} />
             {/* Header row */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <p style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mid-grey)' }}>
@@ -451,6 +479,69 @@ function QuizBuilderInner() {
                   style={{ width: '100%', height: 48, padding: '0 14px', borderRadius: 10, border: '0.5px solid #1A8966', background: '#DDFAF015', fontSize: 15, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
                 />
                 <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 8 }}>Students type their answer. It is marked correct if it matches this text.</p>
+              </div>
+            )}
+
+            {/* Number answer */}
+            {q.type === 'numeric' && (
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 8 }}>The right number</p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <input
+                    value={q.correct_number ?? ''}
+                    onChange={e => updateQuestion(activeQuestion, { correct_number: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    type="number"
+                    placeholder="240"
+                    style={{ width: 130, height: 48, padding: '0 14px', borderRadius: 10, border: '0.5px solid #1A8966', background: '#DDFAF015', fontSize: 15, fontWeight: 600, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  />
+                  <input
+                    value={q.unit ?? ''}
+                    onChange={e => updateQuestion(activeQuestion, { unit: e.target.value || undefined })}
+                    placeholder="Unit, e.g. GHS"
+                    style={{ width: 150, height: 48, padding: '0 14px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--white)', fontSize: 14, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  />
+                  <input
+                    value={q.tolerance ?? ''}
+                    onChange={e => updateQuestion(activeQuestion, { tolerance: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    type="number"
+                    min={0}
+                    placeholder="How close counts"
+                    style={{ width: 170, height: 48, padding: '0 14px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--white)', fontSize: 14, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 8, lineHeight: 1.5 }}>
+                  Students type a number. The closer they get, the more they score.
+                  {q.tolerance == null && q.correct_number != null
+                    ? ` Leave the range blank and anything within ${(Math.abs(q.correct_number) * 0.05).toFixed(2)} counts.`
+                    : ''}
+                </p>
+              </div>
+            )}
+
+            {/* Put in order */}
+            {q.type === 'ordering' && (
+              <div style={{ marginBottom: 24 }}>
+                <p style={{ fontSize: 12, color: 'var(--mid-grey)', marginBottom: 8 }}>
+                  Write the steps in their correct order. Students see them shuffled.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {q.options.map((opt, oi) => (
+                    <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--bg2)', color: 'var(--mid-grey)', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {oi + 1}
+                      </span>
+                      <input
+                        value={opt.text}
+                        onChange={e => updateOption(activeQuestion, oi, e.target.value)}
+                        placeholder={`Step ${oi + 1}`}
+                        style={{ flex: 1, height: 46, padding: '0 14px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--white)', fontSize: 14, color: 'var(--near-black)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--mid-grey)', marginTop: 8, lineHeight: 1.5 }}>
+                  Every step in the right place scores full marks. Getting most of them right still earns something, but a random order earns nothing.
+                </p>
               </div>
             )}
 

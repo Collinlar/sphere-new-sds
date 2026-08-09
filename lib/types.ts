@@ -25,19 +25,38 @@ export interface User {
 }
 
 // Engage
-export type QuestionType = 'mcq' | 'true_false' | 'multi_select' | 'short_answer' | 'poll'
+export type QuestionType =
+  | 'mcq'
+  | 'true_false'
+  | 'multi_select'
+  | 'short_answer'
+  | 'poll'
+  /** Type a number. Closer answers score more, inside a tolerance band. */
+  | 'numeric'
+  /** Drag the options into the right sequence. Partial credit per position. */
+  | 'ordering'
 
 export interface QuizQuestion {
   id: string
   type: QuestionType
   text: string
-  options: { label: string; text: string }[]
+  /** why_wrong names the misconception a distractor catches, and drives the
+   *  live misconception panel the host sees after each question. */
+  options: { label: string; text: string; why_wrong?: string }[]
   correct: string        // single answer for mcq / true_false
   correct_multiple: string[] // for multi_select
   correct_text?: string  // for short_answer
+  /** numeric: the target value, and how far off still counts. */
+  correct_number?: number
+  tolerance?: number
+  unit?: string
+  /** ordering: option labels in the sequence they belong in. */
+  correct_order?: string[]
   time_seconds: number
   points: number
   image_url?: string
+  /** Read out on the reveal. Generated with the question, not afterwards. */
+  explanation?: string
 }
 
 export interface Quiz {
@@ -103,6 +122,9 @@ export interface ExamQuestion {
   rubric?: string
   hint?: string
   explanation?: string
+  /** Set when an AI draft could not be trusted (e.g. unresolvable answer
+   *  key). The builder highlights these so a human confirms before use. */
+  needs_review?: string
 }
 
 export type ExamAudience = 'open' | 'roster_login' | 'roster_ticket'
@@ -484,6 +506,11 @@ export interface IssuedCertificate {
   issued_at: string
   certificate_url?: string
   verification_code: string
+  issuer_display_name?: string
+  achievement_summary?: string
+  score_percentage?: number
+  grade?: string
+  pass_mark?: number
 }
 
 export interface CertificatePermission {

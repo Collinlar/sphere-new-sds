@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { assertAddOnAccess, type AddOnCheckResult } from '@/lib/subscription'
+import { assertAnyAddOnAccess, type AddOnCheckResult } from '@/lib/subscription'
 import type { AddOnId } from '@/lib/types'
 
 const ADDON_LABELS: Record<AddOnId, string> = {
@@ -15,7 +15,8 @@ const ADDON_LABELS: Record<AddOnId, string> = {
 }
 
 interface Props {
-  addOnId: AddOnId
+  /** A single add-on, or several where holding ANY one grants access. */
+  addOnId: AddOnId | AddOnId[]
   children: (props: { check: () => Promise<boolean> }) => React.ReactNode
 }
 
@@ -24,8 +25,11 @@ export default function AddOnGate({ addOnId, children }: Props) {
   const [reason, setReason] = useState('')
   const [needsPlanUpgrade, setNeedsPlanUpgrade] = useState(false)
 
+  const ids = Array.isArray(addOnId) ? addOnId : [addOnId]
+  const idsKey = ids.join(',')
+
   const check = useCallback(async (): Promise<boolean> => {
-    const result: AddOnCheckResult = await assertAddOnAccess(addOnId)
+    const result: AddOnCheckResult = await assertAnyAddOnAccess(idsKey.split(',') as AddOnId[])
     if (!result.allowed) {
       setReason(result.reason ?? 'This add-on is not on your plan.')
       setNeedsPlanUpgrade(result.needsPlanUpgrade ?? false)
@@ -33,7 +37,7 @@ export default function AddOnGate({ addOnId, children }: Props) {
       return false
     }
     return true
-  }, [addOnId])
+  }, [idsKey])
 
   useEffect(() => {
     if (!blocked) return
@@ -42,7 +46,8 @@ export default function AddOnGate({ addOnId, children }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [blocked])
 
-  const label = ADDON_LABELS[addOnId]
+  // With several acceptable add-ons the first is the one we recommend buying.
+  const label = ADDON_LABELS[ids[0]]
 
   return (
     <>
