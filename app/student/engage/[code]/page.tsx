@@ -12,6 +12,7 @@ import NumericAnswer from '@/components/engage/NumericAnswer'
 import OrderingAnswer from '@/components/engage/OrderingAnswer'
 import SplitCoOpAnswer from '@/components/engage/SplitCoOpAnswer'
 import { dealOptions } from '@/lib/engage-split'
+import { usesTeams, isSplitCoOp } from '@/lib/engage-teams'
 import { resolveJoinIdentity } from '@/lib/join-identity'
 import {
   checkAnswer,
@@ -71,8 +72,8 @@ export default function StudentEngageGame() {
   // Co-op runs on the team machinery: teams, votes and team scoring are all
   // shared. The only difference is that each member sees a slice of the
   // options rather than all of them.
-  const isCoOp = engageMode === 'co_op'
-  const isTeamMode = engageMode === 'team' || isCoOp
+  const isCoOp = isSplitCoOp(engageMode)
+  const isTeamMode = usesTeams(engageMode)
 
   // Which options this player holds. Derived identically on every device from
   // the session, question and sorted member list, so teammates never disagree
@@ -170,7 +171,7 @@ export default function StudentEngageGame() {
       scoringModelRef.current = scoringModelFromSettings(data.settings)
 
       if (data.status === 'ended') {
-        if (settings.game_mode === 'team') {
+        if (usesTeams(settings.game_mode)) {
           const { data: teamData } = await supabase.from('engage_teams').select('*').eq('session_id', session!.id)
           setTeams((teamData ?? []) as EngageTeam[])
         } else {
@@ -301,7 +302,7 @@ export default function StudentEngageGame() {
 
     const settings = sessionData.settings as { game_mode?: string }
     let assignedTeam: EngageTeam | null = null
-    if (settings?.game_mode === 'team') {
+    if (usesTeams(settings?.game_mode)) {
       assignedTeam = await assignParticipantToTeam(sessionData.id, participant.id)
       setTeam(assignedTeam)
     }
@@ -550,6 +551,20 @@ export default function StudentEngageGame() {
               {participantCount === 1 ? 'player' : 'players'} in the lobby
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Team modes need a team. If one could not be created the player used
+          to get an empty screen with no explanation, which read as the game
+          being broken rather than something being wrong behind it. */}
+      {phase === 'question' && currentQ && isTeamMode && !team && (
+        <div style={{ textAlign: 'center', maxWidth: 340 }}>
+          <p style={{ fontSize: 17, fontWeight: 600, color: '#fff', marginBottom: 8 }}>
+            Waiting for your team
+          </p>
+          <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.55)', lineHeight: 1.6 }}>
+            We could not put you in a team yet. Hold on a moment, and tell your teacher if this stays on screen.
+          </p>
         </div>
       )}
 

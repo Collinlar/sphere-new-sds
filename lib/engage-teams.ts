@@ -7,8 +7,27 @@ export const TEAM_PRESETS = [
   { name: 'Team Nova', letter: 'N', color: '#6B6870' },
 ] as const
 
+export type EngageGameMode = 'competitive' | 'team' | 'co_op' | 'one_screen'
+
+/**
+ * Does this mode run on teams?
+ *
+ * Kept in one place on purpose. This test used to be written out at each call
+ * site, and adding co-op meant every one of them had to be found and updated.
+ * One was missed, players were never assigned a team, and the play screen
+ * rendered empty. A single predicate makes that failure impossible to repeat.
+ */
+export function usesTeams(mode: string | undefined | null): boolean {
+  return mode === 'team' || mode === 'co_op' || mode === 'one_screen'
+}
+
+/** Team play where each member sees only part of the answer set. */
+export function isSplitCoOp(mode: string | undefined | null): boolean {
+  return mode === 'co_op'
+}
+
 export interface TeamModeSettings {
-  game_mode: 'competitive' | 'team'
+  game_mode: EngageGameMode
   team_formation?: 'auto' | 'pick'
   team_size?: '2' | '3-4' | '5+'
   consensus_bonus?: boolean

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { EngageSession, Quiz, SessionParticipant, QuizQuestion, EngageTeam } from '@/lib/types'
 import { ensureTeamsForSession, scoreTeamQuestion } from '@/lib/engage-team-service'
+import { usesTeams } from '@/lib/engage-teams'
 import { scoringModelFromSettings } from '@/lib/engage-scoring'
 import { getHostSessionCap } from '@/lib/session-limits'
 import { getCurrentUser } from '@/lib/auth'
@@ -35,7 +36,7 @@ export default function EngageSessionHost() {
   const gameMode = (session?.settings as { game_mode?: string })?.game_mode
   // Co-op is team play with the options split across members, so it shares
   // the team lobby, team scoring and team results throughout.
-  const isTeamMode = gameMode === 'team' || gameMode === 'co_op'
+  const isTeamMode = usesTeams(gameMode)
   const isOneScreen = gameMode === 'one_screen'
 
   const refreshParticipants = useCallback(async (orderByScore = false) => {
@@ -93,11 +94,7 @@ export default function EngageSessionHost() {
       const parts = (data as { session_participants: SessionParticipant[] }).session_participants ?? []
       setParticipants([...parts].sort((a, b) => a.joined_at.localeCompare(b.joined_at)))
       const settings = (data as EngageSession).settings as { game_mode?: string; live_phase?: string }
-      if (
-        settings?.game_mode === 'team' ||
-        settings?.game_mode === 'co_op' ||
-        settings?.game_mode === 'one_screen'
-      ) {
+      if (usesTeams(settings?.game_mode)) {
         const teamRows = await ensureTeamsForSession(id)
         setTeams(teamRows)
       }

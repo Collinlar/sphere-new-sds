@@ -51,6 +51,14 @@ export default function SplitCoOpAnswer({
         {myOptions.length === 1 ? 'Your option' : 'Your options'}
       </p>
 
+      {/* The deal needs the team roster, which arrives a moment after the
+          question does. Say so rather than showing an empty list. */}
+      {myOptions.length === 0 && (
+        <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: '20px 16px', textAlign: 'center' }}>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>Dealing your options...</p>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {myOptions.map(opt => (
           <button

@@ -17,8 +17,18 @@ export async function ensureTeamsForSession(sessionId: string): Promise<EngageTe
   }))
 
   const { data, error } = await supabase.from('engage_teams').insert(teams).select()
-  if (error || !data) return []
-  return data as EngageTeam[]
+
+  if (error) {
+    // Returning an empty list here used to hide a hard permissions failure:
+    // no teams meant no assignment, which meant a blank play screen that
+    // looked like a rendering bug. Say what actually happened.
+    console.error('[engage] could not create teams for session', sessionId, error.message)
+    // A losing race with another player is fine: read back what they made.
+    const { data: retry } = await supabase.from('engage_teams').select('*').eq('session_id', sessionId)
+    return (retry ?? []) as EngageTeam[]
+  }
+
+  return (data ?? []) as EngageTeam[]
 }
 
 export async function assignParticipantToTeam(
