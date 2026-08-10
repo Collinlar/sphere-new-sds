@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { EngageTeam, QuizQuestion } from '@/lib/types'
 import { scoreSpokenAnswer } from '@/lib/engage-team-service'
+import { describeCorrectAnswer, isOptionQuestion } from '@/lib/engage-scoring'
 import type { ScoringModel } from '@/lib/engage-scoring'
 
 /**
@@ -42,8 +43,10 @@ export default function OneScreenGame({
   const [pickingFor, setPickingFor] = useState<EngageTeam | null>(null)
   const [busy, setBusy] = useState(false)
   const [revealed, setRevealed] = useState(false)
+  // What the host typed in for a number or a written answer said out loud.
+  const [spoken, setSpoken] = useState('')
 
-  async function recordAnswer(team: EngageTeam, label: string) {
+  async function recordAnswer(team: EngageTeam, label: string, forceCorrect?: boolean, display?: string) {
     if (busy || answeredBy[team.id]) return
     setBusy(true)
     const result = await scoreSpokenAnswer({
@@ -54,10 +57,15 @@ export default function OneScreenGame({
       answerLabel: label,
       model,
       totalQuestions,
+      forceCorrect,
     })
     setBusy(false)
     setPickingFor(null)
-    setAnsweredBy(prev => ({ ...prev, [team.id]: { label, correct: result.correct, points: result.points } }))
+    setSpoken('')
+    setAnsweredBy(prev => ({
+      ...prev,
+      [team.id]: { label: display ?? label, correct: result.correct, points: result.points },
+    }))
     onTeamsChanged(
       teams.map(t => (t.id === team.id ? { ...t, score: t.score + result.points } : t))
     )
@@ -66,6 +74,7 @@ export default function OneScreenGame({
   function next() {
     setAnsweredBy({})
     setRevealed(false)
+    setSpoken('')
     setPickingFor(null)
     onNext()
   }
@@ -83,9 +92,27 @@ export default function OneScreenGame({
           {question.text}
         </h2>
 
+        {!isOptionQuestion(question.type) ? (
+          <div style={{
+            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 12, padding: '20px 22px',
+          }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
+              {question.type === 'ordering' ? 'Correct order' : 'Correct answer'}
+            </p>
+            <p style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.5, color: revealed ? '#6EE7B7' : 'rgba(255,255,255,0.3)' }}>
+              {revealed ? describeCorrectAnswer(question) : 'Hidden until you show the answer'}
+            </p>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
           {question.options.map(opt => {
-            const isCorrect = opt.label === question.correct
+            // A poll has no right answer; multi_select has several.
+            const isCorrect = question.type === 'poll'
+              ? false
+              : question.type === 'multi_select'
+                ? (question.correct_multiple ?? []).includes(opt.label)
+                : opt.label === question.correct
             const show = revealed && question.type !== 'poll'
             return (
               <div
@@ -105,6 +132,7 @@ export default function OneScreenGame({
             )
           })}
         </div>
+        )}
 
         {/* After the reveal, name the error the class most likely made. */}
         {revealed && question.type !== 'poll' && (() => {
@@ -137,8 +165,10 @@ export default function OneScreenGame({
         </p>
 
         {pickingFor ? (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {question.options.map(opt => (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Option questions: tap what they said, so the misconception
+                panel still works with no student devices in the room. */}
+            {isOptionQuestion(question.type) && question.options.map(opt => (
               <button
                 key={opt.label}
                 onClick={() => recordAnswer(pickingFor, opt.label)}
@@ -152,8 +182,74 @@ export default function OneScreenGame({
                 {opt.label}
               </button>
             ))}
+
+            {/* Typed answers: the host writes down what the team said. Quick
+                on a phone, and it keeps the real answer on record. */}
+            {(question.type === 'numeric' || question.type === 'short_answer') && (
+              <>
+                <input
+                  value={spoken}
+                  onChange={e => setSpoken(question.type === 'numeric'
+                    ? e.target.value.replace(/[^\d.\-]/g, '')
+                    : e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && spoken.trim()) recordAnswer(pickingFor, spoken.trim()) }}
+                  placeholder={question.type === 'numeric' ? 'Number they said' : 'What they said'}
+                  inputMode={question.type === 'numeric' ? 'decimal' : 'text'}
+                  autoFocus
+                  style={{
+                    height: 56, minWidth: 220, flex: '0 1 320px', borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)',
+                    color: '#fff', fontSize: 18, fontWeight: 600, padding: '0 16px',
+                    fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+                <button
+                  onClick={() => spoken.trim() && recordAnswer(pickingFor, spoken.trim())}
+                  disabled={busy || !spoken.trim()}
+                  style={{
+                    height: 56, padding: '0 22px', borderRadius: 12, border: 'none',
+                    background: spoken.trim() ? pickingFor.color : 'rgba(255,255,255,0.12)',
+                    color: spoken.trim() ? '#fff' : 'rgba(255,255,255,0.4)',
+                    fontSize: 16, fontWeight: 700,
+                    cursor: busy || !spoken.trim() ? 'default' : 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  Record it
+                </button>
+              </>
+            )}
+
+            {/* An order read out loud is slow to retype on a projector, so
+                the host simply says whether the team got it. */}
+            {question.type === 'ordering' && (
+              <>
+                <button
+                  onClick={() => recordAnswer(pickingFor, (question.correct_order ?? []).join(','), true, 'right order')}
+                  disabled={busy}
+                  style={{
+                    height: 56, padding: '0 22px', borderRadius: 12, border: 'none',
+                    background: '#1A8966', color: '#fff', fontSize: 16, fontWeight: 700,
+                    cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  They got the order right
+                </button>
+                <button
+                  onClick={() => recordAnswer(pickingFor, 'not the right order', false)}
+                  disabled={busy}
+                  style={{
+                    height: 56, padding: '0 22px', borderRadius: 12, border: 'none',
+                    background: 'rgba(194,59,42,0.85)', color: '#fff', fontSize: 16, fontWeight: 700,
+                    cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  Not quite
+                </button>
+              </>
+            )}
+
             <button
-              onClick={() => setPickingFor(null)}
+              onClick={() => { setPickingFor(null); setSpoken('') }}
               style={{
                 height: 56, padding: '0 18px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)',
                 background: 'transparent', color: 'rgba(255,255,255,0.7)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
@@ -174,7 +270,9 @@ export default function OneScreenGame({
                   style={{
                     minHeight: 68, borderRadius: 12, border: 'none', padding: '10px 14px',
                     background: answer
-                      ? answer.correct ? 'rgba(26,137,102,0.3)' : 'rgba(194,59,42,0.28)'
+                      ? answer.correct
+                        ? 'rgba(26,137,102,0.3)'
+                        : answer.points > 0 ? 'rgba(217,112,16,0.3)' : 'rgba(194,59,42,0.28)'
                       : team.color,
                     color: '#fff', cursor: answer ? 'default' : 'pointer', fontFamily: 'inherit',
                     textAlign: 'left', opacity: answer ? 0.85 : 1,
@@ -183,7 +281,7 @@ export default function OneScreenGame({
                   <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{team.name}</span>
                   <span style={{ display: 'block', fontSize: 12, opacity: 0.85, marginTop: 2 }}>
                     {answer
-                      ? `${answer.label} · ${answer.correct ? `+${answer.points}` : 'no points'}`
+                      ? `${answer.label} · ${answer.points > 0 ? `+${answer.points}` : 'no points'}`
                       : `${team.score} pts`}
                   </span>
                 </button>

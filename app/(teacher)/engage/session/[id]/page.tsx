@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import type { EngageSession, Quiz, SessionParticipant, QuizQuestion, EngageTeam } from '@/lib/types'
 import { ensureTeamsForSession, scoreTeamQuestion } from '@/lib/engage-team-service'
 import { usesTeams } from '@/lib/engage-teams'
-import { scoringModelFromSettings } from '@/lib/engage-scoring'
+import { scoringModelFromSettings, describeCorrectAnswer, isOptionQuestion } from '@/lib/engage-scoring'
 import { getHostSessionCap } from '@/lib/session-limits'
 import { getCurrentUser } from '@/lib/auth'
 import { TeamHostFinal, TeamHostLobby, TeamHostScores } from '@/components/engage/TeamHostSections'
@@ -234,15 +234,20 @@ export default function EngageSessionHost() {
       setPhase('end')
       return
     }
+    // Move to the new question and out of the reveal in ONE batch. Setting
+    // the index first and awaiting before setting the phase committed a
+    // render where the next question was paired with the reveal state, which
+    // flashed its correct answer on screen before the class had seen it.
+    const q = quiz.questions[nextIdx]
     setQuestionIndex(nextIdx)
+    setPhase('question')
+    setTimeLeft(timePerQuestion ?? q.time_seconds)
+    setTimerActive(true)
+
     await writeLivePhase('question', {
       current_question_index: nextIdx,
       question_started_at: new Date().toISOString(),
     })
-    const q = quiz.questions[nextIdx]
-    setTimeLeft(timePerQuestion ?? q.time_seconds)
-    setTimerActive(true)
-    setPhase('question')
   }, [questionIndex, quiz, timePerQuestion, writeLivePhase, refreshParticipants, isTeamMode, id])
 
   if (loading) {
@@ -374,7 +379,14 @@ export default function EngageSessionHost() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 18px', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1A8966' }} />
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{answeredCount} of {participants.length} answered</span>
+                {/* In team modes one answer is recorded per team, not per
+                    player, so counting responses against the player list read
+                    as nonsense like "4 of 1 answered". */}
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+                  {isTeamMode
+                    ? `${answeredCount} of ${teams.length} team${teams.length === 1 ? '' : 's'} answered`
+                    : `${answeredCount} of ${participants.length} answered`}
+                </span>
               </div>
               <div style={{ background: '#D97010', borderRadius: 8, padding: '8px 22px' }}>
                 <span style={{ fontSize: 24, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
@@ -396,10 +408,38 @@ export default function EngageSessionHost() {
               <p style={{ fontSize: 24, fontWeight: 600, color: '#fff', lineHeight: 1.4 }}>{currentQ.text}</p>
             </div>
 
-            {/* Answer tiles */}
+            {/* Answer tiles. Only option questions have tiles to show: a typed
+                number, a sequence or free text has no A/B/C/D to light up,
+                and pretending otherwise told the host the wrong answer. */}
+            {!isOptionQuestion(currentQ.type) ? (
+              <div style={{
+                background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.12)',
+                borderRadius: 14, padding: '22px 24px',
+              }}>
+                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>
+                  {currentQ.type === 'ordering' ? 'Correct order'
+                    : currentQ.type === 'numeric' ? 'Correct number'
+                    : currentQ.type === 'poll' ? 'Poll'
+                    : 'Correct answer'}
+                </p>
+                <p style={{ fontSize: 20, fontWeight: 600, color: phase === 'reveal' ? '#6EE7B7' : 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
+                  {phase === 'reveal' ? describeCorrectAnswer(currentQ) : 'Hidden until you reveal'}
+                </p>
+                {currentQ.type === 'ordering' && phase !== 'reveal' && (
+                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 8 }}>
+                    Players see these steps shuffled.
+                  </p>
+                )}
+              </div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               {currentQ.options.map((opt) => {
-                const isCorrect = opt.label === currentQ.correct
+                // A poll has no right answer, and multi_select has several.
+                const isCorrect = currentQ.type === 'poll'
+                  ? false
+                  : currentQ.type === 'multi_select'
+                    ? (currentQ.correct_multiple ?? []).includes(opt.label)
+                    : opt.label === currentQ.correct
                 const revealed = phase === 'reveal'
                 return (
                   <div key={opt.label} style={{
@@ -438,13 +478,14 @@ export default function EngageSessionHost() {
                 )
               })}
             </div>
+            )}
 
             {/* Live answer distribution */}
             {isTeamMode && phase === 'reveal' && (
               <TeamHostScores
                 teams={teams}
                 questionLabel={`Q${questionIndex + 1} of ${quiz.questions.length}`}
-                correctLabel={`${currentQ.correct}. ${currentQ.options.find(o => o.label === currentQ.correct)?.text ?? ''}`}
+                correctLabel={describeCorrectAnswer(currentQ)}
               />
             )}
             {!isTeamMode && (

@@ -8,12 +8,12 @@ import { assignParticipantToTeam } from '@/lib/engage-team-service'
 import { StudentTeamDiscuss, StudentTeamFinal, StudentTeamLobby, StudentTeamResult } from '@/components/engage/StudentTeamGame'
 import { IconCheck } from '@/components/icons'
 import GuestClaimBanner from '@/components/brand/GuestClaimBanner'
-import NumericAnswer from '@/components/engage/NumericAnswer'
-import OrderingAnswer from '@/components/engage/OrderingAnswer'
+import AnswerSurface from '@/components/engage/AnswerSurface'
 import SplitCoOpAnswer from '@/components/engage/SplitCoOpAnswer'
 import { dealOptions } from '@/lib/engage-split'
 import { usesTeams, isSplitCoOp } from '@/lib/engage-teams'
 import { resolveJoinIdentity } from '@/lib/join-identity'
+import { saveEngageSeat, readEngageSeat, clearEngageSeat, type EngageSeat } from '@/lib/engage-rejoin'
 import {
   checkAnswer,
   computeScore,
@@ -26,6 +26,14 @@ const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '
 
 type StudentPhase = 'join' | 'lobby' | 'question' | 'result' | 'final'
 
+/** The columns a seat is restored or reused from. */
+interface SeatRow {
+  id: string
+  score?: number
+  streak?: number
+  team_id?: string | null
+}
+
 export default function StudentEngageGame() {
   const { code } = useParams<{ code: string }>()
   const [phase, setPhase] = useState<StudentPhase>('join')
@@ -33,6 +41,9 @@ export default function StudentEngageGame() {
   const [session, setSession] = useState<EngageSession | null>(null)
   const [quiz, setQuiz] = useState<Quiz | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
+  // True while we check for a saved seat, so the join screen never flashes
+  // in front of a player who is already in the game.
+  const [restoring, setRestoring] = useState(true)
   const [participantCount, setParticipantCount] = useState(0)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null)
@@ -89,6 +100,7 @@ export default function StudentEngageGame() {
         }).byMember[participantId] ?? []
       : []
 
+
   useEffect(() => {
     let cancelled = false
     resolveJoinIdentity().then((identity) => {
@@ -128,6 +140,111 @@ export default function StudentEngageGame() {
     setDiscussTimeLeft(discussionSeconds)
     setPhase('question')
   }, [])
+
+  // Take the player back to their seat after a reload or a dropped signal.
+  // Runs once, before the join screen is offered, and only trusts a stored
+  // seat that still exists in the database.
+  useEffect(() => {
+    if (!code) { setRestoring(false); return }
+    const seat = readEngageSeat(code)
+    if (!seat) { setRestoring(false); return }
+
+    let cancelled = false
+    async function restore(saved: EngageSeat) {
+      try {
+        const { data: participant } = await supabase
+          .from('session_participants')
+          .select('id, display_name, score, streak, team_id')
+          .eq('id', saved.participantId)
+          .maybeSingle()
+
+        // Seat is gone (host cleared the room, or a different game reused
+        // the code). Forget it and let them join normally.
+        if (!participant) {
+          clearEngageSeat(code!)
+          if (!cancelled) setRestoring(false)
+          return
+        }
+
+        const res = await fetch(`/api/engage/playable?code=${encodeURIComponent(code!.toUpperCase())}`)
+        const body = await res.json().catch(() => null)
+
+        // The playable endpoint refuses finished games, which is right for
+        // joining but wrong for coming back. A player who reloads after the
+        // final whistle should see their result, not be asked to rejoin a
+        // game that is over.
+        if (!res.ok || !body?.session || !body?.quiz) {
+          const { data: endedSession } = await supabase
+            .from('engage_sessions')
+            .select('*')
+            .eq('id', saved.sessionId)
+            .maybeSingle()
+          if (endedSession && (endedSession as EngageSession).status === 'ended' && !cancelled) {
+            setSession(endedSession as EngageSession)
+            setParticipantId(participant.id as string)
+            setName((participant.display_name as string) ?? saved.displayName)
+            setTotalScore(Number(participant.score ?? 0))
+            setStreak(Number(participant.streak ?? 0))
+            // The team results screen needs the team, so bring it back too.
+            if (participant.team_id) {
+              const { data: teamRow } = await supabase
+                .from('engage_teams')
+                .select('*')
+                .eq('id', participant.team_id as string)
+                .maybeSingle()
+              if (teamRow && !cancelled) setTeam(teamRow as EngageTeam)
+            }
+            if (!cancelled) setPhase('final')
+          }
+          if (!cancelled) setRestoring(false)
+          return
+        }
+
+        const sessionData = body.session as EngageSession
+        if (sessionData.id !== saved.sessionId) {
+          clearEngageSeat(code!)
+          if (!cancelled) setRestoring(false)
+          return
+        }
+
+        const quizData = body.quiz as Quiz
+        const questions = Array.isArray(quizData.questions) ? quizData.questions : []
+        if (cancelled) return
+
+        setSession(sessionData)
+        setQuiz({ ...quizData, questions })
+        setParticipantId(participant.id as string)
+        setName((participant.display_name as string) ?? saved.displayName)
+        // Their score and run come back with them.
+        setTotalScore(Number(participant.score ?? 0))
+        setStreak(Number(participant.streak ?? 0))
+
+        if (participant.team_id) {
+          const { data: teamRow } = await supabase
+            .from('engage_teams')
+            .select('*')
+            .eq('id', participant.team_id as string)
+            .maybeSingle()
+          if (teamRow && !cancelled) setTeam(teamRow as EngageTeam)
+        }
+
+        if (cancelled) return
+        if (sessionData.status === 'ended') {
+          setPhase('final')
+        } else if (sessionData.status === 'active') {
+          const secs = (sessionData.settings as { discussion_seconds?: number })?.discussion_seconds ?? 30
+          resetForQuestion(sessionData.current_question_index ?? 0, secs)
+        } else {
+          setPhase('lobby')
+        }
+      } finally {
+        if (!cancelled) setRestoring(false)
+      }
+    }
+
+    void restore(seat)
+    return () => { cancelled = true }
+  }, [code, resetForQuestion])
 
   // If a player is already in-session without quiz content (RLS miss), pull it via API
   useEffect(() => {
@@ -222,7 +339,7 @@ export default function StudentEngageGame() {
   // Co-op needs the roster of this team to work out the deal. Refreshed as
   // the question changes so a latecomer is included from their first question.
   useEffect(() => {
-    if (!isCoOp || !session || !team) return
+    if (!isTeamMode || !session || !team) return
     let cancelled = false
     supabase
       .from('session_participants')
@@ -233,7 +350,7 @@ export default function StudentEngageGame() {
         if (!cancelled) setTeamMemberIds((data ?? []).map(r => r.id as string))
       })
     return () => { cancelled = true }
-  }, [isCoOp, session?.id, team?.id, currentIndex])
+  }, [isTeamMode, session?.id, team?.id, currentIndex])
 
   useEffect(() => {
     if (!isTeamMode || phase !== 'question' || teamLocked) return
@@ -269,47 +386,89 @@ export default function StudentEngageGame() {
       return
     }
 
-    const { checkEngageSessionJoin } = await import('@/lib/session-limits')
-    const joinCheck = await checkEngageSessionJoin(sessionData.id)
-    if (!joinCheck.allowed) {
-      setError(joinCheck.reason ?? 'This session is full.')
-      setJoining(false)
-      return
+    // A signed-in player who rejoins takes their existing seat rather than
+    // making a second one. This is the fallback when localStorage is not
+    // available, such as private browsing or a different device.
+    let participant: SeatRow | null = null
+    if (accountUserId) {
+      const { data: existing } = await supabase
+        .from('session_participants')
+        .select('id, score, streak, team_id')
+        .eq('session_id', sessionData.id)
+        .eq('user_id', accountUserId)
+        .maybeSingle()
+      if (existing) participant = existing as SeatRow
     }
 
-    const insertPayload: Record<string, unknown> = {
-      session_id: sessionData.id,
-      display_name: name.trim(),
-      score: 0,
-      streak: 0,
-      joined_at: new Date().toISOString(),
-    }
-    if (accountUserId && !useCustomName) {
-      insertPayload.user_id = accountUserId
-    }
+    if (!participant) {
+      // The room cap only applies to new seats. Someone returning to a seat
+      // they already hold is not a new player, and turning them away would
+      // lock them out of their own game.
+      const { checkEngageSessionJoin } = await import('@/lib/session-limits')
+      const joinCheck = await checkEngageSessionJoin(sessionData.id)
+      if (!joinCheck.allowed) {
+        setError(joinCheck.reason ?? 'This session is full.')
+        setJoining(false)
+        return
+      }
 
-    const { data: participant, error: pErr } = await supabase
-      .from('session_participants')
-      .insert(insertPayload)
-      .select()
-      .single()
+      const insertPayload: Record<string, unknown> = {
+        session_id: sessionData.id,
+        display_name: name.trim(),
+        score: 0,
+        streak: 0,
+        joined_at: new Date().toISOString(),
+      }
+      if (accountUserId && !useCustomName) {
+        insertPayload.user_id = accountUserId
+      }
 
-    if (pErr || !participant) {
-      setError('Could not join the game. Try again in a moment.')
-      setJoining(false)
-      return
+      const { data: created, error: pErr } = await supabase
+        .from('session_participants')
+        .insert(insertPayload)
+        .select()
+        .single()
+
+      if (pErr || !created) {
+        setError('Could not join the game. Try again in a moment.')
+        setJoining(false)
+        return
+      }
+      participant = created as SeatRow
+    } else {
+      // Returning to an existing seat brings the score and run back with it.
+      setTotalScore(Number(participant.score ?? 0))
+      setStreak(Number(participant.streak ?? 0))
     }
 
     const settings = sessionData.settings as { game_mode?: string }
     let assignedTeam: EngageTeam | null = null
     if (usesTeams(settings?.game_mode)) {
-      assignedTeam = await assignParticipantToTeam(sessionData.id, participant.id)
+      if (participant.team_id) {
+        // Already has a team. Keep them with their teammates.
+        const { data: existingTeam } = await supabase
+          .from('engage_teams')
+          .select('*')
+          .eq('id', participant.team_id)
+          .maybeSingle()
+        assignedTeam = (existingTeam as EngageTeam | null) ?? null
+      }
+      if (!assignedTeam) {
+        assignedTeam = await assignParticipantToTeam(sessionData.id, participant.id)
+      }
       setTeam(assignedTeam)
     }
 
     setSession(sessionData as EngageSession)
     setQuiz({ ...quizData, questions })
     setParticipantId(participant.id)
+    // Remember the seat so a reload or a dropped connection returns the
+    // player to their game instead of creating a second participant.
+    saveEngageSeat(code ?? '', {
+      participantId: participant.id,
+      sessionId: sessionData.id,
+      displayName: name.trim(),
+    })
     setJoining(false)
 
     const { count } = await supabase
@@ -403,13 +562,50 @@ export default function StudentEngageGame() {
   async function loadTeamResult() {
     if (!team || !quiz) return
     const q = quiz.questions[currentIndex]
-    const { data: teamRow } = await supabase.from('engage_teams').select('score').eq('id', team.id).single()
-    if (teamRow) setTotalScore(teamRow.score)
-    const correct = selectedAnswer === q.correct
-    setWasCorrect(correct)
-    const bonus = correct && (session?.settings as { consensus_bonus?: boolean })?.consensus_bonus ? 50 : 0
-    setConsensusBonus(bonus)
-    setPointsEarned(correct ? q.points : 0)
+    const { data: teamRow } = await supabase
+      .from('engage_teams')
+      .select('score, streak')
+      .eq('id', team.id)
+      .single()
+    if (teamRow) setTotalScore(Number(teamRow.score ?? 0))
+
+    // Mirror scoreTeamQuestion exactly. This used to compare the answer with
+    // `q.correct` and hardcode a 50 point bonus, which was wrong for numeric,
+    // ordering and short answer, and drifted from the server once team
+    // scoring gained streaks and proportional bonuses. Showing a player a
+    // number the host never awards is worse than showing none.
+    const check = checkAnswer(q, selectedAnswer)
+    const correct = check.correct && !check.unscored
+    setWasCorrect(check.unscored ? null : correct)
+
+    const model = scoringModelRef.current
+    // Mirrors scoreTeamQuestion, including the poll case: no right answer
+    // means participation credit, not a zero and a cross.
+    const result = check.unscored
+      ? { points: Math.round((q.points || 100) / 2) }
+      : computeScore({
+          correct,
+          partial: check.partial,
+          basePoints: q.points || 100,
+          elapsedMs: 0,
+          limitMs: 1,
+          streak: Number(teamRow?.streak ?? 0),
+          model: { ...model, speedWeight: 0, fastestFinger: false },
+          questionIndex: currentIndex,
+          totalQuestions: quiz.questions.length,
+        })
+    setPointsEarned(result.points)
+
+    // The server only pays a consensus bonus when the team has more than one
+    // member, because a team of one cannot reach consensus. Showing it to a
+    // solo player promised points that were never awarded.
+    const wantsBonus = (session?.settings as { consensus_bonus?: boolean })?.consensus_bonus
+    const teamHasMembers = teamMemberIds.length > 1
+    setConsensusBonus(
+      correct && !check.unscored && wantsBonus && teamHasMembers
+        ? Math.round((q.points || 100) * 0.5)
+        : 0
+    )
   }
 
   useEffect(() => {
@@ -419,10 +615,12 @@ export default function StudentEngageGame() {
 
   const currentQ: QuizQuestion | undefined = quiz?.questions[currentIndex]
 
-  if (!identityReady && phase === 'join') {
+  if ((!identityReady || restoring) && phase === 'join') {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--page-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>Getting your session ready...</p>
+        <p style={{ fontSize: 14, color: 'var(--mid-grey)' }}>
+          {restoring ? 'Finding your game...' : 'Getting your session ready...'}
+        </p>
       </div>
     )
   }
@@ -587,6 +785,7 @@ export default function StudentEngageGame() {
           code={code ?? ''}
           questionText={currentQ.text}
           options={currentQ.options}
+          question={currentQ}
           questionIndex={currentIndex}
           totalQuestions={quiz?.questions.length ?? 0}
           timeLeft={discussTimeLeft}
@@ -608,45 +807,12 @@ export default function StudentEngageGame() {
           }}>
             <p style={{ fontSize: 20, fontWeight: 600, color: '#fff', lineHeight: 1.4 }}>{currentQ.text}</p>
           </div>
-          {currentQ.type === 'numeric' ? (
-            <NumericAnswer
-              unit={currentQ.unit}
-              disabled={!!selectedAnswer}
-              onSubmit={value => handleAnswer(value)}
-            />
-          ) : currentQ.type === 'ordering' ? (
-            <OrderingAnswer
-              options={currentQ.options}
-              disabled={!!selectedAnswer}
-              onSubmit={labels => handleAnswer(labels.join(','))}
-            />
-          ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {currentQ.options.map(opt => (
-              <button
-                key={opt.label}
-                onClick={() => handleAnswer(opt.label)}
-                disabled={!!selectedAnswer}
-                style={{
-                  width: '100%',
-                  background: selectedAnswer === opt.label ? ANSWER_COLORS[opt.label] : `${ANSWER_COLORS[opt.label]}CC`,
-                  border: 'none', borderRadius: 12, padding: '18px 20px',
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  cursor: selectedAnswer ? 'default' : 'pointer',
-                  opacity: selectedAnswer && selectedAnswer !== opt.label ? 0.5 : 1,
-                  minHeight: 64, textAlign: 'left',
-                }}
-              >
-                <span style={{
-                  width: 36, height: 36, borderRadius: 8, background: 'rgba(255,255,255,0.25)',
-                  color: '#fff', fontSize: 15, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>{opt.label}</span>
-                <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>{opt.text}</span>
-              </button>
-            ))}
-          </div>
-          )}
+          <AnswerSurface
+            question={currentQ}
+            disabled={!!selectedAnswer}
+            selected={selectedAnswer}
+            onAnswer={handleAnswer}
+          />
         </div>
       )}
 
@@ -685,7 +851,10 @@ export default function StudentEngageGame() {
       {phase === 'result' && isTeamMode && team && (
         <StudentTeamResult
           team={team}
-          correct={!!wasCorrect}
+          // Pass null through rather than coercing it. `!!wasCorrect` turned
+          // a poll's "no right answer" into "wrong", which is what put a
+          // cross and "Not this time" on a question nobody can fail.
+          correct={wasCorrect}
           points={pointsEarned}
           consensusBonus={consensusBonus}
           teamTotal={totalScore}
@@ -696,10 +865,17 @@ export default function StudentEngageGame() {
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 96, height: 96, borderRadius: '50%',
-            background: wasCorrect ? '#1A8966' : '#C23B2A', color: '#fff',
+            // A poll has no right answer, so it must not be marked in red.
+            // wasCorrect is null there, which previously fell through to the
+            // wrong-answer styling and told a student they had failed a
+            // question that cannot be failed.
+            background: wasCorrect === null ? '#2E2886' : wasCorrect ? '#1A8966' : '#C23B2A',
+            color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px',
           }}>
-            {wasCorrect ? <IconCheck size={44} /> : <span style={{ fontSize: 32, fontWeight: 700 }}>✕</span>}
+            {wasCorrect === false
+              ? <span style={{ fontSize: 32, fontWeight: 700 }}>✕</span>
+              : <IconCheck size={44} />}
           </div>
           <p style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
             {wasCorrect === null ? 'Answer locked in' : wasCorrect ? 'Correct!' : 'Wrong answer'}
@@ -747,6 +923,19 @@ export default function StudentEngageGame() {
 
       {phase === 'final' && isTeamMode && team && (
         <StudentTeamFinal teams={teams.length ? teams : [team]} myTeamId={team.id} />
+      )}
+
+      {/* A team player whose team could not be loaded still gets their result
+          rather than a blank screen. */}
+      {phase === 'final' && isTeamMode && !team && (
+        <div style={{ textAlign: 'center', width: '100%' }}>
+          <h2 style={{ fontSize: 26, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Game over</h2>
+          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.5)', marginBottom: 20 }}>Thanks for playing, {name}.</p>
+          <div style={{ background: 'rgba(239,159,39,0.15)', border: '0.5px solid #D97010', borderRadius: 16, padding: '22px 32px', display: 'inline-block' }}>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>Your score</p>
+            <p style={{ fontSize: 44, fontWeight: 700, color: '#D97010' }}>{totalScore}</p>
+          </div>
+        </div>
       )}
 
       {phase === 'final' && !isTeamMode && (

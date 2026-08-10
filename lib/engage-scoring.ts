@@ -161,6 +161,60 @@ export function computeScore(input: ScoreInput): ScoreResult {
 // so multi_select, short_answer and poll were generatable but unplayable.
 // ---------------------------------------------------------------------
 
+/** Types answered by picking from the option list. */
+export function isOptionQuestion(type: QuestionType): boolean {
+  return type === 'mcq' || type === 'true_false' || type === 'multi_select' || type === 'poll'
+}
+
+/**
+ * A human-readable statement of the right answer, for the host reveal.
+ *
+ * The host screen used to print `question.correct` for every type. Questions
+ * authored in the builder carry a leftover correct: "A" from the blank
+ * template, so a numeric, ordering or short answer question told the teacher
+ * to read out "Correct answer: A" — which is not merely unhelpful, it is
+ * wrong, and the teacher says it to the class.
+ */
+export function describeCorrectAnswer(question: QuizQuestion): string {
+  const textFor = (label: string) =>
+    question.options?.find(o => o.label === label)?.text?.trim() ?? ''
+
+  switch (question.type) {
+    case 'poll':
+      return 'No right answer, this one is for opinions'
+
+    case 'short_answer':
+      return question.correct_text?.trim() || 'Not set'
+
+    case 'numeric': {
+      if (question.correct_number == null) return 'Not set'
+      const unit = question.unit?.trim() ? ` ${question.unit.trim()}` : ''
+      const tol = Number(question.tolerance)
+      const band = Number.isFinite(tol) && tol > 0 ? ` (anything within ${tol})` : ''
+      return `${question.correct_number}${unit}${band}`
+    }
+
+    case 'ordering': {
+      const order = question.correct_order ?? []
+      if (order.length === 0) return 'Not set'
+      return order.map(l => textFor(l) || l).join('  →  ')
+    }
+
+    case 'multi_select': {
+      const labels = question.correct_multiple ?? []
+      if (labels.length === 0) return 'Not set'
+      return labels.map(l => `${l}. ${textFor(l)}`.trim()).join(',  ')
+    }
+
+    default: {
+      // mcq and true_false
+      if (!question.correct) return 'Not set'
+      const text = textFor(question.correct)
+      return text ? `${question.correct}. ${text}` : question.correct
+    }
+  }
+}
+
 function normaliseText(s: string): string {
   return s
     .trim()

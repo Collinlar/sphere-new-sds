@@ -41,7 +41,10 @@ function emptyQuestion(type: QuestionType = 'mcq'): QuizQuestion {
     type,
     text: '',
     options: optionsForType(type),
-    correct: 'A',
+    // Only option questions have a correct label. Defaulting every type to
+    // "A" left numeric, ordering, short answer and poll questions claiming
+    // the answer was A, which the host reveal then read out to the class.
+    correct: type === 'mcq' || type === 'true_false' ? 'A' : '',
     correct_multiple: [],
     correct_text: '',
     time_seconds: 20,
@@ -130,7 +133,7 @@ function QuizBuilderInner() {
         : q.options.length === 2
         ? [...q.options, { label: 'C', text: '' }, { label: 'D', text: '' }]
         : q.options,
-      correct: type === 'true_false' ? 'A' : base.correct,
+      correct: type === 'true_false' ? 'A' : type === 'mcq' ? base.correct : '',
       correct_multiple: [],
       correct_text: '',
       correct_number: type === 'numeric' ? base.correct_number : undefined,

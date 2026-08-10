@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { EngageTeam } from '@/lib/types'
+import type { EngageTeam, QuizQuestion } from '@/lib/types'
+import AnswerSurface from './AnswerSurface'
 import { IconCheck } from '@/components/icons'
 
 interface Props {
@@ -84,10 +85,12 @@ interface DiscussProps extends Props {
   totalQuestions: number
   timeLeft: number
   onLock: (answer: string) => void
+  /** Present for question types that are not answered by picking an option. */
+  question?: QuizQuestion
 }
 
 export function StudentTeamDiscuss({
-  team, questionText, options, questionIndex, totalQuestions, timeLeft, onLock,
+  team, questionText, options, questionIndex, totalQuestions, timeLeft, onLock, question,
 }: DiscussProps) {
   const [vote, setVote] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)
@@ -118,6 +121,15 @@ export function StudentTeamDiscuss({
         </p>
         <p style={{ fontSize: 16, fontWeight: 500, color: '#fff', lineHeight: 1.5 }}>{questionText}</p>
       </div>
+      {question && !['mcq','true_false','multi_select','poll'].includes(question.type) ? (
+        <AnswerSurface
+          question={question}
+          disabled={locked}
+          selected={null}
+          onAnswer={value => { if (!locked) { setLocked(true); onLock(value) } }}
+        />
+      ) : (
+      <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 16 }}>
         {options.map(opt => (
           <button
@@ -153,13 +165,16 @@ export function StudentTeamDiscuss({
       >
         {locked ? 'Answer locked in' : 'Lock in team answer →'}
       </button>
+      </>
+      )}
     </div>
   )
 }
 
 export function StudentTeamResult({ team, correct, points, consensusBonus }: {
   team: EngageTeam
-  correct: boolean
+  /** null for a poll, which has no right answer and so cannot be got wrong. */
+  correct: boolean | null
   points: number
   consensusBonus: number
   teamTotal: number
@@ -171,10 +186,14 @@ export function StudentTeamResult({ team, correct, points, consensusBonus }: {
         display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px',
         boxShadow: `0 0 0 12px ${team.color}26`,
       }}>
-        {correct ? <IconCheck size={36} /> : <span style={{ fontSize: 28, fontWeight: 700 }}>✕</span>}
+        {correct === false
+          ? <span style={{ fontSize: 28, fontWeight: 700 }}>✕</span>
+          : <IconCheck size={36} />}
       </div>
       <p style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>{team.name}</p>
-      <p style={{ fontSize: 30, fontWeight: 800, color: '#fff', marginBottom: 4 }}>{correct ? 'Nailed it!' : 'Not this time'}</p>
+      <p style={{ fontSize: 30, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
+        {correct === null ? 'Answer counted' : correct ? 'Nailed it!' : 'Not this time'}
+      </p>
       <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: '18px 20px', width: '100%', marginTop: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Points this question</span>

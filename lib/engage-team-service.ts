@@ -16,19 +16,30 @@ export async function ensureTeamsForSession(sessionId: string): Promise<EngageTe
     score: 0,
   }))
 
-  const { data, error } = await supabase.from('engage_teams').insert(teams).select()
+  // The host page and every joining student call this, so several callers
+  // can reach here at once having all seen an empty list. Upserting against
+  // the (session_id, name) unique index means the racers collapse onto one
+  // set of teams instead of each inserting their own.
+  const { error } = await supabase
+    .from('engage_teams')
+    .upsert(teams, { onConflict: 'session_id,name', ignoreDuplicates: true })
 
   if (error) {
-    // Returning an empty list here used to hide a hard permissions failure:
-    // no teams meant no assignment, which meant a blank play screen that
-    // looked like a rendering bug. Say what actually happened.
+    // Never swallow this. An empty list here means no team assignment and a
+    // blank play screen, which reads as a rendering bug rather than what it
+    // is.
     console.error('[engage] could not create teams for session', sessionId, error.message)
-    // A losing race with another player is fine: read back what they made.
-    const { data: retry } = await supabase.from('engage_teams').select('*').eq('session_id', sessionId)
-    return (retry ?? []) as EngageTeam[]
   }
 
-  return (data ?? []) as EngageTeam[]
+  // Always read back rather than trusting what this caller inserted, so the
+  // winner's rows are what everyone works from.
+  const { data: settled } = await supabase
+    .from('engage_teams')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('created_at')
+
+  return (settled ?? []) as EngageTeam[]
 }
 
 export async function assignParticipantToTeam(
@@ -108,20 +119,25 @@ export async function scoreTeamQuestion(
   // Speed is deliberately excluded for teams: rewarding a fast answer would
   // punish the discussion this mode exists to create. Everything else that
   // makes solo play feel like a game carries over.
-  const result = computeScore({
-    correct,
-    partial: check.partial,
-    basePoints: question.points || 100,
-    elapsedMs: 0,
-    limitMs: 1,
-    streak: currentStreak,
-    model: { ...model, speedWeight: 0, fastestFinger: false },
-    questionIndex,
-    totalQuestions,
-  })
+  // A poll has no right answer, so taking part is the whole ask. Scoring it
+  // as a wrong answer told a team "Not this time" and paid nothing for a
+  // question they could not possibly get wrong.
+  const result = check.unscored
+    ? { points: Math.round((question.points || 100) / 2), nextStreak: currentStreak }
+    : computeScore({
+        correct,
+        partial: check.partial,
+        basePoints: question.points || 100,
+        elapsedMs: 0,
+        limitMs: 1,
+        streak: currentStreak,
+        model: { ...model, speedWeight: 0, fastestFinger: false },
+        questionIndex,
+        totalQuestions,
+      })
 
   let points = result.points
-  if (correct && consensusBonus && allAgree && memberCount > 1) {
+  if (correct && !check.unscored && consensusBonus && allAgree && memberCount > 1) {
     points += Math.round((question.points || 100) * 0.5)
   }
 
@@ -162,10 +178,19 @@ export async function scoreSpokenAnswer(params: {
   answerLabel: string
   model: ScoringModel
   totalQuestions?: number
+  /**
+   * The host's own verdict, for questions they cannot practically retype on
+   * a projector: an ordering answer said out loud, for instance. When set,
+   * it replaces automatic marking.
+   */
+  forceCorrect?: boolean
 }): Promise<{ points: number; correct: boolean; streak: number }> {
-  const { sessionId, teamId, questionIndex, question, answerLabel, model, totalQuestions } = params
+  const { sessionId, teamId, questionIndex, question, answerLabel, model, totalQuestions, forceCorrect } = params
 
-  const check = checkAnswer(question, answerLabel)
+  const auto = checkAnswer(question, answerLabel)
+  const check = forceCorrect === undefined
+    ? auto
+    : { correct: forceCorrect, unscored: auto.unscored, partial: forceCorrect ? 1 : 0 }
   const correct = check.correct && !check.unscored
 
   const { data: team } = await supabase
@@ -176,17 +201,19 @@ export async function scoreSpokenAnswer(params: {
 
   // No timing exists here: the host taps after the class has spoken. Speed
   // is excluded rather than faked.
-  const result = computeScore({
-    correct,
-    partial: check.partial,
-    basePoints: question.points || 100,
-    elapsedMs: 0,
-    limitMs: 1,
-    streak: Number(team?.streak ?? 0),
-    model: { ...model, speedWeight: 0, fastestFinger: false },
-    questionIndex,
-    totalQuestions,
-  })
+  const result = check.unscored
+    ? { points: Math.round((question.points || 100) / 2), nextStreak: Number(team?.streak ?? 0) }
+    : computeScore({
+        correct,
+        partial: check.partial,
+        basePoints: question.points || 100,
+        elapsedMs: 0,
+        limitMs: 1,
+        streak: Number(team?.streak ?? 0),
+        model: { ...model, speedWeight: 0, fastestFinger: false },
+        questionIndex,
+        totalQuestions,
+      })
 
   await supabase
     .from('engage_teams')

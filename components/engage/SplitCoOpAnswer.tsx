@@ -1,6 +1,7 @@
 'use client'
 
 import type { QuizQuestion } from '@/lib/types'
+import AnswerSurface from './AnswerSurface'
 
 const ANSWER_COLORS: Record<string, string> = {
   A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010',
@@ -27,7 +28,13 @@ export default function SplitCoOpAnswer({
   selected: string | null
   onAnswer: (label: string) => void
 }) {
-  const myOptions = question.options.filter(o => myLabels.includes(o.label))
+  // Only option-based questions can be split. A typed number, a sequence or
+  // free text has nothing to deal out, so the team answers it in full and
+  // still has to agree before anyone sends it.
+  const splittable = ['mcq', 'true_false', 'multi_select', 'poll'].includes(question.type)
+  const myOptions = splittable
+    ? question.options.filter(o => myLabels.includes(o.label))
+    : question.options
 
   return (
     <div style={{ width: '100%' }}>
@@ -43,49 +50,33 @@ export default function SplitCoOpAnswer({
         borderRadius: 12, padding: '12px 14px', marginBottom: 16,
       }}>
         <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', lineHeight: 1.55, textAlign: 'center' }}>
-          Only one person in your team can see the right answer. Say your options out loud and decide together.
+          {splittable
+            ? 'Only one person in your team can see the right answer. Say your options out loud and decide together.'
+            : 'This one cannot be split. Agree as a team before anyone sends an answer.'}
         </p>
       </div>
 
-      <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>
-        {myOptions.length === 1 ? 'Your option' : 'Your options'}
-      </p>
+      {splittable && (
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>
+          {myOptions.length === 1 ? 'Your option' : 'Your options'}
+        </p>
+      )}
 
       {/* The deal needs the team roster, which arrives a moment after the
           question does. Say so rather than showing an empty list. */}
-      {myOptions.length === 0 && (
+      {splittable && myLabels.length === 0 ? (
         <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: '20px 16px', textAlign: 'center' }}>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>Dealing your options...</p>
         </div>
+      ) : (
+        <AnswerSurface
+          question={question}
+          disabled={locked}
+          selected={selected}
+          visibleLabels={splittable ? myLabels : undefined}
+          onAnswer={onAnswer}
+        />
       )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {myOptions.map(opt => (
-          <button
-            key={opt.label}
-            onClick={() => onAnswer(opt.label)}
-            disabled={locked}
-            style={{
-              width: '100%',
-              background: selected === opt.label
-                ? ANSWER_COLORS[opt.label] ?? '#2E2886'
-                : `${ANSWER_COLORS[opt.label] ?? '#2E2886'}CC`,
-              border: 'none', borderRadius: 12, padding: '18px 20px',
-              display: 'flex', alignItems: 'center', gap: 14,
-              cursor: locked ? 'default' : 'pointer',
-              opacity: selected && selected !== opt.label ? 0.5 : 1,
-              minHeight: 64, textAlign: 'left',
-            }}
-          >
-            <span style={{
-              width: 36, height: 36, borderRadius: 8, background: 'rgba(255,255,255,0.25)',
-              color: '#fff', fontSize: 15, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>{opt.label}</span>
-            <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>{opt.text}</span>
-          </button>
-        ))}
-      </div>
 
       {locked && (
         <p style={{ marginTop: 16, fontSize: 13, color: 'rgba(255,255,255,0.45)', textAlign: 'center' }}>
