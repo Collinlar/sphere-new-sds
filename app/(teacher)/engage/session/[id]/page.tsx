@@ -10,6 +10,7 @@ import { scoringModelFromSettings, describeCorrectAnswer, isOptionQuestion } fro
 import { getHostSessionCap } from '@/lib/session-limits'
 import { getCurrentUser } from '@/lib/auth'
 import { TeamHostFinal, TeamHostLobby, TeamHostScores } from '@/components/engage/TeamHostSections'
+import TypedAnswerTally from '@/components/engage/TypedAnswerTally'
 import OneScreenGame from '@/components/engage/OneScreenGame'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
@@ -31,6 +32,9 @@ export default function EngageSessionHost() {
   const [error, setError] = useState<string | null>(null)
   const [responseCounts, setResponseCounts] = useState<Record<string, number>>({})
   const [answeredCount, setAnsweredCount] = useState(0)
+  // Typed answers have no A/B/C/D to tally, so the host needs the split
+  // between right and missed instead of a bar chart of options.
+  const [correctCount, setCorrectCount] = useState(0)
   const [teams, setTeams] = useState<EngageTeam[]>([])
 
   const gameMode = (session?.settings as { game_mode?: string })?.game_mode
@@ -148,16 +152,19 @@ export default function EngageSessionHost() {
     async function loadResponses() {
       const { data } = await supabase
         .from('session_responses')
-        .select('answer')
+        .select('answer, is_correct')
         .eq('session_id', id)
         .eq('question_index', questionIndex)
 
       const counts: Record<string, number> = {}
+      let right = 0
       for (const r of data ?? []) {
         if (r.answer) counts[r.answer] = (counts[r.answer] ?? 0) + 1
+        if (r.is_correct) right++
       }
       setResponseCounts(counts)
       setAnsweredCount(data?.length ?? 0)
+      setCorrectCount(right)
     }
 
     loadResponses()
@@ -488,7 +495,17 @@ export default function EngageSessionHost() {
                 correctLabel={describeCorrectAnswer(currentQ)}
               />
             )}
-            {!isTeamMode && (
+            {/* A typed number, a written answer or a sequence has nothing to
+                chart by option. What the host actually needs to see is how
+                many got there, and what the room wrote instead. */}
+            {!isTeamMode && !isOptionQuestion(currentQ.type) && (
+              <TypedAnswerTally
+                counts={responseCounts}
+                answered={answeredCount}
+                correct={correctCount}
+              />
+            )}
+            {!isTeamMode && isOptionQuestion(currentQ.type) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {currentQ.options.map((opt) => {
                 const count = responseCounts[opt.label] ?? 0
@@ -517,7 +534,7 @@ export default function EngageSessionHost() {
             {/* What the class actually got wrong, and why. The distractors
                 carry the misconception they were written to catch, so the
                 host can reteach the specific error before moving on. */}
-            {phase === 'reveal' && currentQ.type !== 'poll' && (() => {
+            {phase === 'reveal' && isOptionQuestion(currentQ.type) && currentQ.type !== 'poll' && (() => {
               const wrong = currentQ.options
                 .filter(o => o.label !== currentQ.correct)
                 .map(o => ({ opt: o, count: responseCounts[o.label] ?? 0 }))

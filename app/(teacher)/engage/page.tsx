@@ -146,6 +146,23 @@ export default function EngageDashboard() {
         mode="engage"
         title="Engage"
         right={
+          <div style={{ display: 'flex', gap: 8 }}>
+          <Link href="/engage/history">
+            <button style={{
+              background: 'transparent',
+              boxShadow: 'var(--shadow-soft)',
+              border: 'none',
+              borderRadius: 8,
+              padding: '8px 16px',
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--near-black)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}>
+              Past games
+            </button>
+          </Link>
           <Link href="/engage/builder">
             <button style={{
               background: '#D97010',
@@ -160,6 +177,7 @@ export default function EngageDashboard() {
               + New Quiz
             </button>
           </Link>
+          </div>
         }
       />
 
