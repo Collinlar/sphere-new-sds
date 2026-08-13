@@ -511,7 +511,7 @@ export default function StudentEngageGame() {
     }
 
     const result = check.unscored
-      ? { points: Math.round((q.points || 100) / 2), speedBonus: 0, streakBonus: 0, firstBonus: 0, nextStreak: streak }
+      ? { points: 0, speedBonus: 0, streakBonus: 0, firstBonus: 0, nextStreak: streak }
       : computeScore({
           correct: check.correct,
           partial: check.partial,
@@ -579,10 +579,10 @@ export default function StudentEngageGame() {
     setWasCorrect(check.unscored ? null : correct)
 
     const model = scoringModelRef.current
-    // Mirrors scoreTeamQuestion, including the poll case: no right answer
-    // means participation credit, not a zero and a cross.
+    // Mirrors scoreTeamQuestion, including the poll case: a poll pays
+    // nothing, because paying everyone the same is not scoring.
     const result = check.unscored
-      ? { points: Math.round((q.points || 100) / 2) }
+      ? { points: 0 }
       : computeScore({
           correct,
           partial: check.partial,

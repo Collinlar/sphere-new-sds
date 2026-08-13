@@ -123,7 +123,7 @@ export async function scoreTeamQuestion(
   // as a wrong answer told a team "Not this time" and paid nothing for a
   // question they could not possibly get wrong.
   const result = check.unscored
-    ? { points: Math.round((question.points || 100) / 2), nextStreak: currentStreak }
+    ? { points: 0, nextStreak: currentStreak }
     : computeScore({
         correct,
         partial: check.partial,
@@ -202,7 +202,7 @@ export async function scoreSpokenAnswer(params: {
   // No timing exists here: the host taps after the class has spoken. Speed
   // is excluded rather than faked.
   const result = check.unscored
-    ? { points: Math.round((question.points || 100) / 2), nextStreak: Number(team?.streak ?? 0) }
+    ? { points: 0, nextStreak: Number(team?.streak ?? 0) }
     : computeScore({
         correct,
         partial: check.partial,

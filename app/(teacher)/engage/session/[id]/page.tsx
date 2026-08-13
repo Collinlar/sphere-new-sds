@@ -276,6 +276,17 @@ export default function EngageSessionHost() {
   const currentQ: QuizQuestion | undefined = quiz.questions[questionIndex]
   const sortedParticipants = [...participants].sort((a, b) => b.score - a.score)
 
+  // A poll's whole result is the ordering: which way the room leaned, and
+  // what came last. Every other question type keeps its authored order, so
+  // A stays A while students are still choosing.
+  const pollRanked = currentQ
+    ? currentQ.type === 'poll'
+      ? [...currentQ.options].sort(
+          (a, b) => (responseCounts[b.label] ?? 0) - (responseCounts[a.label] ?? 0)
+        )
+      : currentQ.options
+    : []
+
   // One-screen mode runs the whole game from this device. No lobby, no join
   // code, no student handsets.
   if (isOneScreen && phase !== 'end' && currentQ) {
@@ -447,7 +458,10 @@ export default function EngageSessionHost() {
                   : currentQ.type === 'multi_select'
                     ? (currentQ.correct_multiple ?? []).includes(opt.label)
                     : opt.label === currentQ.correct
-                const revealed = phase === 'reveal'
+                // A poll has nothing to dim: revealing it should show the
+                // room's opinion, not grey out every option as if the class
+                // got them all wrong.
+                const revealed = phase === 'reveal' && currentQ.type !== 'poll'
                 return (
                   <div key={opt.label} style={{
                     background: revealed
@@ -507,9 +521,12 @@ export default function EngageSessionHost() {
             )}
             {!isTeamMode && isOptionQuestion(currentQ.type) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {currentQ.options.map((opt) => {
+              {pollRanked.map((opt, rank) => {
                 const count = responseCounts[opt.label] ?? 0
                 const pct = answeredCount > 0 ? (count / answeredCount) * 100 : 0
+                // On a poll the leader is the finding, so say it plainly
+                // rather than leaving the host to read bar widths.
+                const leads = currentQ.type === 'poll' && rank === 0 && count > 0
                 return (
                   <div key={opt.label} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <span style={{
@@ -524,7 +541,20 @@ export default function EngageSessionHost() {
                       <div style={{ position: 'absolute', left: 0, top: 0, width: `${Math.max(pct, count > 0 ? 4 : 0)}%`, height: '100%', background: ANSWER_COLORS[opt.label], opacity: 0.75, borderRadius: 8, transition: 'width 0.4s' }} />
                       <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, fontWeight: 500, color: '#fff' }}>{opt.text}</span>
                     </div>
-                    <span style={{ fontSize: 18, fontWeight: 700, color: '#fff', width: 30, textAlign: 'right', flexShrink: 0 }}>{count}</span>
+                    {leads && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                        color: '#FDE68A', background: 'rgba(232,160,32,0.2)', padding: '4px 9px',
+                        borderRadius: 20, flexShrink: 0,
+                      }}>
+                        Most picked
+                      </span>
+                    )}
+                    <span style={{ fontSize: 18, fontWeight: 700, color: '#fff', width: currentQ.type === 'poll' ? 62 : 30, textAlign: 'right', flexShrink: 0 }}>
+                      {currentQ.type === 'poll' && answeredCount > 0
+                        ? `${Math.round(pct)}%`
+                        : count}
+                    </span>
                   </div>
                 )
               })}
