@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { TeamHostFinal, TeamHostLobby, TeamHostScores } from '@/components/engage/TeamHostSections'
 import TypedAnswerTally from '@/components/engage/TypedAnswerTally'
 import OneScreenGame from '@/components/engage/OneScreenGame'
+import JoinQR from '@/components/engage/JoinQR'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
 const ANSWER_LABELS: Record<string, string> = { A: 'A', B: 'B', C: 'C', D: 'D' }
@@ -322,11 +323,17 @@ export default function EngageSessionHost() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 32, gap: 32 }}>
           <div style={{ textAlign: 'center' }}>
             <p style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
-              Students: go to spheresds.app/join
+              Students: scan this, or go to spheresds.app/join
             </p>
-            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: '20px 44px', gap: 5 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)' }}>Game code</span>
-              <span style={{ fontSize: 50, fontWeight: 900, letterSpacing: '0.14em', color: '#fff', lineHeight: 1.05 }}>{session.join_code}</span>
+            {/* Scan and type sit side by side on purpose. The QR saves the
+                room from mistyping six characters thirty times over, and the
+                code covers the phone whose camera will not focus. */}
+            <div style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'center', gap: 18, flexWrap: 'wrap' }}>
+              <JoinQR joinCode={session.join_code} size={168} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: '20px 44px', gap: 5 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)' }}>Game code</span>
+                <span style={{ fontSize: 50, fontWeight: 900, letterSpacing: '0.14em', color: '#fff', lineHeight: 1.05 }}>{session.join_code}</span>
+              </div>
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import type { EngageTeam, SessionParticipant } from '@/lib/types'
+import JoinQR from '@/components/engage/JoinQR'
 
 export function TeamHostLobby({
   joinCode,
@@ -16,11 +17,14 @@ export function TeamHostLobby({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 32, gap: 22 }}>
       <div style={{ textAlign: 'center', marginBottom: 26 }}>
-        <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>
-          Team Mode · Join code
+        <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+          Team Mode · Scan or type the code
         </p>
-        <p style={{ fontSize: 48, fontWeight: 800, color: '#fff', letterSpacing: '0.08em' }}>{joinCode}</p>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', marginTop: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18, flexWrap: 'wrap' }}>
+          <JoinQR joinCode={joinCode} size={140} />
+          <p style={{ fontSize: 48, fontWeight: 800, color: '#fff', letterSpacing: '0.08em' }}>{joinCode}</p>
+        </div>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', marginTop: 10 }}>
           {participants.length} students joined · {teams.length} teams auto-assigned
         </p>
       </div>
