@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { assertCanTakeAcquired, isSelfServeEngageForUser } from '@/lib/self-take'
 import type { Quiz, QuizQuestion } from '@/lib/types'
+import AnswerSurface from '@/components/engage/AnswerSurface'
+import { checkAnswer, computeScore, SCORING_PRESETS } from '@/lib/engage-scoring'
 import { IconCheck } from '@/components/icons'
 
 const ANSWER_COLORS: Record<string, string> = { A: '#2E2886', B: '#1A8966', C: '#C23B2A', D: '#D97010' }
@@ -30,6 +32,12 @@ function SelfEngagePlayInner({ quizId }: { quizId: string }) {
   const [totalScore, setTotalScore] = useState(0)
   const [timeLeft, setTimeLeft] = useState(30)
   const [answering, setAnswering] = useState(false)
+  const [streak, setStreak] = useState(0)
+
+  // Practice has no host to choose a scoring style, so it uses the same
+  // balanced default the launch dialog starts on. Streaks and speed still
+  // apply, because the point of practice is rehearsing the real game.
+  const scoringModel = SCORING_PRESETS.balanced.model
 
   const questions = quiz?.questions ?? []
   const currentQ: QuizQuestion | undefined = questions[index]
@@ -165,12 +173,37 @@ function SelfEngagePlayInner({ quizId }: { quizId: string }) {
     if (answering || selected || !currentQ || !sessionId || !participantId) return
     setAnswering(true)
 
-    const correct = label != null && currentQ.correct === label
-    const pts = correct ? currentQ.points : 0
+    // Practice used to mark answers with a raw `correct === label`, which
+    // meant a quiz someone bought scored differently here than it did live:
+    // no tolerance on numbers, no partial credit on a sequence, no
+    // multi-select comparison, and a poll marked wrong. It now runs through
+    // the same two functions every other mode uses.
+    const check = label == null
+      ? { correct: false, unscored: false, partial: 0 }
+      : checkAnswer(currentQ, label)
+    const correct = check.correct && !check.unscored
+
+    // A poll cannot be got wrong, so it pays nothing and marks nothing.
+    const result = check.unscored
+      ? { points: 0, nextStreak: streak }
+      : computeScore({
+          correct,
+          partial: check.partial,
+          basePoints: currentQ.points || 100,
+          elapsedMs: Math.max(0, (timePerQuestion - timeLeft) * 1000),
+          limitMs: timePerQuestion * 1000,
+          streak,
+          model: scoringModel,
+          questionIndex: index,
+          totalQuestions: questions.length,
+        })
+
+    const pts = result.points
     const nextScore = totalScore + pts
 
     setSelected(label ?? '')
-    setWasCorrect(correct)
+    setWasCorrect(check.unscored ? null : correct)
+    setStreak(result.nextStreak)
     setPointsEarned(pts)
     setTotalScore(nextScore)
 
@@ -181,7 +214,7 @@ function SelfEngagePlayInner({ quizId }: { quizId: string }) {
         participant_id: participantId,
         question_index: index,
         answer: label,
-        is_correct: correct,
+        is_correct: check.unscored ? null : correct,
         points_earned: pts,
       })
     }
@@ -253,51 +286,32 @@ function SelfEngagePlayInner({ quizId }: { quizId: string }) {
             </div>
 
             {phase === 'question' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {currentQ.options.filter((o) => o.text?.trim()).map((opt) => (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    onClick={() => handleAnswer(opt.label)}
-                    disabled={!!selected || answering}
-                    style={{
-                      width: '100%',
-                      background: ANSWER_COLORS[opt.label] ?? '#2E2886',
-                      border: 'none',
-                      borderRadius: 12,
-                      padding: '16px 18px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 14,
-                      cursor: selected ? 'default' : 'pointer',
-                      minHeight: 56,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span style={{
-                      width: 34, height: 34, borderRadius: 8, background: 'rgba(255,255,255,0.25)',
-                      color: '#fff', fontSize: 14, fontWeight: 700,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>{opt.label}</span>
-                    <span style={{ fontSize: 15, fontWeight: 500, color: '#fff' }}>{opt.text}</span>
-                  </button>
-                ))}
-              </div>
+              <AnswerSurface
+                question={currentQ}
+                disabled={!!selected || answering}
+                selected={selected}
+                onAnswer={handleAnswer}
+              />
             )}
 
             {phase === 'result' && (
               <div style={{ textAlign: 'center', paddingTop: 12 }}>
                 <div style={{
                   width: 84, height: 84, borderRadius: '50%', margin: '0 auto 16px',
-                  background: wasCorrect ? '#1A8966' : '#C23B2A',
+                  // A poll leaves wasCorrect null. Falling through to the
+                  // wrong-answer styling told a learner they had failed a
+                  // question with no right answer.
+                  background: wasCorrect === null ? '#2E2886' : wasCorrect ? '#1A8966' : '#C23B2A',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {wasCorrect ? <IconCheck size={36} /> : <span style={{ fontSize: 28, fontWeight: 700 }}>✕</span>}
+                  {wasCorrect === false && selected
+                    ? <span style={{ fontSize: 28, fontWeight: 700 }}>✕</span>
+                    : <IconCheck size={36} />}
                 </div>
                 <p style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>
-                  {wasCorrect ? 'Correct!' : selected ? 'Wrong answer' : 'Time up'}
+                  {wasCorrect === null ? 'Answer locked in' : wasCorrect ? 'Correct!' : selected ? 'Wrong answer' : 'Time up'}
                 </p>
-                {wasCorrect && <p style={{ fontSize: 28, fontWeight: 700, color: '#D97010' }}>+{pointsEarned} pts</p>}
+                {pointsEarned > 0 && <p style={{ fontSize: 28, fontWeight: 700, color: '#D97010' }}>+{pointsEarned} pts</p>}
               </div>
             )}
           </>
